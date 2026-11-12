@@ -188,3 +188,17 @@ test("touch pinch, fit controls and repeated page cache reuse", async ({
   }
   await page.screenshot({ path: "artifacts/viewer-first-page.png" });
 });
+
+test("current page follows page bounds when a tall sheet is fitted to width", async ({
+  page,
+}) => {
+  await open(page);
+  await page.getByLabel("Ansicht", { exact: true }).selectOption("continuous");
+  await page.getByLabel("Seite", { exact: true }).fill("3");
+  await page.getByRole("button", { name: "Breite", exact: true }).click();
+  await expect(page.getByLabel("Seite", { exact: true })).toHaveValue("3");
+  await expect(page.getByLabel("PDF-Seite 3")).toHaveAttribute(
+    "data-rendered",
+    "true",
+  );
+});

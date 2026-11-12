@@ -304,7 +304,7 @@ export default function App() {
     let closest = 0;
     let distance = Infinity;
     pages.forEach((p, i) => {
-      const d = Math.abs(tops[i] + p.height / 2 - center);
+      const d = Math.max(tops[i] - center, center - (tops[i] + p.height), 0);
       if (d < distance) {
         distance = d;
         closest = i;
