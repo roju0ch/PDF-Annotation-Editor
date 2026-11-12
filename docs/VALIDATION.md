@@ -7,11 +7,11 @@ Stand: 12. November 2026. Alle hier ausgeführten Tests liefen in Codex Cloud. G
 - Node.js 24.22.1, npm 11.9.0, MuPDF.js 1.28.6.
 - Strikter TypeScript-Build und ESLint: erfolgreich.
 - Vitest: 8 erfolgreiche Prüfungen für wiederholten Zoom, Zoomgrenzen, affine Rücktransformationen, vier Seitenorientierungen, CropBox, Fit Page/Fit Width und Wheel-Einheiten.
-- Playwright mit installiertem Chromium: 2 erfolgreiche Browser-Szenarien auf dem Produktionsbuild unter dem GitHub-Pages-Unterpfad. Geprüft: echte farbige PDF-Pixel, drei unterschiedlich große Seiten einschließlich A0, 90°-Rotation mit CropBox, Zoom-Anker, Mittelmaus- und Leertasten-Pan, fortlaufende Ansicht, Trackpad-Profil/Ctrl-Zoom, Dateiwechsel, Ablehnung ungültiger und verschlüsselter Dateien. Netzwerkbeobachtung bestätigt ausschließlich lokale GET-Anfragen im Viewer-Szenario.
+- Playwright mit installiertem Chromium: 3 erfolgreiche Browser-Szenarien auf dem Produktionsbuild unter dem GitHub-Pages-Unterpfad. Geprüft: echte farbige PDF-Pixel, drei unterschiedlich große Seiten einschließlich A0, 90°-Rotation mit CropBox, Zoom-Anker, Mittelmaus- und Leertasten-Pan, fortlaufende Ansicht, Trackpad-Profil/Ctrl-Zoom, emuliertes Touch-Pinch, Fit-Bedienfelder, wiederholte Seitenwechsel, Dateiwechsel, Ablehnung ungültiger und verschlüsselter Dateien. Netzwerkbeobachtung bestätigt ausschließlich lokale GET-Anfragen im Viewer-Szenario.
 - Separater MuPDF-POC: Ink, Text und FreeText erzeugen → speichern → erneut öffnen → Typ/Appearance prüfen → verändern → erneut speichern/öffnen. Alle Assertions bestanden. Vorhandene Notiz eines unabhängigen synthetischen PDF-Schreibers bearbeitet; nicht behandelte Link-Annotation und unveränderter Seiten-Content-Stream nachgewiesen. Ink als zwei native Teilpfade gespeichert.
 - Poppler `pdfinfo` erkennt die gespeicherte PDF mit drei Seiten; `pdftoppm` rendert Seite 1 mit Notizen, getrennten Ink-Strichen und FreeText. Bild visuell geprüft. Fontconfig meldete ein nicht schreibbares Cacheverzeichnis, die Ausgabe wurde dennoch erzeugt. Dies ist ein unabhängiger Renderer-Nachweis, kein Acrobat-Test.
 
-Der erste Browsertest deckte verlorene Anfragen während der asynchronen WASM-Initialisierung auf. Ein expliziter Worker-Handshake behebt das Problem; beide Szenarien wurden danach erfolgreich ausgeführt.
+Der erste Browsertest deckte verlorene Anfragen während der asynchronen WASM-Initialisierung auf. Ein expliziter Worker-Handshake behebt das Problem; die Browser-Szenarien wurden danach erfolgreich ausgeführt.
 
 ## Reproduzierbare Nachweise
 

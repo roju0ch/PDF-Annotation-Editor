@@ -116,17 +116,75 @@ test("trackpad profile pans, ctrl-wheel pinches, file replacement and rejection"
     "data-rendered",
     "true",
   );
-  await page
-    .getByLabel("PDF öffnen", { exact: true })
-    .setInputFiles({
-      name: "bad.pdf",
-      mimeType: "application/pdf",
-      buffer: Buffer.from("not a PDF"),
-    });
+  await page.getByLabel("PDF öffnen", { exact: true }).setInputFiles({
+    name: "bad.pdf",
+    mimeType: "application/pdf",
+    buffer: Buffer.from("not a PDF"),
+  });
   await expect(page.getByRole("alert")).toContainText("gültige PDF");
   await expect(page.locator("canvas")).toHaveCount(0);
   await page
     .getByLabel("PDF öffnen", { exact: true })
     .setInputFiles("artifacts/encrypted.pdf");
   await expect(page.getByRole("alert")).toContainText("Passwortgeschützte");
+});
+
+test("touch pinch, fit controls and repeated page cache reuse", async ({
+  page,
+  context,
+}) => {
+  await open(page);
+  const box = (await page.getByTestId("viewport").boundingBox())!;
+  const session = await context.newCDPSession(page);
+  const points = [
+    { x: box.x + 250, y: box.y + 250, id: 1 },
+    { x: box.x + 450, y: box.y + 250, id: 2 },
+  ];
+  const before = await geometry(page);
+  await session.send("Input.dispatchTouchEvent", {
+    type: "touchStart",
+    touchPoints: points,
+  });
+  await session.send("Input.dispatchTouchEvent", {
+    type: "touchMove",
+    touchPoints: [
+      { ...points[0], x: points[0].x - 50 },
+      { ...points[1], x: points[1].x + 50 },
+    ],
+  });
+  await session.send("Input.dispatchTouchEvent", {
+    type: "touchEnd",
+    touchPoints: [],
+  });
+  await expect
+    .poll(async () => (await geometry(page)).scale)
+    .toBeCloseTo(before.scale * 1.5, 3);
+  const after = await geometry(page);
+  const world = {
+    x: (350 - before.x) / before.scale,
+    y: (250 - before.y) / before.scale,
+  };
+  expect(world.x * after.scale + after.x).toBeCloseTo(350, 3);
+  expect(world.y * after.scale + after.y).toBeCloseTo(250, 3);
+  await page.getByRole("button", { name: "Seite einpassen" }).click();
+  await expect
+    .poll(async () => (await geometry(page)).scale)
+    .toBeCloseTo(before.scale, 3);
+  await page.getByRole("button", { name: "Breite", exact: true }).click();
+  await expect
+    .poll(async () => (await geometry(page)).scale)
+    .toBeCloseTo((box.width - 48) / 300, 3);
+  for (let i = 0; i < 3; i++) {
+    await page.getByRole("button", { name: "Nächste Seite" }).click();
+    await expect(page.getByLabel("PDF-Seite 2")).toHaveAttribute(
+      "data-rendered",
+      "true",
+    );
+    await page.getByRole("button", { name: "Vorherige Seite" }).click();
+    await expect(page.getByLabel("PDF-Seite 1")).toHaveAttribute(
+      "data-rendered",
+      "true",
+    );
+  }
+  await page.screenshot({ path: "artifacts/viewer-first-page.png" });
 });
