@@ -1,0 +1,132 @@
+import { test, expect, type Page } from "@playwright/test";
+const open = async (page: Page) => {
+  await page.goto("");
+  await page
+    .getByLabel("PDF öffnen", { exact: true })
+    .setInputFiles("artifacts/fixture.pdf");
+  await expect(
+    page.locator('canvas[data-rendered="true"]').first(),
+  ).toBeVisible();
+};
+async function geometry(page: Page) {
+  return page.getByTestId("world").evaluate((el) => {
+    const m = new DOMMatrix(getComputedStyle(el).transform);
+    return { x: m.e, y: m.f, scale: m.a };
+  });
+}
+test("real multipage PDF, pointer zoom, middle/space pan and no content upload", async ({
+  page,
+}) => {
+  const outbound: string[] = [];
+  page.on("request", (r) => {
+    if (
+      !r.url().startsWith("http://127.0.0.1:4173/") &&
+      !r.url().startsWith("data:")
+    )
+      outbound.push(r.url());
+    expect(r.method()).toBe("GET");
+  });
+  await open(page);
+  await expect(page.getByText("3 Seiten · Nur Ansicht")).toBeVisible();
+  const colors = await page
+    .locator("canvas")
+    .evaluate((el: HTMLCanvasElement) => {
+      const d = el
+        .getContext("2d")!
+        .getImageData(0, 0, el.width, el.height).data;
+      let colored = 0;
+      for (let i = 0; i < d.length; i += 4)
+        if (d[i + 1] > d[i] * 1.5 && d[i + 3] > 200) colored++;
+      return colored;
+    });
+  expect(colors).toBeGreaterThan(1000);
+  const stage = (await page.getByTestId("viewport").boundingBox())!;
+  const x = 300,
+    y = 250;
+  await page.mouse.move(stage.x + x, stage.y + y);
+  const before = await geometry(page);
+  const anchor = {
+    x: (x - before.x) / before.scale,
+    y: (y - before.y) / before.scale,
+  };
+  for (const delta of [-120, -120, 80, -80]) {
+    await page.mouse.wheel(0, delta);
+    await page.waitForTimeout(40);
+  }
+  const after = await geometry(page);
+  expect(anchor.x * after.scale + after.x).toBeCloseTo(x, 3);
+  expect(anchor.y * after.scale + after.y).toBeCloseTo(y, 3);
+  expect(after.scale).toBeGreaterThan(before.scale);
+  await page.mouse.down({ button: "middle" });
+  await page.mouse.move(stage.x + x + 90, stage.y + y + 60);
+  await page.mouse.up({ button: "middle" });
+  await expect
+    .poll(async () => (await geometry(page)).x)
+    .toBeCloseTo(after.x + 90, 3);
+  const pan = await geometry(page);
+  await page.keyboard.down("Space");
+  await page.mouse.down();
+  await page.mouse.move(stage.x + x + 120, stage.y + y + 80);
+  await page.mouse.up();
+  await page.keyboard.up("Space");
+  await expect
+    .poll(async () => (await geometry(page)).x)
+    .toBeCloseTo(pan.x + 30, 3);
+  await page.getByRole("button", { name: "Nächste Seite" }).click();
+  await expect(page.getByLabel("PDF-Seite 2")).toHaveAttribute(
+    "data-rendered",
+    "true",
+  );
+  await expect(page.getByTestId("page-1")).toHaveCSS("width", "400px");
+  await expect(page.getByTestId("page-1")).toHaveCSS("height", "500px");
+  await page.getByLabel("Ansicht", { exact: true }).selectOption("continuous");
+  await expect(page.getByTestId("page-0")).toBeAttached();
+  await expect(page.getByTestId("page-2")).toBeAttached();
+  await page.getByRole("button", { name: "Nächste Seite" }).click();
+  await expect(page.getByLabel("PDF-Seite 3")).toHaveAttribute(
+    "data-rendered",
+    "true",
+  );
+  await page.screenshot({ path: "artifacts/viewer.png" });
+  expect(outbound).toEqual([]);
+});
+test("trackpad profile pans, ctrl-wheel pinches, file replacement and rejection", async ({
+  page,
+}) => {
+  await open(page);
+  await page.getByLabel("Eingabeprofil").selectOption("trackpad");
+  const b = (await page.getByTestId("viewport").boundingBox())!;
+  await page.mouse.move(b.x + 300, b.y + 200);
+  const before = await geometry(page);
+  await page.mouse.wheel(30, 60);
+  await expect
+    .poll(async () => (await geometry(page)).y)
+    .toBeCloseTo(before.y - 60, 3);
+  expect((await geometry(page)).scale).toBe(before.scale);
+  await page.keyboard.down("Control");
+  await page.mouse.wheel(0, -100);
+  await page.keyboard.up("Control");
+  await expect
+    .poll(async () => (await geometry(page)).scale)
+    .toBeGreaterThan(before.scale);
+  await page
+    .getByLabel("PDF öffnen", { exact: true })
+    .setInputFiles("artifacts/fixture.pdf");
+  await expect(page.getByLabel("PDF-Seite 1")).toHaveAttribute(
+    "data-rendered",
+    "true",
+  );
+  await page
+    .getByLabel("PDF öffnen", { exact: true })
+    .setInputFiles({
+      name: "bad.pdf",
+      mimeType: "application/pdf",
+      buffer: Buffer.from("not a PDF"),
+    });
+  await expect(page.getByRole("alert")).toContainText("gültige PDF");
+  await expect(page.locator("canvas")).toHaveCount(0);
+  await page
+    .getByLabel("PDF öffnen", { exact: true })
+    .setInputFiles("artifacts/encrypted.pdf");
+  await expect(page.getByRole("alert")).toContainText("Passwortgeschützte");
+});
