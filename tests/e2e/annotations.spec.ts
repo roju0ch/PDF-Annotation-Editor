@@ -1,3 +1,4 @@
+import { menu, closeMenu, tool, viewAction } from "./menus";
 import { test, expect, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import * as mupdf from "mupdf";
@@ -72,7 +73,7 @@ test("create native ink, pan with active tool, erase, undo/redo and roundtrip", 
   page,
 }) => {
   await open(page);
-  await page.getByLabel("Werkzeug", { exact: true }).selectOption("Ink");
+  await tool(page, "Ink");
   const start = await sheetPoint(page, 40, 180),
     end = await sheetPoint(page, 220, 180);
   await page.mouse.move(start.x, start.y);
@@ -87,7 +88,7 @@ test("create native ink, pan with active tool, erase, undo/redo and roundtrip", 
   await page.mouse.move(end.x + 40, end.y + 20);
   await page.mouse.up({ button: "middle" });
   await expect(page.locator(".annotation-list button")).toHaveCount(2);
-  await page.getByLabel("Werkzeug", { exact: true }).selectOption("erase");
+  await tool(page, "erase");
   await clickAt(page, 120, 180);
   await expect(
     page.getByRole("button", { name: "Rückgängig", exact: true }),
@@ -123,7 +124,8 @@ test("create native ink, pan with active tool, erase, undo/redo and roundtrip", 
     whole.destroy();
   }
   await page.getByRole("button", { name: "Wiederholen", exact: true }).click();
-  await page.getByLabel("Werkzeug", { exact: true }).selectOption("select");
+  await tool(page, "select");
+  await menu(page, "annotations");
   await page
     .locator(".annotation-list button")
     .filter({ hasText: "Freihand" })
@@ -138,6 +140,7 @@ test("create native ink, pan with active tool, erase, undo/redo and roundtrip", 
   await expect
     .poll(async () => (await redPixels(page, 0, [115, 177, 10, 6])).red)
     .toBe(0);
+  await closeMenu(page);
   await page.screenshot({ path: "artifacts/annotation-editor.png" });
 });
 test("edit existing note, create Text and rotated FreeText, preserve originals and reopen download", async ({
@@ -149,6 +152,7 @@ test("edit existing note, create Text and rotated FreeText, preserve originals a
       requests.push(r.url());
   });
   await open(page);
+  await menu(page, "annotations");
   await page.locator(".annotation-list button").first().click();
   await page
     .getByLabel("Annotationsinhalt", { exact: true })
@@ -157,29 +161,26 @@ test("edit existing note, create Text and rotated FreeText, preserve originals a
   await expect(
     page.getByLabel("Annotationsinhalt", { exact: true }),
   ).toHaveValue("Fremdnotiz geändert");
-  await page.getByLabel("Werkzeug", { exact: true }).selectOption("Text");
-  await page.getByLabel("Neuer Annotationstext").fill("Neue Notiz");
+  await tool(page, "Text", "Neue Notiz");
   await clickAt(page, 60, 100);
   await expect(page.locator(".annotation-list button")).toHaveCount(2);
-  await page
-    .getByRole("button", { name: "Nächste Seite", exact: true })
-    .click();
+  await viewAction(page, "Nächste Seite");
   await expect(page.getByLabel("PDF-Seite 2")).toHaveAttribute(
     "data-rendered",
     "true",
   );
   await expect(page.locator(".annotation-list button")).toHaveCount(0);
-  await page.getByLabel("Werkzeug", { exact: true }).selectOption("FreeText");
-  await page.getByLabel("Neuer Annotationstext").fill("Planprüfung äöü");
+  await tool(page, "FreeText", "Planprüfung äöü");
   await clickAt(page, 100, 150, 1);
   await expect(page.locator(".annotation-list button")).toHaveCount(1);
-  await page.getByLabel("Werkzeug", { exact: true }).selectOption("select");
+  await tool(page, "select");
   const a = await sheetPoint(page, 140, 170, 1),
     b = await sheetPoint(page, 160, 200, 1);
   await page.mouse.move(a.x, a.y);
   await page.mouse.down();
   await page.mouse.move(b.x, b.y, { steps: 5 });
   await page.mouse.up();
+  await menu(page, "annotations");
   await page
     .getByLabel("Annotationsinhalt", { exact: true })
     .fill("Verschobenes Textfeld");
@@ -232,6 +233,7 @@ test("warns before discarding document edits and protects pending property chang
   page,
 }) => {
   await open(page);
+  await menu(page, "annotations");
   await page.locator(".annotation-list button").first().click();
   await page
     .getByLabel("Annotationsinhalt", { exact: true })
@@ -240,12 +242,17 @@ test("warns before discarding document edits and protects pending property chang
     page.getByRole("button", { name: "PDF herunterladen", exact: true }),
   ).toBeDisabled();
   await expect(
-    page.getByRole("button", { name: "Nächste Seite", exact: true }),
+    page.getByRole("button", {
+      name: "Nächste Seite",
+      exact: true,
+      includeHidden: true,
+    }),
   ).toBeDisabled();
   page.once("dialog", (dialog) => dialog.dismiss());
   await page
     .getByLabel("PDF öffnen", { exact: true })
     .setInputFiles("artifacts/fixture.pdf");
+  await menu(page, "annotations");
   await expect(
     page.getByLabel("Annotationsinhalt", { exact: true }),
   ).toHaveValue("Noch nicht übernommen");
@@ -257,6 +264,7 @@ test("warns before discarding document edits and protects pending property chang
   await page
     .getByLabel("PDF öffnen", { exact: true })
     .setInputFiles("artifacts/fixture.pdf");
+  await menu(page, "annotations");
   await expect(
     page.getByLabel("Annotationsinhalt", { exact: true }),
   ).toHaveValue("Noch nicht übernommen");
@@ -277,8 +285,7 @@ test("mobile touch placement and pinch cancellation do not create phantom notes"
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await open(page);
-  await page.getByLabel("Werkzeug", { exact: true }).selectOption("Text");
-  await page.getByLabel("Neuer Annotationstext").fill("Touch-Notiz");
+  await tool(page, "Text", "Touch-Notiz");
   const session = await context.newCDPSession(page);
   const p = await sheetPoint(page, 100, 150);
   await session.send("Input.dispatchTouchEvent", {

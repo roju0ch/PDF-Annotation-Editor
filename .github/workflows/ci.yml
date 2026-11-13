@@ -24,8 +24,13 @@ jobs:
       - run: npm run lint
       - run: npm test
       - run: npm run poc
-      - run: npx playwright install --with-deps chromium
+      - run: npx playwright install --with-deps chromium firefox
       - run: npm run test:e2e
+      - name: Firefox responsive layout
+        run: npm run test:e2e -- tests/e2e/layout.spec.ts
+        env:
+          PLAYWRIGHT_BROWSER: firefox
+          PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report-firefox
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
@@ -34,4 +39,5 @@ jobs:
             dist/
             artifacts/
             playwright-report/
+            playwright-report-firefox/
           retention-days: 14

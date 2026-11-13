@@ -1,5 +1,6 @@
 import { useAnnotations } from "./app/useAnnotations";
 import { AnnotationToolbar, AnnotationPanel } from "./app/AnnotationToolbar";
+import { MenuHeading, Icon, useMenuKeyboard } from "./app/CompactMenu";
 import { AnnotationOverlay } from "./app/AnnotationOverlay";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PdfClient } from "./adapters/pdf/client";
@@ -24,6 +25,7 @@ function inputTarget(target: EventTarget | null) {
   );
 }
 export default function App() {
+  useMenuKeyboard();
   const stage = useRef<HTMLDivElement>(null),
     client = useRef<PdfClient | null>(null),
     generation = useRef(0);
@@ -148,6 +150,8 @@ export default function App() {
         );
     };
     const down = (e: PointerEvent) => {
+      // A click outside a menu dismisses it; it must not also draw on the PDF.
+      if (document.querySelector(".compact-menu:popover-open")) return;
       if (!current.current.pages.length) return;
       if (e.pointerType === "touch") {
         points.set(e.pointerId, local(e));
@@ -404,15 +408,9 @@ export default function App() {
   return (
     <main>
       <header>
-        <div className="brand">
-          <span className="mark">P</span>
-          <strong>
-            PDF<span className="brand-sub"> / Annotieren</span>
-          </strong>
-          <span className="badge">PROTOTYP</span>
-        </div>
-        <label className="open">
-          PDF öffnen
+        <label className="open" title="PDF öffnen">
+          <Icon name="open" />
+          <span>Öffnen</span>
           <input
             aria-label="PDF öffnen"
             type="file"
@@ -424,88 +422,199 @@ export default function App() {
             }}
           />
         </label>
-        <div className="divider" />
         <button
-          disabled={!ready || annotation.formDirty || page === 0}
-          onClick={() => navigate(page - 1)}
-          aria-label="Vorherige Seite"
+          className="view-toggle"
+          popoverTarget="view-menu"
+          aria-label="Ansicht und Navigation"
+          title="Seiten, Zoom und Eingabe"
         >
-          ←
+          <span>
+            {page + 1}/{pages.length || "–"}
+          </span>
+          <span>{Math.round(view.scale * 100)} %</span>
+          <Icon name="chevron" />
         </button>
-        <label className="page-number">
-          Seite{" "}
-          <input
-            aria-label="Seite"
-            type="number"
-            min="1"
-            max={pages.length || 1}
-            value={page + 1}
-            disabled={!ready || annotation.formDirty}
-            onChange={(e) => {
-              const n = Number(e.target.value);
-              if (Number.isInteger(n) && n >= 1 && n <= pages.length)
-                navigate(n - 1);
-            }}
-          />{" "}
-          / {pages.length || "–"}
-        </label>
         <button
-          disabled={!ready || annotation.formDirty || page === pages.length - 1}
-          onClick={() => navigate(page + 1)}
-          aria-label="Nächste Seite"
+          popoverTarget="tools-menu"
+          aria-label="Werkzeuge"
+          title="Werkzeug und Zeicheneinstellungen"
         >
-          →
+          <Icon name="pen" />
+          <span className="tool-name">
+            {
+              {
+                select: "Auswahl",
+                Ink: "Freihand",
+                Text: "Notiz",
+                FreeText: "Textfeld",
+                erase: "Radierer",
+              }[annotation.tool]
+            }
+          </span>
         </button>
-        <div className="divider" />
         <button
-          disabled={!ready}
-          onClick={() =>
-            updateView((v) =>
-              zoomAt(v, { x: box.x / 2, y: box.y / 2 }, 1 / 1.2),
-            )
+          className="icon-button"
+          popoverTarget="annotations-menu"
+          aria-label="Annotationen anzeigen"
+          title="Annotationen und Eigenschaften"
+        >
+          <Icon name="list" />
+        </button>
+        <button
+          className="icon-button"
+          aria-label="Rückgängig"
+          title="Rückgängig"
+          disabled={
+            !ready ||
+            annotation.busy ||
+            annotation.formDirty ||
+            !annotation.state.canUndo
           }
-          aria-label="Verkleinern"
+          onClick={() => void annotation.edit({ action: "undo" })}
         >
-          −
+          <Icon name="undo" />
         </button>
-        <output aria-label="Zoom">{Math.round(view.scale * 100)} %</output>
         <button
-          disabled={!ready}
-          onClick={() =>
-            updateView((v) => zoomAt(v, { x: box.x / 2, y: box.y / 2 }, 1.2))
+          className="icon-button"
+          aria-label="Wiederholen"
+          title="Wiederholen"
+          disabled={
+            !ready ||
+            annotation.busy ||
+            annotation.formDirty ||
+            !annotation.state.canRedo
           }
-          aria-label="Vergrößern"
+          onClick={() => void annotation.edit({ action: "redo" })}
         >
-          +
+          <Icon name="redo" />
         </button>
-        <button disabled={!ready} onClick={() => fitPage(page)}>
-          Seite einpassen
-        </button>
-        <button disabled={!ready} onClick={() => fitPage(page, true)}>
-          Breite
-        </button>
-        <select
-          aria-label="Ansicht"
-          disabled={!ready || annotation.formDirty}
-          value={continuous ? "continuous" : "single"}
-          onChange={(e) => {
-            const mode = e.target.value === "continuous";
-            setContinuous(mode);
-            fitPage(page, false, mode);
-          }}
+        <button
+          className="icon-button export"
+          aria-label="PDF herunterladen"
+          title="PDF herunterladen"
+          disabled={
+            !ready ||
+            annotation.busy ||
+            annotation.formDirty ||
+            !!annotation.state.readOnly
+          }
+          onClick={() => void annotation.save()}
         >
-          <option value="single">Einzelblatt</option>
-          <option value="continuous">Fortlaufend</option>
-        </select>
-        <select
-          aria-label="Eingabeprofil"
-          value={profile}
-          onChange={(e) => setProfile(e.target.value as typeof profile)}
-        >
-          <option value="mouse">Maus: Rad zoomt</option>
-          <option value="trackpad">Trackpad: Scrollen</option>
-        </select>
+          <Icon name="download" />
+        </button>
       </header>
+      <section
+        id="view-menu"
+        popover="auto"
+        className="compact-menu view-menu"
+        aria-label="Ansicht und Navigation"
+      >
+        <MenuHeading target="view-menu">Ansicht und Navigation</MenuHeading>
+        <div className="menu-row">
+          <button
+            disabled={!ready || annotation.formDirty || page === 0}
+            onClick={() => navigate(page - 1)}
+            aria-label="Vorherige Seite"
+          >
+            ←
+          </button>
+          <label className="page-number">
+            Seite{" "}
+            <input
+              aria-label="Seite"
+              type="number"
+              min="1"
+              max={pages.length || 1}
+              value={page + 1}
+              disabled={!ready || annotation.formDirty}
+              onChange={(e) => {
+                const n = Number(e.target.value);
+                if (Number.isInteger(n) && n >= 1 && n <= pages.length)
+                  navigate(n - 1);
+              }}
+            />{" "}
+            / {pages.length || "–"}
+          </label>
+          <button
+            disabled={
+              !ready || annotation.formDirty || page === pages.length - 1
+            }
+            onClick={() => navigate(page + 1)}
+            aria-label="Nächste Seite"
+          >
+            →
+          </button>
+        </div>
+        <div className="menu-row">
+          <button
+            disabled={!ready}
+            onClick={() =>
+              updateView((v) =>
+                zoomAt(v, { x: box.x / 2, y: box.y / 2 }, 1 / 1.2),
+              )
+            }
+            aria-label="Verkleinern"
+          >
+            −
+          </button>
+          <output aria-label="Zoom">{Math.round(view.scale * 100)} %</output>
+          <button
+            disabled={!ready}
+            onClick={() =>
+              updateView((v) => zoomAt(v, { x: box.x / 2, y: box.y / 2 }, 1.2))
+            }
+            aria-label="Vergrößern"
+          >
+            +
+          </button>
+        </div>
+        <div className="menu-row">
+          <button disabled={!ready} onClick={() => fitPage(page)}>
+            Seite einpassen
+          </button>
+          <button disabled={!ready} onClick={() => fitPage(page, true)}>
+            Breite
+          </button>
+        </div>
+        <label className="menu-field">
+          Seitenansicht
+          <select
+            aria-label="Ansicht"
+            disabled={!ready || annotation.formDirty}
+            value={continuous ? "continuous" : "single"}
+            onChange={(e) => {
+              const mode = e.target.value === "continuous";
+              setContinuous(mode);
+              fitPage(page, false, mode);
+            }}
+          >
+            <option value="single">Einzelblatt</option>
+            <option value="continuous">Fortlaufend</option>
+          </select>
+        </label>
+        <label className="menu-field">
+          Bedienung
+          <select
+            aria-label="Eingabeprofil"
+            value={profile}
+            onChange={(e) => setProfile(e.target.value as typeof profile)}
+          >
+            <option value="mouse">Maus: Rad zoomt</option>
+            <option value="trackpad">Trackpad: Scrollen</option>
+          </select>
+        </label>
+        <p className="small">
+          Mausrad: Zoom · Mitteltaste / Leertaste + Ziehen: Pan. Touch: mit zwei
+          Fingern zoomen und verschieben.
+        </p>
+        <a
+          href="https://github.com/roju0ch/PDF-Annotation-Editor"
+          target="_blank"
+          rel="noreferrer"
+        >
+          Prototyp · Quellcode · AGPL
+        </a>
+      </section>
       <AnnotationToolbar editor={annotation} ready={ready} />
       {error && (
         <div role="alert" className="error">
@@ -586,8 +695,16 @@ export default function App() {
         <AnnotationPanel editor={annotation} page={page} />
       </div>
       <footer>
+        <span className="edit-status" role="status">
+          {annotation.busy
+            ? "Verarbeitung …"
+            : annotation.unsaved
+              ? "Ungesicherte Änderungen"
+              : ""}
+          {annotation.notice && !annotation.unsaved ? annotation.notice : ""}
+        </span>
         <span className="filename">{name || "Keine Datei geöffnet"}</span>
-        <span>
+        <span className="document-status">
           {loading
             ? "Wird geöffnet …"
             : rendering
@@ -596,19 +713,6 @@ export default function App() {
                 ? `${pages.length} Seiten · ${annotation.state.readOnly ? "Nur Ansicht" : "Native Annotationen"}`
                 : "Bereit"}
         </span>
-        <span className="hint">
-          {profile === "mouse"
-            ? "Mausrad: Zoom"
-            : "Trackpad: Pan · Pinch: Zoom"}{" "}
-          · Mitteltaste / Leertaste + Ziehen: Pan
-        </span>
-        <a
-          href="https://github.com/roju0ch/PDF-Annotation-Editor"
-          target="_blank"
-          rel="noreferrer"
-        >
-          Quellcode · AGPL
-        </a>
       </footer>
     </main>
   );
