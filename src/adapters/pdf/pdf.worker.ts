@@ -1,12 +1,15 @@
+import { AnnotationEditor } from "./annotations";
 import * as mupdf from "mupdf";
 import type { Request, Reply, PageInfo } from "./types";
 let doc: mupdf.PDFDocument | undefined;
 let pages: PageInfo[] = [];
+let editor: AnnotationEditor | undefined;
 self.onmessage = ({ data: r }: MessageEvent<Request>) => {
   try {
     if (r.type === "open") {
       doc?.destroy();
       doc = undefined;
+      editor = undefined;
       mupdf.emptyStore();
       const candidate = new mupdf.PDFDocument(r.data);
       try {
@@ -45,12 +48,43 @@ self.onmessage = ({ data: r }: MessageEvent<Request>) => {
             p.destroy();
           }
         });
+        editor = new AnnotationEditor(candidate, new Uint8Array(r.data));
         doc = candidate;
       } catch (e) {
         candidate.destroy();
         throw e;
       }
-      self.postMessage({ id: r.id, pages } satisfies Reply);
+      self.postMessage({
+        id: r.id,
+        pages,
+        editor: editor!.state(),
+      } satisfies Reply);
+    } else if (r.type === "list") {
+      if (!editor) throw new Error("Keine PDF geöffnet.");
+      self.postMessage({
+        id: r.id,
+        annotations: editor.list(r.page),
+        editor: editor.state(),
+      } satisfies Reply);
+    } else if (r.type === "edit") {
+      if (!editor) throw new Error("Keine PDF geöffnet.");
+      const selected = editor.apply(r.command);
+      self.postMessage({
+        id: r.id,
+        selected,
+        editor: editor.state(),
+      } satisfies Reply);
+    } else if (r.type === "export") {
+      if (!editor) throw new Error("Keine PDF geöffnet.");
+      const bytes = editor.export();
+      self.postMessage(
+        { id: r.id, bytes, editor: editor.state() } satisfies Reply,
+        { transfer: [bytes.buffer] },
+      );
+    } else if (r.type === "ack-export") {
+      if (!editor) throw new Error("Keine PDF geöffnet.");
+      editor.acknowledgeExport(r.revision);
+      self.postMessage({ id: r.id, editor: editor.state() } satisfies Reply);
     } else {
       if (!doc) throw new Error("Keine PDF geöffnet.");
       const info = pages[r.page];

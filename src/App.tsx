@@ -1,3 +1,6 @@
+import { useAnnotations } from "./app/useAnnotations";
+import { AnnotationToolbar, AnnotationPanel } from "./app/AnnotationToolbar";
+import { AnnotationOverlay } from "./app/AnnotationOverlay";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PdfClient } from "./adapters/pdf/client";
 import type { PageInfo } from "./adapters/pdf/types";
@@ -56,6 +59,22 @@ export default function App() {
     () => pages.map((_, i) => (continuous ? offsets[i] : 0)),
     [pages, continuous, offsets],
   );
+  const [renderRevision, setRenderRevision] = useState(0);
+  const invalidate = useCallback(() => {
+    cache.current.clear();
+    setRenderRevision((v) => v + 1);
+  }, []);
+  const annotation = useAnnotations(
+    client,
+    { view, pages, tops, continuous, page },
+    name,
+    invalidate,
+    setError,
+  );
+  const annotationInput = useRef(annotation.gesture);
+  useEffect(() => {
+    annotationInput.current = annotation.gesture;
+  });
   const current = useRef({ view, box, profile, pages, tops, continuous, page });
   useEffect(() => {
     current.current = { view, box, profile, pages, tops, continuous, page };
@@ -114,6 +133,7 @@ export default function App() {
     const wheel = (e: WheelEvent) => {
       if (!current.current.pages.length) return;
       e.preventDefault();
+      annotationInput.current.cancel();
       const dy = wheelPixels(e.deltaY, e.deltaMode, el.clientHeight),
         dx = wheelPixels(e.deltaX, e.deltaMode, el.clientHeight);
       if (current.current.profile === "trackpad" && !e.ctrlKey && !e.metaKey)
@@ -131,12 +151,19 @@ export default function App() {
       if (!current.current.pages.length) return;
       if (e.pointerType === "touch") {
         points.set(e.pointerId, local(e));
+        if (points.size === 1) annotationInput.current.begin(local(e));
+        else annotationInput.current.cancel();
         el.setPointerCapture(e.pointerId);
         e.preventDefault();
       } else if (e.button === 1 || (e.button === 0 && space)) {
+        annotationInput.current.cancel();
         drag = local(e);
         el.setPointerCapture(e.pointerId);
         el.classList.add("panning");
+        e.preventDefault();
+      } else if (e.button === 0 && annotationInput.current.begin(local(e))) {
+        el.focus();
+        el.setPointerCapture(e.pointerId);
         e.preventDefault();
       }
     };
@@ -164,6 +191,8 @@ export default function App() {
               y: z.y + after.y - before.y,
             };
           });
+        } else if (now.length === 1 && annotationInput.current.active()) {
+          annotationInput.current.move(p);
         } else if (now.length === 1)
           updateView((v) => ({
             ...v,
@@ -178,9 +207,13 @@ export default function App() {
           x: v.x + p.x - from.x,
           y: v.y + p.y - from.y,
         }));
+      } else if (annotationInput.current.active()) {
+        annotationInput.current.move(p);
       }
     };
     const up = (e: PointerEvent) => {
+      if (e.type === "pointerup") annotationInput.current.finish();
+      else annotationInput.current.cancel();
       points.delete(e.pointerId);
       drag = null;
       el.classList.remove("panning");
@@ -195,6 +228,7 @@ export default function App() {
       if (e.code === "Space") space = false;
     };
     const reset = () => {
+      annotationInput.current.cancel();
       space = false;
       drag = null;
       points.clear();
@@ -297,9 +331,9 @@ export default function App() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [renderSpec, pages]);
+  }, [renderSpec, pages, renderRevision]);
   useEffect(() => {
-    if (!continuous || !pages.length) return;
+    if (!continuous || !pages.length || annotation.formDirty) return;
     const center = toWorld({ x: box.x / 2, y: box.y / 2 }, view).y;
     let closest = 0;
     let distance = Infinity;
@@ -311,8 +345,20 @@ export default function App() {
       }
     });
     setPage(closest);
-  }, [view, box, continuous, pages, tops]);
+  }, [view, box, continuous, pages, tops, annotation.formDirty]);
   async function open(file: File) {
+    if (annotation.busy) {
+      setError("Bitte warten, bis die PDF-Verarbeitung abgeschlossen ist.");
+      return;
+    }
+    if (
+      annotation.unsaved &&
+      !window.confirm(
+        "Ungesicherte Änderungen verwerfen und eine andere PDF öffnen?",
+      )
+    )
+      return;
+    annotation.reset();
     const token = ++generation.current;
     client.current?.dispose();
     client.current = null;
@@ -334,6 +380,7 @@ export default function App() {
       const result = await c.request({ type: "open", data });
       if (token !== generation.current) return;
       const infos = result.pages!;
+      annotation.reset(result.editor!);
       setPages(infos);
       setName(file.name);
       setPage(0);
@@ -360,7 +407,7 @@ export default function App() {
         <div className="brand">
           <span className="mark">P</span>
           <strong>
-            PDF<span className="brand-sub"> / Viewer</span>
+            PDF<span className="brand-sub"> / Annotieren</span>
           </strong>
           <span className="badge">PROTOTYP</span>
         </div>
@@ -379,7 +426,7 @@ export default function App() {
         </label>
         <div className="divider" />
         <button
-          disabled={!ready || page === 0}
+          disabled={!ready || annotation.formDirty || page === 0}
           onClick={() => navigate(page - 1)}
           aria-label="Vorherige Seite"
         >
@@ -393,7 +440,7 @@ export default function App() {
             min="1"
             max={pages.length || 1}
             value={page + 1}
-            disabled={!ready}
+            disabled={!ready || annotation.formDirty}
             onChange={(e) => {
               const n = Number(e.target.value);
               if (Number.isInteger(n) && n >= 1 && n <= pages.length)
@@ -403,7 +450,7 @@ export default function App() {
           / {pages.length || "–"}
         </label>
         <button
-          disabled={!ready || page === pages.length - 1}
+          disabled={!ready || annotation.formDirty || page === pages.length - 1}
           onClick={() => navigate(page + 1)}
           aria-label="Nächste Seite"
         >
@@ -439,7 +486,7 @@ export default function App() {
         </button>
         <select
           aria-label="Ansicht"
-          disabled={!ready}
+          disabled={!ready || annotation.formDirty}
           value={continuous ? "continuous" : "single"}
           onChange={(e) => {
             const mode = e.target.value === "continuous";
@@ -459,6 +506,7 @@ export default function App() {
           <option value="trackpad">Trackpad: Scrollen</option>
         </select>
       </header>
+      <AnnotationToolbar editor={annotation} ready={ready} />
       {error && (
         <div role="alert" className="error">
           {error}
@@ -467,64 +515,75 @@ export default function App() {
           </button>
         </div>
       )}
-      <div
-        ref={stage}
-        className="stage"
-        data-testid="viewport"
-        tabIndex={0}
-        aria-label="PDF-Arbeitsfläche"
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={(e) => {
-          e.preventDefault();
-          const f = e.dataTransfer.files[0];
-          if (f) void open(f);
-        }}
-      >
-        {!ready && (
-          <div className="empty">
-            <div className="paper-icon">PDF</div>
-            <h1>{loading ? "PDF wird geöffnet …" : "Platz für Ihre Pläne."}</h1>
-            <p>PDF hier ablegen oder oben öffnen.</p>
-            <p className="muted">
-              Ihre Datei bleibt auf diesem Gerät.
-              <br />
-              Lokale Darstellung · keine Anmeldung · kein Upload
-            </p>
-          </div>
-        )}
-        {ready && (
-          <div
-            className="world"
-            data-testid="world"
-            style={{
-              transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})`,
-            }}
-          >
-            {(continuous
-              ? pages.map((p, i) => ({ p, i }))
-              : [{ p: pages[page], i: page }]
-            ).map(({ p, i }) => (
-              <div
-                className="sheet"
-                key={i}
-                data-testid={`page-${i}`}
-                style={{ top: tops[i], width: p.width, height: p.height }}
-              >
-                <span className="page-label">{i + 1}</span>
-                {visible.some((v) => v.i === i) && (
-                  <canvas
-                    aria-label={`PDF-Seite ${i + 1}`}
-                    ref={(el) => {
-                      if (el) canvases.current.set(i, el);
-                      else canvases.current.delete(i);
-                    }}
-                    style={{ width: p.width, height: p.height }}
+      <div className="workspace">
+        <div
+          ref={stage}
+          className="stage"
+          data-testid="viewport"
+          tabIndex={0}
+          aria-label="PDF-Arbeitsfläche"
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => {
+            e.preventDefault();
+            const f = e.dataTransfer.files[0];
+            if (f) void open(f);
+          }}
+        >
+          {!ready && (
+            <div className="empty">
+              <div className="paper-icon">PDF</div>
+              <h1>
+                {loading ? "PDF wird geöffnet …" : "Platz für Ihre Pläne."}
+              </h1>
+              <p>PDF hier ablegen oder oben öffnen.</p>
+              <p className="muted">
+                Ihre Datei bleibt auf diesem Gerät.
+                <br />
+                Lokale Darstellung · keine Anmeldung · kein Upload
+              </p>
+            </div>
+          )}
+          {ready && (
+            <div
+              className="world"
+              data-testid="world"
+              style={{
+                transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})`,
+              }}
+            >
+              {(continuous
+                ? pages.map((p, i) => ({ p, i }))
+                : [{ p: pages[page], i: page }]
+              ).map(({ p, i }) => (
+                <div
+                  className="sheet"
+                  key={i}
+                  data-testid={`page-${i}`}
+                  style={{ top: tops[i], width: p.width, height: p.height }}
+                >
+                  <span className="page-label">{i + 1}</span>
+                  <AnnotationOverlay
+                    editor={annotation}
+                    info={p}
+                    page={i}
+                    scale={view.scale}
                   />
-                )}
-              </div>
-            ))}
-          </div>
-        )}
+                  {visible.some((v) => v.i === i) && (
+                    <canvas
+                      aria-label={`PDF-Seite ${i + 1}`}
+                      ref={(el) => {
+                        if (el) canvases.current.set(i, el);
+                        else canvases.current.delete(i);
+                      }}
+                      style={{ width: p.width, height: p.height }}
+                    />
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <AnnotationPanel editor={annotation} page={page} />
       </div>
       <footer>
         <span className="filename">{name || "Keine Datei geöffnet"}</span>
@@ -534,7 +593,7 @@ export default function App() {
             : rendering
               ? "Details werden geladen …"
               : ready
-                ? `${pages.length} Seiten · Nur Ansicht`
+                ? `${pages.length} Seiten · ${annotation.state.readOnly ? "Nur Ansicht" : "Native Annotationen"}`
                 : "Bereit"}
         </span>
         <span className="hint">

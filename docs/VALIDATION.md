@@ -17,7 +17,7 @@ Der erste Browsertest deckte verlorene Anfragen während der asynchronen WASM-In
 
 `npm run poc` erzeugt in `artifacts/` ausschließlich synthetische Dateien: `fixture.pdf`, `encrypted.pdf`, `annotations-created.pdf`, `annotations-roundtrip.pdf` und `poc-results.json`. `npm run test:e2e` erzeugt den Browserbericht und `viewer.png`. Diese Dateien werden nicht ins Repository eingecheckt; CI stellt sie als Artefakt bereit.
 
-Die Fixture wird ohne MuPDF geschrieben und enthält eine bestehende Text- und Link-Annotation. Sie ersetzt keine Prüfung einer von Acrobat oder Bluebeam erzeugten Datei. Der Ink-POC zeigt die native Speicherung bereits berechneter Teilpfade; ein allgemeiner geometrischer Teilradierer ist noch nicht implementiert.
+Die Fixture wird ohne MuPDF geschrieben und enthält eine bestehende Text- und Link-Annotation. Sie ersetzt keine Prüfung einer von Acrobat oder Bluebeam erzeugten Datei. Der ursprüngliche Ink-POC zeigt die native Speicherung bereits berechneter Teilpfade. Die nachfolgende geometrische Teilradierung und der Editor sind in [ANNOTATIONS.md](ANNOTATIONS.md) dokumentiert.
 
 ## Noch offene Abnahme
 
@@ -29,4 +29,4 @@ Die Fixture wird ohne MuPDF geschrieben und enthält eine bestehende Text- und L
 
 ## GitHub Pages
 
-Die Aktivierung über die GitHub-API wurde versucht und mit **HTTP 403 – Resource not accessible by integration** abgelehnt. Deshalb ist noch keine öffentliche Vorschau aktiv. Ein Repository-Administrator muss einmalig **Settings → Pages → Build and deployment → Source: GitHub Actions** auswählen. Der vorbereitete Workflow veröffentlicht nach Merge auf `main` oder manuellem Start; dies erfordert keinen lokalen Build. Es wurde nichts nach `main` gemergt.
+Pages ist inzwischen aktiviert und auf **GitHub Actions** eingestellt. Der [Viewer ist veröffentlicht](https://roju0ch.github.io/PDF-Annotation-Editor/), [Deployment erfolgreich](https://github.com/roju0ch/PDF-Annotation-Editor/actions/runs/43369692128). PR #2 wurde vom Benutzer freigegeben und gemergt. Der Workflow veröffentlicht geprüfte Änderungen auf `main`; offene Feature-Branches werden dadurch noch nicht zur öffentlichen Vorschau.

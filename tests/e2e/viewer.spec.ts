@@ -1,4 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
+// Computed CSS matrices are serialized with limited precision; tolerate 0.01 CSS px.
+const CSS_PIXEL_TOLERANCE = 0.01;
 const open = async (page: Page) => {
   await page.goto("");
   await page
@@ -27,7 +29,7 @@ test("real multipage PDF, pointer zoom, middle/space pan and no content upload",
     expect(r.method()).toBe("GET");
   });
   await open(page);
-  await expect(page.getByText("3 Seiten · Nur Ansicht")).toBeVisible();
+  await expect(page.getByText("3 Seiten · Native Annotationen")).toBeVisible();
   const colors = await page
     .locator("canvas")
     .evaluate((el: HTMLCanvasElement) => {
@@ -54,15 +56,19 @@ test("real multipage PDF, pointer zoom, middle/space pan and no content upload",
     await page.waitForTimeout(40);
   }
   const after = await geometry(page);
-  expect(anchor.x * after.scale + after.x).toBeCloseTo(x, 3);
-  expect(anchor.y * after.scale + after.y).toBeCloseTo(y, 3);
+  expect(Math.abs(anchor.x * after.scale + after.x - x)).toBeLessThan(
+    CSS_PIXEL_TOLERANCE,
+  );
+  expect(Math.abs(anchor.y * after.scale + after.y - y)).toBeLessThan(
+    CSS_PIXEL_TOLERANCE,
+  );
   expect(after.scale).toBeGreaterThan(before.scale);
   await page.mouse.down({ button: "middle" });
   await page.mouse.move(stage.x + x + 90, stage.y + y + 60);
   await page.mouse.up({ button: "middle" });
   await expect
-    .poll(async () => (await geometry(page)).x)
-    .toBeCloseTo(after.x + 90, 3);
+    .poll(async () => Math.abs((await geometry(page)).x - (after.x + 90)))
+    .toBeLessThan(CSS_PIXEL_TOLERANCE);
   const pan = await geometry(page);
   await page.keyboard.down("Space");
   await page.mouse.down();
@@ -70,8 +76,8 @@ test("real multipage PDF, pointer zoom, middle/space pan and no content upload",
   await page.mouse.up();
   await page.keyboard.up("Space");
   await expect
-    .poll(async () => (await geometry(page)).x)
-    .toBeCloseTo(pan.x + 30, 3);
+    .poll(async () => Math.abs((await geometry(page)).x - (pan.x + 30)))
+    .toBeLessThan(CSS_PIXEL_TOLERANCE);
   await page.getByRole("button", { name: "Nächste Seite" }).click();
   await expect(page.getByLabel("PDF-Seite 2")).toHaveAttribute(
     "data-rendered",
@@ -100,8 +106,8 @@ test("trackpad profile pans, ctrl-wheel pinches, file replacement and rejection"
   const before = await geometry(page);
   await page.mouse.wheel(30, 60);
   await expect
-    .poll(async () => (await geometry(page)).y)
-    .toBeCloseTo(before.y - 60, 3);
+    .poll(async () => Math.abs((await geometry(page)).y - (before.y - 60)))
+    .toBeLessThan(CSS_PIXEL_TOLERANCE);
   expect((await geometry(page)).scale).toBe(before.scale);
   await page.keyboard.down("Control");
   await page.mouse.wheel(0, -100);
@@ -164,8 +170,12 @@ test("touch pinch, fit controls and repeated page cache reuse", async ({
     x: (350 - before.x) / before.scale,
     y: (250 - before.y) / before.scale,
   };
-  expect(world.x * after.scale + after.x).toBeCloseTo(350, 3);
-  expect(world.y * after.scale + after.y).toBeCloseTo(250, 3);
+  expect(Math.abs(world.x * after.scale + after.x - 350)).toBeLessThan(
+    CSS_PIXEL_TOLERANCE,
+  );
+  expect(Math.abs(world.y * after.scale + after.y - 250)).toBeLessThan(
+    CSS_PIXEL_TOLERANCE,
+  );
   await page.getByRole("button", { name: "Seite einpassen" }).click();
   await expect
     .poll(async () => (await geometry(page)).scale)

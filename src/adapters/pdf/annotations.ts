@@ -1,0 +1,362 @@
+import * as mupdf from "mupdf";
+import { inverse, transform, type Point } from "../../core/viewport";
+import { eraseInk } from "../../core/annotations/erase";
+import type {
+  Annotation,
+  AnnotationCommand,
+  AnnotationKind,
+  EditorState,
+  PdfRect,
+} from "../../core/annotations/model";
+const supported = (s: string): s is AnnotationKind =>
+  ["Ink", "Text", "FreeText"].includes(s);
+const finite = (n: number, min: number, max: number) => {
+  if (!Number.isFinite(n) || n < min || n > max)
+    throw new Error("Wert außerhalb des zulässigen Bereichs.");
+  return n;
+};
+const rgb = (s: string): mupdf.Color => {
+  if (!/^#[0-9a-f]{6}$/i.test(s)) throw new Error("Ungültige Farbe.");
+  return [1, 3, 5].map(
+    (i) => parseInt(s.slice(i, i + 2), 16) / 255,
+  ) as mupdf.Color;
+};
+function hex(c: mupdf.AnnotColor) {
+  const v =
+    c.length === 1
+      ? [c[0], c[0], c[0]]
+      : c.length === 4
+        ? [
+            1 - Math.min(1, c[0] + c[3]),
+            1 - Math.min(1, c[1] + c[3]),
+            1 - Math.min(1, c[2] + c[3]),
+          ]
+        : c.length === 3
+          ? c
+          : [0, 0, 0];
+  return (
+    "#" +
+    v
+      .map((x) =>
+        Math.round(x * 255)
+          .toString(16)
+          .padStart(2, "0"),
+      )
+      .join("")
+  );
+}
+function checkPoint(p: Point) {
+  finite(p.x, -100000, 100000);
+  finite(p.y, -100000, 100000);
+}
+function checkRect(r: PdfRect) {
+  r.forEach((v) => finite(v, -100000, 100000));
+  if (r[2] <= r[0] || r[3] <= r[1])
+    throw new Error("Ungültige Annotationsgröße.");
+}
+function protectedReason(doc: mupdf.PDFDocument): string | null {
+  const trailer = doc.getTrailer();
+  if (!trailer.get("Encrypt").isNull() || !doc.hasPermission("annotate"))
+    return "Diese PDF ist verschlüsselt oder schreibgeschützt. Nur Ansicht.";
+  const root = trailer.get("Root");
+  if (!root.get("Perms").isNull())
+    return "Diese PDF enthält Signatur- oder Zertifizierungsrechte. Nur Ansicht.";
+  const seen = new Set<number>();
+  let count = 0;
+  const signature = (fields: mupdf.PDFObject, depth = 0): boolean => {
+    if (depth > 32 || ++count > 10000) return true;
+    for (let i = 0; i < fields.length; i++) {
+      const field = fields.get(i);
+      const id = field.asIndirect();
+      if (id && seen.has(id)) continue;
+      if (id) seen.add(id);
+      if (
+        field.get("FT").asName() === "Sig" ||
+        signature(field.get("Kids"), depth + 1)
+      )
+        return true;
+    }
+    return false;
+  };
+  return signature(root.get("AcroForm", "Fields"))
+    ? "Diese PDF enthält ein Signaturfeld. Nur Ansicht; Signaturen werden nicht verändert."
+    : null;
+}
+export class AnnotationEditor {
+  readonly readOnly: string | null;
+  private sequence = 0;
+  private history = [0];
+  private saved = 0;
+  private operations: {
+    command: AnnotationCommand;
+    createdId: number | null;
+  }[] = [];
+  constructor(
+    private doc: mupdf.PDFDocument,
+    private original: Uint8Array<ArrayBuffer>,
+  ) {
+    this.readOnly = protectedReason(doc);
+    doc.enableJournal();
+  }
+  state(): EditorState {
+    const j = this.doc.getJournal();
+    return {
+      revision: this.history[j.position] ?? 0,
+      dirty: (this.history[j.position] ?? 0) !== this.saved,
+      canUndo: this.doc.canUndo(),
+      canRedo: this.doc.canRedo(),
+      readOnly: this.readOnly,
+    };
+  }
+  list(index: number): Annotation[] {
+    const p = this.doc.loadPage(index);
+    try {
+      const inv = inverse(p.getTransform());
+      return p.getAnnotations().map((a) => {
+        const type = a.getType(),
+          flags = a.getFlags();
+        const rect = mupdf.Rect.transform(
+          supported(type) && a.getObject().isIndirect() && type !== "Ink"
+            ? a.getRect()
+            : a.getBounds(),
+          inv,
+        );
+        const editable =
+          !this.readOnly &&
+          supported(type) &&
+          a.getObject().isIndirect() &&
+          !(
+            type === "FreeText" &&
+            (!a.getObject().get("RC").isNull() ||
+              a.getIntent() === "FreeTextCallout")
+          ) &&
+          !(
+            flags &
+            (mupdf.PDFAnnotation.IS_READ_ONLY |
+              mupdf.PDFAnnotation.IS_LOCKED |
+              mupdf.PDFAnnotation.IS_LOCKED_CONTENTS |
+              mupdf.PDFAnnotation.IS_HIDDEN |
+              mupdf.PDFAnnotation.IS_INVISIBLE |
+              mupdf.PDFAnnotation.IS_NO_VIEW)
+          );
+        return {
+          id: a.getObject().asIndirect(),
+          page: index,
+          type,
+          rect,
+          contents: a.getContents(),
+          editable,
+          color: hex(
+            type === "FreeText" ? a.getDefaultAppearance().color : a.getColor(),
+          ),
+          width: type === "Ink" ? a.getBorderWidth() : 0,
+          fontSize: type === "FreeText" ? a.getDefaultAppearance().size : 14,
+          ink:
+            type === "Ink"
+              ? a
+                  .getInkList()
+                  .map((path) => path.map(([x, y]) => transform({ x, y }, inv)))
+              : undefined,
+        };
+      });
+    } finally {
+      p.destroy();
+    }
+  }
+  apply(c: AnnotationCommand): number | null {
+    if (this.readOnly) throw new Error(this.readOnly);
+    if (c.action === "undo" || c.action === "redo") {
+      if (c.action === "undo" && this.doc.canUndo()) this.doc.undo();
+      if (c.action === "redo" && this.doc.canRedo()) this.doc.redo();
+      return null;
+    }
+    const p = this.doc.loadPage(c.page);
+    let id: number | null;
+    try {
+      const matrix = p.getTransform();
+      const toPage = (pt: Point): mupdf.Point => {
+        checkPoint(pt);
+        const v = transform(pt, matrix);
+        return [v.x, v.y];
+      };
+      const beforePosition = this.doc.getJournal().position;
+      this.doc.beginOperation(c.action);
+      try {
+        if (c.action === "create") {
+          if (!supported(c.kind))
+            throw new Error("Nicht unterstützter Annotationstyp.");
+          checkRect(c.rect);
+          if (c.contents.length > 10000) throw new Error("Text ist zu lang.");
+          const color = rgb(c.color);
+          finite(c.width, 0.1, 30);
+          finite(c.fontSize, 6, 96);
+          const a = p.createAnnotation(c.kind);
+          id = a.getObject().asIndirect();
+          a.setContents(c.contents);
+          a.setColor(c.kind === "FreeText" ? [] : color);
+          a.setFlags(mupdf.PDFAnnotation.IS_PRINT);
+          if (c.kind === "Ink") {
+            if (
+              !c.ink?.length ||
+              c.ink.length > 1000 ||
+              c.ink.reduce((n, s) => n + s.length, 0) > 20000 ||
+              c.ink.some((s) => s.length < 2)
+            )
+              throw new Error("Ungültiger Freihandpfad.");
+            a.setInkList(c.ink.map((path) => path.map(toPage)));
+            a.setBorderWidth(c.width);
+          } else {
+            a.setRect(mupdf.Rect.transform(c.rect, matrix));
+            if (c.kind === "FreeText") {
+              a.getObject().put(
+                "Rotate",
+                p.getObject().getInheritable("Rotate").asNumber(),
+              );
+              a.setDefaultAppearance("Helv", c.fontSize, color);
+            }
+          }
+          a.update();
+        } else {
+          const item = this.list(c.page).find((a) => a.id === c.id);
+          if (!item?.editable)
+            throw new Error("Diese Annotation kann nicht bearbeitet werden.");
+          const a = p
+            .getAnnotations()
+            .find((a) => a.getObject().asIndirect() === c.id)!;
+          id = c.id;
+          if (c.action === "delete") {
+            p.deleteAnnotation(a);
+            id = null;
+          } else if (c.action === "erase") {
+            if (item.type !== "Ink")
+              throw new Error("Teilradierung ist nur für Freihand verfügbar.");
+            checkPoint(c.center);
+            finite(c.radius, 0.1, 500);
+            const paths = eraseInk(
+              item.ink!,
+              c.center,
+              c.radius + item.width / 2,
+            );
+            if (paths.length) {
+              a.setInkList(paths.map((path) => path.map(toPage)));
+              a.update();
+            } else {
+              p.deleteAnnotation(a);
+              id = null;
+            }
+          } else {
+            const patch = c.patch;
+            if (patch.contents !== undefined) {
+              if (patch.contents.length > 10000)
+                throw new Error("Text ist zu lang.");
+              a.setContents(patch.contents);
+            }
+            if (patch.color !== undefined) {
+              const color = rgb(patch.color);
+              if (item.type === "FreeText") {
+                const da = a.getDefaultAppearance();
+                a.setDefaultAppearance(da.font || "Helv", da.size || 14, color);
+              } else a.setColor(color);
+            }
+            if (patch.width !== undefined) {
+              if (item.type !== "Ink")
+                throw new Error("Strichbreite gilt nur für Freihand.");
+              a.setBorderWidth(finite(patch.width, 0.1, 30));
+            }
+            if (patch.fontSize !== undefined) {
+              if (item.type !== "FreeText")
+                throw new Error("Schriftgröße gilt nur für Textfelder.");
+              const da = a.getDefaultAppearance();
+              a.setDefaultAppearance(
+                da.font || "Helv",
+                finite(patch.fontSize, 6, 96),
+                da.color,
+              );
+            }
+            if (patch.offset) {
+              checkPoint(patch.offset);
+              const { x, y } = patch.offset;
+              if (item.type === "Ink")
+                a.setInkList(
+                  item.ink!.map((path) =>
+                    path.map((pt) => toPage({ x: pt.x + x, y: pt.y + y })),
+                  ),
+                );
+              else {
+                const rect = item.rect.map(
+                  (v, i) => v + (i % 2 === 0 ? x : y),
+                ) as PdfRect;
+                checkRect(rect);
+                a.setRect(mupdf.Rect.transform(rect, matrix));
+              }
+            }
+            a.update();
+          }
+        }
+        this.doc.endOperation();
+        const position = this.doc.getJournal().position;
+        if (position > beforePosition) {
+          this.history.splice(position);
+          this.history[position] = ++this.sequence;
+          this.operations.splice(position - 1);
+          this.operations[position - 1] = {
+            command: structuredClone(c),
+            createdId: c.action === "create" ? id : null,
+          };
+        }
+      } catch (e) {
+        this.doc.abandonOperation();
+        throw e;
+      }
+      return id;
+    } finally {
+      p.destroy();
+    }
+  }
+  export(): Uint8Array<ArrayBuffer> {
+    if (this.readOnly) throw new Error(this.readOnly);
+    // Incremental updates retain original streams and unsupported PDF objects.
+    if (!this.doc.canBeSavedIncrementally())
+      throw new Error(
+        "Diese Datei kann nicht sicher inkrementell gespeichert werden.",
+      );
+    // MuPDF incremental buffer writes change native startxref state. Replaying the
+    // active commands on original bytes isolates export from the live undo journal.
+    const output = new mupdf.PDFDocument(this.original);
+    let buffer: mupdf.Buffer | undefined;
+    try {
+      const replay = new AnnotationEditor(output, this.original);
+      const ids = new Map<number, number>();
+      for (const operation of this.operations.slice(
+        0,
+        this.doc.getJournal().position,
+      )) {
+        const command = structuredClone(operation.command);
+        if ("id" in command) command.id = ids.get(command.id) ?? command.id;
+        const id = replay.apply(command);
+        if (operation.createdId !== null && id !== null)
+          ids.set(operation.createdId, id);
+      }
+      buffer = output.saveToBuffer("incremental=yes,compress=yes");
+      const bytes = new Uint8Array(buffer.asUint8Array());
+      if (bytes.length > 150 * 1024 * 1024)
+        throw new Error("Die exportierte PDF überschreitet 150 MB.");
+      const check = new mupdf.PDFDocument(bytes);
+      try {
+        if (check.wasRepaired() || check.countPages() !== this.doc.countPages())
+          throw new Error(
+            "Die exportierte PDF hat die Prüfung nicht bestanden.",
+          );
+      } finally {
+        check.destroy();
+      }
+      return bytes;
+    } finally {
+      buffer?.destroy();
+      output.destroy();
+    }
+  }
+  acknowledgeExport(revision: number) {
+    if (this.state().revision === revision) this.saved = revision;
+  }
+}
