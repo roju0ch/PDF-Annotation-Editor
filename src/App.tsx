@@ -695,6 +695,11 @@ export default function App() {
         <AnnotationPanel editor={annotation} page={page} />
       </div>
       <footer>
+        {annotation.selection.length > 1 && (
+          <span className="selection-count" role="status">
+            {annotation.selection.length} ausgewählt
+          </span>
+        )}
         <span className="edit-status" role="status">
           {annotation.busy
             ? "Verarbeitung …"

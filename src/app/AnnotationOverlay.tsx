@@ -1,3 +1,8 @@
+import {
+  intersectingAnnotations,
+  selectionRect,
+} from "../core/annotations/selection";
+import type { PdfRect } from "../core/annotations/model";
 import { transform, type Point } from "../core/viewport";
 import type { PageInfo } from "../adapters/pdf/types";
 import type { AnnotationControls } from "./useAnnotations";
@@ -16,7 +21,6 @@ export function AnnotationOverlay({
     const pt = transform(p, info.pdfToPage);
     return { x: pt.x - info.origin[0], y: pt.y - info.origin[1] };
   };
-  const a = e.items.find((a) => a.page === page && a.id === e.selected);
   const d = e.draft?.page === page ? e.draft : null;
   const offset =
     d?.kind === "select"
@@ -25,12 +29,32 @@ export function AnnotationOverlay({
           y: d.points.at(-1)!.y - d.points[0].y,
         }
       : { x: 0, y: 0 };
-  const corners = a
-    ? [
-        [a.rect[0], a.rect[1]],
-        [a.rect[2], a.rect[3]],
-      ].map(([x, y]) => display({ x: x + offset.x, y: y + offset.y }))
-    : [];
+  const box = (rect: PdfRect, offset = { x: 0, y: 0 }) => {
+    const corners = [
+      [rect[0], rect[1]],
+      [rect[2], rect[1]],
+      [rect[2], rect[3]],
+      [rect[0], rect[3]],
+    ].map(([x, y]) => display({ x: x + offset.x, y: y + offset.y }));
+    return {
+      x: Math.min(...corners.map((p) => p.x)),
+      y: Math.min(...corners.map((p) => p.y)),
+      width:
+        Math.max(...corners.map((p) => p.x)) -
+        Math.min(...corners.map((p) => p.x)),
+      height:
+        Math.max(...corners.map((p) => p.y)) -
+        Math.min(...corners.map((p) => p.y)),
+    };
+  };
+  const marquee =
+    d?.kind === "marquee" ? selectionRect(d.points[0], d.points.at(-1)!) : null;
+  const selected = marquee
+    ? intersectingAnnotations(e.items, page, marquee)
+    : e.selection;
+  const selectedItems = e.items.filter(
+    (a) => a.page === page && selected.includes(a.id),
+  );
   return (
     <svg
       className="annotation-overlay"
@@ -38,16 +62,28 @@ export function AnnotationOverlay({
       height={info.height}
       aria-hidden="true"
     >
-      {a && (
+      {selectedItems.map((a) => (
         <rect
-          x={Math.min(...corners.map((p) => p.x))}
-          y={Math.min(...corners.map((p) => p.y))}
-          width={Math.abs(corners[1].x - corners[0].x)}
-          height={Math.abs(corners[1].y - corners[0].y)}
-          fill="none"
+          key={a.id}
+          data-testid="selection-outline"
+          data-annotation-id={a.id}
+          {...box(
+            a.rect,
+            d?.kind === "select" && d.ids?.includes(a.id) ? offset : undefined,
+          )}
+          fill="#13857912"
           stroke="#138579"
           strokeWidth={1.5 / scale}
           strokeDasharray={`${5 / scale} ${3 / scale}`}
+        />
+      ))}
+      {marquee && (
+        <rect
+          data-testid="selection-marquee"
+          {...box(marquee)}
+          fill="#13857920"
+          stroke="#138579"
+          strokeWidth={1 / scale}
         />
       )}
       {d?.kind === "Ink" && (

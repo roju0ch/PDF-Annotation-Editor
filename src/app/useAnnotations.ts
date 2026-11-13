@@ -1,4 +1,9 @@
 import {
+  intersectingAnnotations,
+  selectionRect,
+  touchesAnnotation,
+} from "../core/annotations/selection";
+import {
   useCallback,
   useEffect,
   useRef,
@@ -25,7 +30,8 @@ export type Tool = "select" | "Ink" | "Text" | "FreeText" | "erase";
 export type Draft = {
   page: number;
   points: Point[];
-  kind: Tool;
+  kind: Tool | "marquee";
+  ids?: number[];
   annotation?: Annotation;
 };
 const empty: EditorState = {
@@ -52,7 +58,7 @@ export function useAnnotations(
   const [state, setState] = useState(empty),
     [tool, setTool] = useState<Tool>("select"),
     [items, setItems] = useState<Annotation[]>([]),
-    [selected, setSelected] = useState<number | null>(null),
+    [selection, setSelection] = useState<number[]>([]),
     [draft, setDraft] = useState<Draft | null>(null),
     [busy, setBusy] = useState(false),
     [notice, setNotice] = useState("");
@@ -68,7 +74,7 @@ export function useAnnotations(
     current = useRef({
       layout,
       items,
-      selected,
+      selection,
       tool,
       color,
       width,
@@ -82,7 +88,7 @@ export function useAnnotations(
     current.current = {
       layout,
       items,
-      selected,
+      selection,
       tool,
       color,
       width,
@@ -95,7 +101,7 @@ export function useAnnotations(
   }, [
     layout,
     items,
-    selected,
+    selection,
     tool,
     color,
     width,
@@ -113,7 +119,7 @@ export function useAnnotations(
     epoch.current++;
     setState(next);
     setItems([]);
-    setSelected(null);
+    setSelection([]);
     setDraft(null);
     draftRef.current = null;
     setNotice("");
@@ -130,6 +136,9 @@ export function useAnnotations(
       .then((r) => {
         if (!cancelled) {
           setItems(r.annotations!);
+          setSelection((ids) =>
+            ids.filter((id) => r.annotations!.some((a) => a.id === id)),
+          );
           setState(r.editor!);
         }
       })
@@ -152,7 +161,9 @@ export function useAnnotations(
         const r = await c.request({ type: "edit", command });
         if (token !== epoch.current) return;
         setState(r.editor!);
-        setSelected(r.selected ?? null);
+        if (command.action === "move") setSelection(command.ids);
+        else if (command.action !== "undo" && command.action !== "redo")
+          setSelection(r.selected == null ? [] : [r.selected]);
         setFormDirty(false);
         invalidate();
       } catch (e) {
@@ -209,7 +220,10 @@ export function useAnnotations(
       }
     }
   }, [client, name, onError]);
-  const unsaved = state.dirty || formDirty || draft !== null;
+  const unsaved =
+    state.dirty ||
+    formDirty ||
+    (draft !== null && draft.kind !== "marquee" && draft.kind !== "select");
   useEffect(() => {
     if (!unsaved && !busy) return;
     const warn = (e: BeforeUnloadEvent) => {
@@ -221,6 +235,20 @@ export function useAnnotations(
   }, [unsaved, busy]);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
+      if (
+        e.key === "Escape" &&
+        !(
+          e.target instanceof HTMLElement &&
+          e.target.closest("input,textarea,select")
+        )
+      ) {
+        if (draftRef.current) {
+          draftRef.current = null;
+          setDraft(null);
+        } else if (!current.current.formDirty) setSelection([]);
+        return;
+      }
       if (!(e.ctrlKey || e.metaKey) || !client.current) return;
       if (e.key.toLowerCase() === "s") {
         e.preventDefault();
@@ -243,7 +271,7 @@ export function useAnnotations(
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
   }, [client, edit, save]);
-  function locate(p: Point, forcedPage?: number) {
+  function locate(p: Point, forcedPage?: number, clamp = true) {
     const { view, pages, tops, continuous, page } = current.current.layout,
       w = toWorld(p, view);
     const index =
@@ -259,8 +287,12 @@ export function useAnnotations(
     if (index < 0 || !pages[index]) return null;
     const info = pages[index];
     const local = {
-      x: Math.max(0, Math.min(info.width, w.x)) + info.origin[0],
-      y: Math.max(0, Math.min(info.height, w.y - tops[index])) + info.origin[1],
+      x:
+        (clamp ? Math.max(0, Math.min(info.width, w.x)) : w.x) + info.origin[0],
+      y:
+        (clamp
+          ? Math.max(0, Math.min(info.height, w.y - tops[index]))
+          : w.y - tops[index]) + info.origin[1],
     };
     return { page: index, point: transform(local, inverse(info.pdfToPage)) };
   }
@@ -270,28 +302,41 @@ export function useAnnotations(
       .find(
         (a) =>
           a.page === index &&
-          point.x >= a.rect[0] - 3 &&
-          point.x <= a.rect[2] + 3 &&
-          point.y >= a.rect[1] - 3 &&
-          point.y <= a.rect[3] + 3,
+          touchesAnnotation(a, [
+            point.x - 3 / current.current.layout.view.scale,
+            point.y - 3 / current.current.layout.view.scale,
+            point.x + 3 / current.current.layout.view.scale,
+            point.y + 3 / current.current.layout.view.scale,
+          ]),
       );
   }
   function begin(p: Point) {
     const cur = current.current;
     if (lock.current || cur.state.readOnly || cur.formDirty) return false;
-    const at = locate(p);
+    const at =
+      locate(p) ??
+      (cur.tool === "select" ? locate(p, cur.layout.page, false) : null);
     if (!at) return false;
     // Editing applies to the active page; navigation and other visible pages remain unaffected.
     if (at.page !== cur.layout.page) return false;
     const a = hit(at.point, at.page);
     if (cur.tool === "select") {
-      setSelected(a?.id ?? null);
-      if (!a?.editable) return false;
+      if (!a) {
+        showDraft({ page: at.page, points: [at.point], kind: "marquee" });
+        return true;
+      }
+      const ids = cur.selection.includes(a.id) ? cur.selection : [a.id];
+      setSelection(ids);
+      if (!a.editable) return false;
       showDraft({
         page: at.page,
         points: [at.point],
         kind: "select",
-        annotation: a,
+        ids: ids.filter((id) =>
+          cur.items.some(
+            (item) => item.id === id && item.editable && item.page === at.page,
+          ),
+        ),
       });
       return true;
     }
@@ -308,7 +353,7 @@ export function useAnnotations(
   function move(p: Point) {
     const d = draftRef.current;
     if (!d) return;
-    const at = locate(p, d.page);
+    const at = locate(p, d.page, d.kind !== "select" && d.kind !== "marquee");
     if (!at) return;
     if (d.kind === "Ink") {
       const last = d.points.at(-1)!;
@@ -326,14 +371,32 @@ export function useAnnotations(
     const cur = current.current,
       start = d.points[0],
       end = d.points.at(-1)!;
+    const matrix = cur.layout.pages[d.page].pdfToPage;
+    const startDisplay = transform(start, matrix),
+      endDisplay = transform(end, matrix);
+    const dragged =
+      Math.hypot(endDisplay.x - startDisplay.x, endDisplay.y - startDisplay.y) *
+        cur.layout.view.scale >
+      3;
+    if (d.kind === "marquee") {
+      setSelection(
+        dragged
+          ? intersectingAnnotations(
+              cur.items,
+              d.page,
+              selectionRect(start, end),
+            )
+          : [],
+      );
+      return;
+    }
     if (d.kind === "select") {
-      const offset = { x: end.x - start.x, y: end.y - start.y };
-      if (Math.hypot(offset.x, offset.y) > 0.5)
+      if (dragged)
         void edit({
-          action: "update",
+          action: "move",
           page: d.page,
-          id: d.annotation!.id,
-          patch: { offset },
+          ids: d.ids!,
+          offset: { x: end.x - start.x, y: end.y - start.y },
         });
       return;
     }
@@ -388,8 +451,9 @@ export function useAnnotations(
     tool,
     setTool,
     items,
-    selected,
-    setSelected,
+    selection,
+    selected: selection.length === 1 ? selection[0] : null,
+    setSelected: (id: number | null) => setSelection(id === null ? [] : [id]),
     draft,
     busy,
     notice,

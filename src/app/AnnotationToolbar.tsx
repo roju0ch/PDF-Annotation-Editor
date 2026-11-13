@@ -105,7 +105,9 @@ export function AnnotationToolbar({
       )}
       <span className="edit-status">
         {e.state.readOnly ||
-          "Werkzeug einstellen, Menü schließen und auf der PDF arbeiten."}
+          (e.tool === "select"
+            ? "Auf freier Fläche eine Box ziehen. Berührte Markierungen gemeinsam verschieben. Mit zwei Fingern die Ansicht bewegen."
+            : "Werkzeug einstellen, Menü schließen und auf der PDF arbeiten.")}
       </span>
     </section>
   );
@@ -251,6 +253,18 @@ export function AnnotationPanel({
       <p className="small">
         Änderungen als PDF herunterladen. Keine automatische Wiederherstellung.
       </p>
+      {e.selection.length > 1 && (
+        <div className="selection-summary">
+          <strong>{e.selection.length} Markierungen ausgewählt</strong>
+          <p className="small">
+            An einer ausgewählten Markierung ziehen, um alle gemeinsam zu
+            verschieben.
+          </p>
+          <button disabled={e.busy} onClick={() => e.setSelected(null)}>
+            Auswahl aufheben
+          </button>
+        </div>
+      )}
       <div className="annotation-list">
         {e.items.length === 0 ? (
           <p>Keine Annotationen auf dieser Seite.</p>
@@ -259,7 +273,7 @@ export function AnnotationPanel({
             <button
               key={a.id}
               disabled={e.busy || e.formDirty}
-              aria-pressed={a.id === e.selected}
+              aria-pressed={e.selection.includes(a.id)}
               onClick={() => {
                 e.setSelected(a.id);
                 e.setTool("select");

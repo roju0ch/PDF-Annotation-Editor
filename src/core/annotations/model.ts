@@ -33,6 +33,7 @@ export type AnnotationCommand =
       width: number;
       fontSize: number;
     }
+  | { action: "move"; page: number; ids: number[]; offset: Point }
   | { action: "update"; page: number; id: number; patch: AnnotationPatch }
   | { action: "delete"; page: number; id: number }
   | { action: "erase"; page: number; id: number; center: Point; radius: number }
