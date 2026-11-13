@@ -1,6 +1,6 @@
 import { useAnnotations } from "./app/useAnnotations";
 import { AnnotationToolbar, AnnotationPanel } from "./app/AnnotationToolbar";
-import { MenuHeading, Icon, handleMenuKeyDown } from "./app/CompactMenu";
+import { MenuHeading, Icon, useMenuKeyboard } from "./app/CompactMenu";
 import { AnnotationOverlay } from "./app/AnnotationOverlay";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PdfClient } from "./adapters/pdf/client";
@@ -25,6 +25,7 @@ function inputTarget(target: EventTarget | null) {
   );
 }
 export default function App() {
+  useMenuKeyboard();
   const stage = useRef<HTMLDivElement>(null),
     client = useRef<PdfClient | null>(null),
     generation = useRef(0);
@@ -503,7 +504,6 @@ export default function App() {
         </button>
       </header>
       <section
-        onKeyDown={handleMenuKeyDown}
         id="view-menu"
         popover="auto"
         className="compact-menu view-menu"

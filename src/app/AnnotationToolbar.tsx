@@ -1,6 +1,6 @@
 import type { AnnotationControls, Tool } from "./useAnnotations";
 import { annotationLabels, type Annotation } from "../core/annotations/model";
-import { MenuHeading, handleMenuKeyDown } from "./CompactMenu";
+import { MenuHeading } from "./CompactMenu";
 import { useState } from "react";
 export function AnnotationToolbar({
   editor: e,
@@ -12,7 +12,6 @@ export function AnnotationToolbar({
   const blocked = !ready || e.busy || !!e.state.readOnly;
   return (
     <section
-      onKeyDown={handleMenuKeyDown}
       id="tools-menu"
       popover="auto"
       className="compact-menu annotation-toolbar"
@@ -241,7 +240,6 @@ export function AnnotationPanel({
   const selected = e.items.find((a) => a.id === e.selected);
   return (
     <aside
-      onKeyDown={handleMenuKeyDown}
       id="annotations-menu"
       popover="auto"
       className="compact-menu annotation-panel"

@@ -1,4 +1,4 @@
-import type { KeyboardEvent, ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 
 function dismissMenu(target: string) {
   document.getElementById(target)?.hidePopover();
@@ -8,12 +8,23 @@ function dismissMenu(target: string) {
     )
     ?.focus();
 }
-export function handleMenuKeyDown(event: KeyboardEvent<HTMLElement>) {
-  if (event.key === "Escape") {
-    event.preventDefault();
-    event.stopPropagation();
-    dismissMenu(event.currentTarget.id);
-  }
+export function useMenuKeyboard() {
+  useEffect(() => {
+    const keydown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      // Firefox can move focus to the document when a form button becomes
+      // disabled. Handle Escape even when focus is no longer inside the menu.
+      const menu = document.querySelector<HTMLElement>(
+        ".compact-menu:popover-open",
+      );
+      if (menu) {
+        event.preventDefault();
+        dismissMenu(menu.id);
+      }
+    };
+    document.addEventListener("keydown", keydown);
+    return () => document.removeEventListener("keydown", keydown);
+  }, []);
 }
 const paths = {
   open: "M3 7h6l2-3h10v16H3V7Zm0 4h18",
