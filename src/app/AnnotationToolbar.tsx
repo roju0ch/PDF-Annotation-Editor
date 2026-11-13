@@ -1,5 +1,6 @@
 import type { AnnotationControls, Tool } from "./useAnnotations";
 import { annotationLabels, type Annotation } from "../core/annotations/model";
+import { MenuHeading } from "./CompactMenu";
 import { useState } from "react";
 export function AnnotationToolbar({
   editor: e,
@@ -10,7 +11,13 @@ export function AnnotationToolbar({
 }) {
   const blocked = !ready || e.busy || !!e.state.readOnly;
   return (
-    <section className="annotation-toolbar" aria-label="Annotationswerkzeuge">
+    <section
+      id="tools-menu"
+      popover="auto"
+      className="compact-menu annotation-toolbar"
+      aria-label="Annotationswerkzeuge"
+    >
+      <MenuHeading target="tools-menu">Werkzeuge</MenuHeading>
       <label>
         Werkzeug{" "}
         <select
@@ -96,32 +103,9 @@ export function AnnotationToolbar({
           pt
         </label>
       )}
-      <button
-        disabled={blocked || e.formDirty || !e.state.canUndo}
-        onClick={() => void e.edit({ action: "undo" })}
-      >
-        Rückgängig
-      </button>
-      <button
-        disabled={blocked || e.formDirty || !e.state.canRedo}
-        onClick={() => void e.edit({ action: "redo" })}
-      >
-        Wiederholen
-      </button>
-      <button
-        className="export"
-        disabled={blocked || e.formDirty}
-        onClick={() => void e.save()}
-      >
-        PDF herunterladen
-      </button>
       <span className="edit-status">
         {e.state.readOnly ||
-          (e.busy
-            ? "PDF wird verarbeitet …"
-            : e.state.dirty || e.formDirty
-              ? "Ungesicherte Änderungen"
-              : "Original bleibt unverändert")}
+          "Werkzeug einstellen, Menü schließen und auf der PDF arbeiten."}
       </span>
     </section>
   );
@@ -255,11 +239,17 @@ export function AnnotationPanel({
 }) {
   const selected = e.items.find((a) => a.id === e.selected);
   return (
-    <aside className="annotation-panel" aria-label="Annotationen">
-      <h2>Annotationen · Seite {page + 1}</h2>
+    <aside
+      id="annotations-menu"
+      popover="auto"
+      className="compact-menu annotation-panel"
+      aria-label="Annotationen"
+    >
+      <MenuHeading target="annotations-menu">
+        Annotationen · Seite {page + 1}
+      </MenuHeading>
       <p className="small">
-        Auswahl und Bearbeitung auf der aktuellen Seite. Noch keine automatische
-        Wiederherstellung.
+        Änderungen als PDF herunterladen. Keine automatische Wiederherstellung.
       </p>
       <div className="annotation-list">
         {e.items.length === 0 ? (
@@ -285,7 +275,7 @@ export function AnnotationPanel({
       {selected && (
         <Properties key={JSON.stringify(selected)} item={selected} e={e} />
       )}
-      {e.notice && <p role="status">{e.notice}</p>}
+      {e.notice && <p>{e.notice}</p>}
     </aside>
   );
 }

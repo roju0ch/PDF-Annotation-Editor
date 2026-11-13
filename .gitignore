@@ -5,3 +5,4 @@ test-results/
 playwright-report/
 *.tsbuildinfo
 src-tauri/target/
+playwright-report-firefox/

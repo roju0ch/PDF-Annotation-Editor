@@ -1,3 +1,4 @@
+import { menu, closeMenu, viewAction, viewOption } from "./menus";
 import { test, expect, type Page } from "@playwright/test";
 // Computed CSS matrices are serialized with limited precision; tolerate 0.01 CSS px.
 const CSS_PIXEL_TOLERANCE = 0.01;
@@ -78,17 +79,17 @@ test("real multipage PDF, pointer zoom, middle/space pan and no content upload",
   await expect
     .poll(async () => Math.abs((await geometry(page)).x - (pan.x + 30)))
     .toBeLessThan(CSS_PIXEL_TOLERANCE);
-  await page.getByRole("button", { name: "Nächste Seite" }).click();
+  await viewAction(page, "Nächste Seite");
   await expect(page.getByLabel("PDF-Seite 2")).toHaveAttribute(
     "data-rendered",
     "true",
   );
   await expect(page.getByTestId("page-1")).toHaveCSS("width", "400px");
   await expect(page.getByTestId("page-1")).toHaveCSS("height", "500px");
-  await page.getByLabel("Ansicht", { exact: true }).selectOption("continuous");
+  await viewOption(page, "Ansicht", "continuous");
   await expect(page.getByTestId("page-0")).toBeAttached();
   await expect(page.getByTestId("page-2")).toBeAttached();
-  await page.getByRole("button", { name: "Nächste Seite" }).click();
+  await viewAction(page, "Nächste Seite");
   await expect(page.getByLabel("PDF-Seite 3")).toHaveAttribute(
     "data-rendered",
     "true",
@@ -100,7 +101,7 @@ test("trackpad profile pans, ctrl-wheel pinches, file replacement and rejection"
   page,
 }) => {
   await open(page);
-  await page.getByLabel("Eingabeprofil").selectOption("trackpad");
+  await viewOption(page, "Eingabeprofil", "trackpad");
   const b = (await page.getByTestId("viewport").boundingBox())!;
   await page.mouse.move(b.x + 300, b.y + 200);
   const before = await geometry(page);
@@ -176,21 +177,21 @@ test("touch pinch, fit controls and repeated page cache reuse", async ({
   expect(Math.abs(world.y * after.scale + after.y - 250)).toBeLessThan(
     CSS_PIXEL_TOLERANCE,
   );
-  await page.getByRole("button", { name: "Seite einpassen" }).click();
+  await viewAction(page, "Seite einpassen");
   await expect
     .poll(async () => (await geometry(page)).scale)
     .toBeCloseTo(before.scale, 3);
-  await page.getByRole("button", { name: "Breite", exact: true }).click();
+  await viewAction(page, "Breite");
   await expect
     .poll(async () => (await geometry(page)).scale)
     .toBeCloseTo((box.width - 48) / 300, 3);
   for (let i = 0; i < 3; i++) {
-    await page.getByRole("button", { name: "Nächste Seite" }).click();
+    await viewAction(page, "Nächste Seite");
     await expect(page.getByLabel("PDF-Seite 2")).toHaveAttribute(
       "data-rendered",
       "true",
     );
-    await page.getByRole("button", { name: "Vorherige Seite" }).click();
+    await viewAction(page, "Vorherige Seite");
     await expect(page.getByLabel("PDF-Seite 1")).toHaveAttribute(
       "data-rendered",
       "true",
@@ -203,9 +204,11 @@ test("current page follows page bounds when a tall sheet is fitted to width", as
   page,
 }) => {
   await open(page);
-  await page.getByLabel("Ansicht", { exact: true }).selectOption("continuous");
+  await viewOption(page, "Ansicht", "continuous");
+  await menu(page, "view");
   await page.getByLabel("Seite", { exact: true }).fill("3");
-  await page.getByRole("button", { name: "Breite", exact: true }).click();
+  await closeMenu(page);
+  await viewAction(page, "Breite");
   await expect(page.getByLabel("Seite", { exact: true })).toHaveValue("3");
   await expect(page.getByLabel("PDF-Seite 3")).toHaveAttribute(
     "data-rendered",

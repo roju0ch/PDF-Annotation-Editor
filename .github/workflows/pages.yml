@@ -19,8 +19,13 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run lint && npm test && npm run poc
-      - run: npx playwright install --with-deps chromium
+      - run: npx playwright install --with-deps chromium firefox
       - run: npm run test:e2e
+      - name: Firefox responsive layout
+        run: npm run test:e2e -- tests/e2e/layout.spec.ts
+        env:
+          PLAYWRIGHT_BROWSER: firefox
+          PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report-firefox
       - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
         with:
           path: dist
