@@ -4,6 +4,7 @@ import { eraseInk } from "../../core/annotations/erase";
 import type {
   Annotation,
   AnnotationCommand,
+  AnnotationClipboard,
   AnnotationKind,
   EditorState,
   PdfRect,
@@ -89,7 +90,7 @@ export class AnnotationEditor {
   private saved = 0;
   private operations: {
     command: AnnotationCommand;
-    createdId: number | null;
+    createdIds: number[];
   }[] = [];
   constructor(
     private doc: mupdf.PDFDocument,
@@ -163,7 +164,64 @@ export class AnnotationEditor {
       p.destroy();
     }
   }
-  apply(c: AnnotationCommand): number | null {
+  copy(index: number, ids: number[]): AnnotationClipboard {
+    if (this.readOnly) throw new Error(this.readOnly);
+    if (!ids.length || new Set(ids).size !== ids.length)
+      throw new Error("Ungültige Auswahl.");
+    const items = this.list(index);
+    const selected = ids.map((id) => {
+      const item = items.find((a) => a.id === id);
+      if (!item?.editable)
+        throw new Error("Diese Annotation kann nicht kopiert werden.");
+      return item;
+    });
+    const page = this.doc.loadPage(index);
+    const snapshot = new mupdf.PDFDocument();
+    const graft = snapshot.newGraftMap();
+    try {
+      const objects = snapshot.newArray();
+      const native = new Map(
+        page.getAnnotations().map((a) => [a.getObject().asIndirect(), a]),
+      );
+      for (const item of selected) {
+        const clean = this.doc.newDictionary();
+        // Do not carry page trees, popup/reply relationships or annotation identities.
+        native
+          .get(item.id)!
+          .getObject()
+          .forEach((value, key) => {
+            if (!["P", "Popup", "IRT", "Parent", "NM"].includes(String(key)))
+              clean.put(key, value);
+          });
+        objects.push(graft.graftObject(clean));
+      }
+      snapshot.getTrailer().get("Root").put("AnnotationClipboard", objects);
+      const buffer = snapshot.saveToBuffer("compress=yes");
+      try {
+        const bytes = new Uint8Array(buffer.asUint8Array());
+        if (bytes.length > 20 * 1024 * 1024)
+          throw new Error(
+            "Die Auswahl überschreitet die Zwischenablagegrenze von 20 MB.",
+          );
+        return {
+          bytes,
+          items: selected,
+          matrix: page.getTransform(),
+          pageRotation: page.getObject().getInheritable("Rotate").asNumber(),
+        };
+      } finally {
+        buffer.destroy();
+      }
+    } finally {
+      graft.destroy();
+      snapshot.destroy();
+      page.destroy();
+    }
+  }
+  apply(c: Extract<AnnotationCommand, { action: "paste" }>): number[];
+  apply(c: Exclude<AnnotationCommand, { action: "paste" }>): number | null;
+  apply(c: AnnotationCommand): number | number[] | null;
+  apply(c: AnnotationCommand): number | number[] | null {
     if (this.readOnly) throw new Error(this.readOnly);
     if (c.action === "undo" || c.action === "redo") {
       if (c.action === "undo" && this.doc.canUndo()) this.doc.undo();
@@ -171,7 +229,7 @@ export class AnnotationEditor {
       return null;
     }
     const p = this.doc.loadPage(c.page);
-    let id: number | null;
+    let id: number | number[] | null;
     try {
       const matrix = p.getTransform();
       const toPage = (pt: Point): mupdf.Point => {
@@ -237,6 +295,88 @@ export class AnnotationEditor {
             }
           }
           a.update();
+        } else if (c.action === "paste") {
+          const clip = c.clipboard;
+          if (!clip.items.length || clip.bytes.length > 20 * 1024 * 1024)
+            throw new Error("Ungültige Zwischenablage.");
+          checkPoint(c.point);
+          const source = new mupdf.PDFDocument(clip.bytes);
+          const graft = this.doc.newGraftMap();
+          try {
+            const objects = source
+              .getTrailer()
+              .get("Root", "AnnotationClipboard");
+            if (objects.length !== clip.items.length)
+              throw new Error("Unvollständige Zwischenablage.");
+            const rects = clip.items.map((item) =>
+              mupdf.Rect.transform(item.rect, clip.matrix),
+            );
+            const x = Math.min(...rects.map((r) => r[0])),
+              y = Math.min(...rects.map((r) => r[1]));
+            const anchor = toPage(c.point);
+            const shifted = (pt: Point): mupdf.Point => {
+              const q = transform(pt, clip.matrix);
+              const result: mupdf.Point = [
+                q.x - x + anchor[0],
+                q.y - y + anchor[1],
+              ];
+              checkPoint({ x: result[0], y: result[1] });
+              return result;
+            };
+            id = clip.items.map((item, index) => {
+              if (!item.editable || !supported(item.type))
+                throw new Error("Nicht unterstützter Zwischenablageinhalt.");
+              const a = p.createAnnotation(item.type);
+              const object = a.getObject();
+              const copied = graft.graftObject(objects.get(index));
+              copied.forEach((value, key) => object.put(key, value));
+              if (item.type === "Ink") {
+                if (!item.ink?.length)
+                  throw new Error("Ungültiger Freihandpfad.");
+                a.setInkList(item.ink.map((path) => path.map(shifted)));
+              } else {
+                const r = rects[index];
+                a.setRect([
+                  r[0] - x + anchor[0],
+                  r[1] - y + anchor[1],
+                  r[2] - x + anchor[0],
+                  r[3] - y + anchor[1],
+                ]);
+                if (item.type === "FreeText")
+                  object.put(
+                    "Rotate",
+                    (((copied.get("Rotate").asNumber() -
+                      clip.pageRotation +
+                      p.getObject().getInheritable("Rotate").asNumber()) %
+                      360) +
+                      360) %
+                      360,
+                  );
+              }
+              a.update();
+              return object.asIndirect();
+            });
+          } finally {
+            graft.destroy();
+            source.destroy();
+          }
+        } else if (c.action === "delete-many") {
+          if (!c.ids.length || new Set(c.ids).size !== c.ids.length)
+            throw new Error("Ungültige Auswahl.");
+          const items = new Map(
+            this.list(c.page).map((item) => [item.id, item]),
+          );
+          const native = new Map(
+            p.getAnnotations().map((a) => [a.getObject().asIndirect(), a]),
+          );
+          for (const selectedId of c.ids) {
+            if (!items.get(selectedId)?.editable || !native.has(selectedId))
+              throw new Error(
+                "Diese Annotation kann nicht ausgeschnitten werden.",
+              );
+            p.deleteAnnotation(native.get(selectedId)!);
+          }
+          id = null;
         } else if (c.action === "move") {
           if (!c.ids.length || new Set(c.ids).size !== c.ids.length)
             throw new Error("Ungültige Gruppenauswahl.");
@@ -327,7 +467,11 @@ export class AnnotationEditor {
           this.operations.splice(position - 1);
           this.operations[position - 1] = {
             command: structuredClone(c),
-            createdId: c.action === "create" ? id : null,
+            createdIds: Array.isArray(id)
+              ? id
+              : c.action === "create" && id !== null
+                ? [id]
+                : [],
           };
         }
       } catch (e) {
@@ -359,11 +503,15 @@ export class AnnotationEditor {
       )) {
         const command = structuredClone(operation.command);
         if ("id" in command) command.id = ids.get(command.id) ?? command.id;
-        if (command.action === "move")
+        if (command.action === "move" || command.action === "delete-many")
           command.ids = command.ids.map((id) => ids.get(id) ?? id);
         const id = replay.apply(command);
-        if (operation.createdId !== null && id !== null)
-          ids.set(operation.createdId, id);
+        const created = Array.isArray(id) ? id : id === null ? [] : [id];
+        operation.createdIds.forEach((originalId, index) => {
+          if (created[index] === undefined)
+            throw new Error("Export-ID-Zuordnung fehlgeschlagen.");
+          ids.set(originalId, created[index]);
+        });
       }
       buffer = output.saveToBuffer("incremental=yes,compress=yes");
       const bytes = new Uint8Array(buffer.asUint8Array());
