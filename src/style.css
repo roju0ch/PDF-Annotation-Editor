@@ -1,0 +1,267 @@
+:root {
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  color: #192b32;
+  background: #e7ecec;
+  font-synthesis: none;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+}
+button,
+input,
+select {
+  font: inherit;
+}
+button,
+select,
+.open {
+  border: 1px solid #d4ddde;
+  border-radius: 6px;
+  background: #fff;
+  color: #243c44;
+  padding: 7px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+button:hover:not(:disabled),
+select:hover {
+  background: #eef5f4;
+}
+button:disabled,
+select:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+button:focus-visible,
+select:focus-visible,
+input:focus-visible,
+a:focus-visible,
+.stage:focus-visible {
+  outline: 2px solid #138579;
+  outline-offset: 2px;
+}
+main {
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  padding: 12px 18px;
+  background: #fbfdfc;
+  border-bottom: 1px solid #ccd6d7;
+  z-index: 2;
+  font-size: 12px;
+  box-shadow: 0 2px 8px #17343b08;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-right: 12px;
+  font-size: 17px;
+}
+.mark {
+  display: grid;
+  place-items: center;
+  background: #176f65;
+  color: #fff;
+  width: 28px;
+  height: 32px;
+  border-radius: 5px;
+}
+.brand-sub {
+  font-weight: 400;
+  color: #62777e;
+}
+.badge {
+  font-size: 8px;
+  letter-spacing: 1px;
+  border: 1px solid #b9ccc9;
+  border-radius: 3px;
+  padding: 3px;
+  color: #57756e;
+}
+.open {
+  position: relative;
+  background: #176f65;
+  color: #fff;
+  border-color: #176f65;
+  font-weight: 600;
+  overflow: hidden;
+}
+.open:focus-within {
+  outline: 2px solid #138579;
+  outline-offset: 2px;
+}
+.open input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+  width: 100%;
+}
+.divider {
+  height: 24px;
+  width: 1px;
+  background: #d4ddde;
+  margin: 0 4px;
+}
+.page-number {
+  white-space: nowrap;
+}
+.page-number input {
+  width: 48px;
+  border: 1px solid #d4ddde;
+  border-radius: 4px;
+  padding: 5px;
+  text-align: center;
+}
+output {
+  min-width: 48px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  touch-action: none;
+  background-color: #e5ebeb;
+  background-image: radial-gradient(#b5c7c8 0.65px, transparent 0.65px);
+  background-size: 16px 16px;
+  outline-offset: -3px !important;
+}
+.panning {
+  cursor: grabbing;
+  user-select: none;
+}
+.world {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+.sheet {
+  position: absolute;
+  left: 0;
+  background: white;
+  box-shadow: 0 3px 18px #18333730;
+}
+.sheet canvas {
+  display: block;
+}
+.page-label {
+  position: absolute;
+  top: -20px;
+  color: #53676c;
+  font-size: 12px;
+}
+.empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  pointer-events: none;
+}
+.paper-icon {
+  width: 65px;
+  height: 80px;
+  border: 1px solid #b6c7c6;
+  border-radius: 4px;
+  background: #f9fbfa;
+  color: #55837b;
+  display: grid;
+  place-items: center;
+  font-size: 15px;
+  letter-spacing: 2px;
+  box-shadow: 7px 7px 0 #d7e1df;
+}
+.empty h1 {
+  font-size: 28px;
+  letter-spacing: -0.7px;
+  font-weight: 500;
+  margin: 28px 0 8px;
+}
+.empty p {
+  font-size: 14px;
+  color: #546b72;
+  margin: 8px;
+}
+.empty .muted {
+  font-size: 12px;
+  line-height: 1.8;
+  color: #768b90;
+}
+footer {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 9px 18px;
+  background: #fbfdfc;
+  border-top: 1px solid #ccd6d7;
+  font-size: 11px;
+  color: #5a7077;
+  flex-wrap: wrap;
+}
+.filename {
+  color: #244941;
+  max-width: 25vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hint {
+  margin-left: auto;
+}
+footer a {
+  color: #39766e;
+}
+.error {
+  padding: 10px 18px;
+  background: #fff0e7;
+  color: #8b3d19;
+  font-size: 13px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.error button {
+  padding: 0 7px;
+  background: transparent;
+  border: 0;
+  font-size: 20px;
+}
+@media (max-width: 700px) {
+  header {
+    padding: 8px;
+    gap: 5px;
+  }
+  .brand {
+    width: 100%;
+    font-size: 15px;
+  }
+  .hint {
+    display: none;
+  }
+  footer {
+    padding: 8px;
+  }
+  .empty h1 {
+    font-size: 23px;
+  }
+  .divider {
+    display: none;
+  }
+}

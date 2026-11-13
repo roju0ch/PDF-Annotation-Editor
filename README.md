@@ -1,1 +1,58 @@
-# PDF-Annotation-Editor
+# PDF Annotation Editor
+
+Ein lokaler PDF-Viewer-Prototyp mit React, TypeScript und MuPDF.js. PDFs werden ausschließlich auf Ihrem Gerät verarbeitet. Es gibt keinen Upload, kein Konto und keine Telemetrie.
+
+## Im Browser ausprobieren
+
+Die Browser-Vorschau wird durch den Workflow **Browser preview** auf GitHub Pages bereitgestellt. Der aktuelle Veröffentlichungs- und Teststand steht in [docs/VALIDATION.md](docs/VALIDATION.md). Die Webseite enthält nur App-Dateien, keine von Ihnen geöffneten PDFs. Zum ersten Laden wird Internet benötigt; eine installierbare Offline-PWA ist noch nicht enthalten.
+
+1. Vorschau öffnen, **PDF öffnen** wählen oder eine Datei auf die Arbeitsfläche ziehen.
+2. Mit dem Mausrad direkt zur Mausposition zoomen. Mittlere Maustaste gedrückt halten und ziehen, alternativ Leertaste + linke Maustaste.
+3. Für Trackpads das Profil **Trackpad: Scrollen** wählen: Zwei-Finger-Scrollen bewegt die Seite, Pinch bzw. Ctrl+Rad zoomt. Das Profil wird lokal gespeichert. Automatische Geräteerkennung wäre unzuverlässig.
+4. Seiten über Pfeile oder Seitennummer wechseln. **Seite einpassen**, **Breite** und **Fortlaufend** stehen zur Verfügung.
+
+Der Prototyp ist ein **Viewer**. Annotationen werden angezeigt, aber noch nicht in der Oberfläche bearbeitet oder gespeichert. Es gibt keinen vorgetäuschten Speichern-Knopf. Die Ausgangsdatei bleibt unverändert. Touch-Pan und Zwei-Finger-Pinch sind implementiert; reale Geräte müssen noch geprüft werden.
+
+## Cloud-Builds ohne lokale Werkzeuge
+
+Unter [GitHub Actions](https://github.com/roju0ch/PDF-Annotation-Editor/actions) einen Lauf öffnen und unten das Artefakt herunterladen:
+
+- **Browser checks**: `browser-preview-and-test-evidence` enthält den statischen Build, Playwright-Bericht, Screenshot und ausschließlich synthetische POC-PDFs.
+- **Desktop test builds (unsigned)**: separate Linux-, Windows- und macOS-Jobs liefern `.deb`, NSIS-Installer bzw. ein ZIP der `.app`. Erfolgreiche Paketerstellung ist noch kein Test der Desktop-Bedienung. Die Pakete sind unsignierte Testversionen; Gatekeeper/SmartScreen können sie beanstanden.
+- **Browser preview**: testet den Produktionsbuild und veröffentlicht ausschließlich `dist/`. Pages muss unter **Settings → Pages → GitHub Actions** aktiviert sein. Ein Fehler im separaten Desktop-Workflow blockiert den Browser-Workflow nicht.
+
+CI verwendet `npm ci`, strikten Typecheck, ESLint, Vitest, den nativen Annotations-POC und Playwright/Chromium. Aktionen sind auf Commit-SHAs festgelegt. PR-Workflows besitzen nur Leserechte; nur der Pages-Deploy-Job erhält Pages-Schreibrechte und ein OIDC-Token.
+
+## Entwicklung in Codex Cloud
+
+Node.js 24 verwenden; Abhängigkeiten und Versionen stehen in `package-lock.json`.
+
+```sh
+npm ci
+npm run dev
+npm run typecheck
+npm run lint
+npm test
+npm run poc
+npx playwright install --with-deps chromium
+npm run test:e2e
+npm run build
+```
+
+In der bereitgestellten Cloud kann `CHROMIUM_PATH=/usr/bin/chromium npm run test:e2e` den installierten Browser verwenden. Die E2E-Konfiguration startet den gebauten Viewer unter `/PDF-Annotation-Editor/` und prüft damit auch Worker-/WASM-Pfade für GitHub Pages. Falls das Standard-npm-Cacheverzeichnis schreibgeschützt ist, `npm --cache /workspace/.npm-cache ci` verwenden. Der POC erzeugt die Testdateien; ihn vor E2E ausführen.
+
+Tauri 2 liegt in `src-tauri/`. Nach Installation der [offiziellen Plattformvoraussetzungen](https://v2.tauri.app/start/prerequisites/) startet `npm run tauri -- dev` die Desktop-Hülle. Sie nutzt dieselbe lokale File-API und hat keine eigenen Dateisystem-/Shell-Kommandos oder zusätzlichen Plugin-Berechtigungen. Windows/macOS werden auf ihren GitHub-Runnern gebaut.
+
+## Architektur und Grenzen
+
+- `src/core/viewport.ts`: testbare Koordinatenumrechnung und pointerverankerter Zoom.
+- `src/adapters/pdf/`: MuPDF-WASM im Worker; expliziter Start-Handshake, 30-Sekunden-Zeitlimit und Freigabe nativer Objekte. PDF-JavaScript wird nicht aktiviert, Links werden nicht ausgeführt.
+- `src/App.tsx`: sofortige CSS-Transformation beim Navigieren; nach 140 ms Ruhe hochauflösendes Nachrendern. Sichtbare Seiten werden priorisiert, maximal sechs Canvases und drei gecachte Raster gehalten.
+- Limits: 100 MB pro Datei, 2000 Seiten, 20000 PDF-Punkte pro Seitenkante, 4 Megapixel / 4096 Pixel pro Raster. Hoher Zoom wird dadurch weich; Tile-Rendering und belastbare Messungen großer realer Baupläne sind Folgearbeit. Parser-Speicher ist durch diese Rasterlimits nicht vollständig begrenzt.
+- Passwortgeschützte, reparaturbedürftige oder unbrauchbare PDFs zeigen eine Fehlermeldung. Signaturvalidierung, Textauswahl/Suche, Annotationstools, Undo/Redo, Recovery und direktes Speichern gehören noch nicht zu diesem Meilenstein.
+
+[POC und tatsächliche Testergebnisse](docs/VALIDATION.md) · [Anforderungen](docs/REQUIREMENTS.md) · [Architektur](docs/ARCHITECTURE.md)
+
+## Lizenz
+
+Projekt: AGPL-3.0 (siehe [LICENSE](LICENSE)). MuPDF.js **1.28.6** wird laut npm-Paket als **AGPL-3.0-or-later** angeboten und im Browser als WASM eingebunden. Der öffentliche Quellcode ist in der Oberfläche verlinkt. React: MIT; Vite/TypeScript und weitere Entwicklungsabhängigkeiten gemäß ihren Paketlizenzen. Die Kombination wird als Open-Source-AGPL-Prototyp untersucht; eine kommerzielle Lizenz wurde nicht erworben. Vor Vertrieb sind die vollständigen Lizenz-/Hinweispflichten einschließlich nativer transitiver Abhängigkeiten zu prüfen.
