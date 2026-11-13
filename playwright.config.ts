@@ -15,5 +15,7 @@ export default defineConfig({
     url: "http://127.0.0.1:4173/PDF-Annotation-Editor/",
     reuseExistingServer: false,
   },
-  reporter: [["list"], ["html", { open: "never" }]],
+  reporter: process.env.CI
+    ? [["github"], ["list"], ["html", { open: "never" }]]
+    : [["list"], ["html", { open: "never" }]],
 });
