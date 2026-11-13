@@ -125,6 +125,9 @@ it("preserves native opacity, border, appearance and custom properties without p
     expect(a.getObject().get("BS", "D").asJS()).toEqual([2, 3]);
     expect(a.getObject().get("PrivateTag").asString()).toBe("keep-me");
     expect(a.getObject().get("NM").asString()).not.toBe("old-identity");
+    expect(a.getObject().get("C").isNull()).toBe(true);
+    expect(a.getObject().get("Name").asName()).toBe("Comment");
+    expect(a.getObject().get("F").isNull()).toBe(true);
     expect(a.getObject().get("AP", "N").isStream()).toBe(true);
     p.destroy();
   } finally {

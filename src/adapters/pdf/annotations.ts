@@ -328,6 +328,13 @@ export class AnnotationEditor {
                 throw new Error("Nicht unterstützter Zwischenablageinhalt.");
               const a = p.createAnnotation(item.type);
               const object = a.getObject();
+              // Creation installs defaults (e.g. yellow Text icons). Do not add
+              // properties that were absent on the source annotation.
+              const defaults: (string | number)[] = [];
+              object.forEach((_value, key) => {
+                if (key !== "P") defaults.push(key);
+              });
+              defaults.forEach((key) => object.delete(key));
               const copied = graft.graftObject(objects.get(index));
               copied.forEach((value, key) => object.put(key, value));
               if (item.type === "Ink") {
@@ -468,7 +475,7 @@ export class AnnotationEditor {
           this.operations[position - 1] = {
             command: structuredClone(c),
             createdIds: Array.isArray(id)
-              ? id
+              ? [...id]
               : c.action === "create" && id !== null
                 ? [id]
                 : [],

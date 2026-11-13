@@ -110,6 +110,8 @@ test("right-click menus copy and cut the full selection with native paste and at
         before[i].getObject().toString(),
       );
       expect(after[i + 5].getType()).toBe(before[i].getType());
+      expect(after[i + 5].getColor()).toEqual(before[i].getColor());
+      expect(after[i + 5].getFlags()).toBe(before[i].getFlags());
       expect(after[i + 5].getContents()).toBe(before[i].getContents());
       expect(rect(after[i + 5])[0]).toBeCloseTo(
         rect(before[i])[0] - minX + 30,

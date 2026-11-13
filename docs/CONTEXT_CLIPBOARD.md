@@ -18,7 +18,7 @@ Auswahl/Kopieren verändert die PDF nicht. Ausschneiden entfernt die ausgewählt
 
 ## Native PDF-Umsetzung
 
-Der Worker erstellt eine kleine eigenständige PDF mit den nativen Annotation-Dictionaries und ihren Appearance-/Ressourcenobjekten. Seiten-/Popup-/Antwortverknüpfungen und alte Annotation-Identitäten werden nicht übernommen. Zielobjekte bekommen neue IDs; Inhalt, Geometrie, Farbe, Transparenz, Rahmen und unterstützte weitere Eigenschaften stammen aus der Momentaufnahme. Ink-Koordinaten sowie Rect/Rotate werden in die Zielseitenansicht übertragen.
+Der Worker erstellt eine kleine eigenständige PDF mit den nativen Annotation-Dictionaries und ihren Appearance-/Ressourcenobjekten. Seiten-/Popup-/Antwortverknüpfungen und alte Annotation-Identitäten werden nicht übernommen. Zielobjekte bekommen neue IDs; beim Erzeugen eingetragene Standardwerte werden vor dem Kopieren entfernt, damit z. B. fehlende Farben oder Druckflags nicht ergänzt werden; Inhalt, Geometrie, Farbe, Transparenz, Rahmen und unterstützte weitere Eigenschaften stammen aus der Momentaufnahme. Ink-Koordinaten sowie Rect/Rotate werden in die Zielseitenansicht übertragen.
 
 Ausschneiden/Einfügen verwenden jeweils eine MuPDF-Journaloperation. Ungültige Gruppen oder fehlgeschlagene Einfügungen werden vollständig zurückgenommen. Export-Replay berücksichtigt auch mehrere durch einen Paste erzeugte IDs, einschließlich späterer Änderungen, Löschung, Undo/Redo und neuer Historienzweige.
 
