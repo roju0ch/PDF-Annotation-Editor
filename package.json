@@ -13,7 +13,7 @@
     "preview": "vite preview --host 0.0.0.0",
     "typecheck": "tsc -b",
     "lint": "eslint .",
-    "test": "vitest run",
+    "test": "node scripts/fixtures.mjs && vitest run",
     "test:e2e": "playwright test",
     "poc": "node scripts/annotation-poc.mjs",
     "tauri": "tauri"

@@ -1,4 +1,4 @@
-import type { Request, Reply } from "./types";
+import type { Payload, Reply } from "./types";
 export class PdfClient {
   private worker = new Worker(new URL("./pdf.worker.ts", import.meta.url), {
     type: "module",
@@ -33,11 +33,7 @@ export class PdfClient {
     this.worker.onerror = () =>
       this.dispose("PDF-Modul konnte nicht geladen werden. Bitte neu öffnen.");
   }
-  request(
-    payload:
-      | Omit<Extract<Request, { type: "open" }>, "id">
-      | Omit<Extract<Request, { type: "render" }>, "id">,
-  ): Promise<Reply> {
+  request(payload: Payload): Promise<Reply> {
     if (this.closed) return Promise.reject(new Error(this.closed));
     const id = ++this.next;
     return new Promise((resolve, reject) => {

@@ -27,7 +27,7 @@ test("real multipage PDF, pointer zoom, middle/space pan and no content upload",
     expect(r.method()).toBe("GET");
   });
   await open(page);
-  await expect(page.getByText("3 Seiten · Nur Ansicht")).toBeVisible();
+  await expect(page.getByText("3 Seiten · Native Annotationen")).toBeVisible();
   const colors = await page
     .locator("canvas")
     .evaluate((el: HTMLCanvasElement) => {
