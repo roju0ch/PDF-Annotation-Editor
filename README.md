@@ -12,13 +12,13 @@ Die [Browser-Vorschau](https://roju0ch.github.io/PDF-Annotation-Editor/) zeigt d
 4. Im selben Menü Seiten über Pfeile oder Seitennummer wechseln. **Seite einpassen**, **Breite** und **Fortlaufend** stehen zur Verfügung.
 
 5. Das **Stiftsymbol** öffnet die Werkzeuge. Freihand, Notiz oder Textfeld wählen, Einstellungen setzen und das Menü mit **×** schließen. Auf der aktuellen Seite zeichnen bzw. zum Platzieren klicken/tippen. Farbe, Strichbreite und Schriftgröße stehen passend zum Werkzeug bereit.
-6. **Auswählen / Verschieben** verwenden oder über das **Listensymbol** die Annotationen öffnen und ein Objekt auswählen. Inhalt/Eigenschaften ändern und **Übernehmen** wählen. Änderungen können rückgängig gemacht und wiederholt werden. Gesperrte oder nicht unterstützte Objekte bleiben erhalten.
+6. **Auswählen / Verschieben** verwenden: Auf freier Fläche eine Auswahlbox ziehen. Bereits berührte Markierungen werden ausgewählt; sie müssen nicht vollständig in der Box liegen. An einer ausgewählten Markierung ziehen, um die ganze Gruppe zu verschieben. **Rückgängig** nimmt die Gruppenbewegung in einem Schritt zurück. Ein Klick auf freie Fläche hebt die Auswahl auf. Alternativ über das **Listensymbol** die Annotationen öffnen und ein einzelnes Objekt auswählen. Inhalt/Eigenschaften ändern und **Übernehmen** wählen. Änderungen können rückgängig gemacht und wiederholt werden. Gesperrte oder nicht unterstützte Objekte bleiben erhalten.
 7. **Ink-Teilradierer (Klick)** schneidet einen Kreis aus einem angeklickten Freihandobjekt. Er ist kein durchgehender Wischradierer. **Annotation löschen** entfernt das ausgewählte unterstützte Objekt vollständig.
 8. Das **Downloadsymbol** (**PDF herunterladen**) oder Ctrl/Cmd+S erzeugt eine neue `…-annotiert.pdf`. Das Original wird nicht überschrieben. Nach dem Download die neue Datei prüfen; der Browser bestätigt dem Programm nicht, ob sie endgültig auf Datenträger gespeichert wurde.
 
 Die Oberfläche zeigt nur eine schmale Hauptleiste und eine Statuszeile. Ansicht, Werkzeuge und Annotationsliste erscheinen bei Bedarf als überlagerte Menüs. Schließen mit **×**, Escape oder einem Klick außerhalb; dieser Klick zeichnet keine Annotation. Auch ausgeblendete, noch nicht übernommene Eigenschaften bleiben erhalten. Die Menüs benötigen einen aktuellen Browser mit Popover-Unterstützung. [Layout-Prüfung und Screenshots](docs/COMPACT_LAYOUT.md).
 
-Touch unterstützt Platzieren/Zeichnen, Pan und Zwei-Finger-Pinch; ein zweiter Finger bricht einen noch nicht abgeschlossenen Strich bzw. eine Platzierung ab. Reale Geräte müssen weiter geprüft werden. Der Editor warnt beim Dateiwechsel und Schließen vor ungesicherten Änderungen. **Automatische Wiederherstellung ist noch nicht enthalten:** regelmäßig exportieren. Textfelder haben zunächst eine feste Ausgangsgröße; nachträgliche Größenänderung, weitere Formen, Textmarker und kontinuierliches Radieren folgen später.
+Touch unterstützt Auswahlbox und Gruppenbewegung mit einem Finger sowie Pan und Zoom mit zwei Fingern; ein zweiter Finger bricht eine laufende Auswahlbox, Verschiebung, einen Strich bzw. eine Platzierung ab. [Gruppenauswahl und tatsächliche Prüfung](docs/GROUP_SELECTION.md). Reale Geräte müssen weiter geprüft werden. Der Editor warnt beim Dateiwechsel und Schließen vor ungesicherten Änderungen. **Automatische Wiederherstellung ist noch nicht enthalten:** regelmäßig exportieren. Textfelder haben zunächst eine feste Ausgangsgröße; nachträgliche Größenänderung, weitere Formen, Textmarker und kontinuierliches Radieren folgen später.
 
 ## Cloud-Builds ohne lokale Werkzeuge
 
@@ -28,7 +28,7 @@ Unter [GitHub Actions](https://github.com/roju0ch/PDF-Annotation-Editor/actions)
 - **Desktop test builds (unsigned)**: separate Linux-, Windows- und macOS-Jobs liefern `.deb`, NSIS-Installer bzw. ein ZIP der `.app`. Erfolgreiche Paketerstellung ist noch kein Test der Desktop-Bedienung. Die Pakete sind unsignierte Testversionen; Gatekeeper/SmartScreen können sie beanstanden.
 - **Browser preview**: testet den Produktionsbuild und veröffentlicht ausschließlich `dist/`. Pages muss unter **Settings → Pages → GitHub Actions** aktiviert sein. Ein Fehler im separaten Desktop-Workflow blockiert den Browser-Workflow nicht.
 
-CI verwendet `npm ci`, strikten Typecheck, ESLint, Vitest, den nativen Annotations-POC und Playwright/Chromium sowie zusätzliche Firefox-Layouttests. Aktionen sind auf Commit-SHAs festgelegt. PR-Workflows besitzen nur Leserechte; nur der Pages-Deploy-Job erhält Pages-Schreibrechte und ein OIDC-Token.
+CI verwendet `npm ci`, strikten Typecheck, ESLint, Vitest, den nativen Annotations-POC und Playwright/Chromium sowie zusätzliche Firefox-Layout- und Gruppenauswahltests. Aktionen sind auf Commit-SHAs festgelegt. PR-Workflows besitzen nur Leserechte; nur der Pages-Deploy-Job erhält Pages-Schreibrechte und ein OIDC-Token.
 
 ## Entwicklung in Codex Cloud
 
@@ -43,7 +43,7 @@ npm test
 npm run poc
 npx playwright install --with-deps chromium firefox
 npm run test:e2e
-PLAYWRIGHT_BROWSER=firefox PLAYWRIGHT_HTML_OUTPUT_DIR=playwright-report-firefox npm run test:e2e -- tests/e2e/layout.spec.ts
+PLAYWRIGHT_BROWSER=firefox PLAYWRIGHT_HTML_OUTPUT_DIR=playwright-report-firefox npm run test:e2e -- tests/e2e/layout.spec.ts tests/e2e/selection.spec.ts
 npm run build
 ```
 

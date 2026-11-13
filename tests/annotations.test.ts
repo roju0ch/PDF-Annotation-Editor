@@ -454,3 +454,115 @@ it("keeps rendered ink and exported geometry consistent through undo/redo", () =
     doc.destroy();
   }
 });
+
+describe("atomic group movement", () => {
+  it.each([0, 1])(
+    "moves Ink, Text and FreeText on page %i in one undo step and preserves export geometry",
+    (index) => {
+      const { doc, editor } = setup();
+      try {
+        const ids = (["Ink", "Text", "FreeText"] as const).map((kind) =>
+          create(editor, kind, index),
+        );
+        const before = editor.list(index).filter((a) => ids.includes(a.id));
+        const position = doc.getJournal().position;
+        editor.apply({
+          action: "move",
+          page: index,
+          ids,
+          offset: { x: 25, y: -35 },
+        });
+        expect(doc.getJournal().position).toBe(position + 1);
+        const after = editor.list(index).filter((a) => ids.includes(a.id));
+        for (let i = 0; i < before.length; i++) {
+          after[i].rect.forEach((v, j) =>
+            expect(v).toBeCloseTo(
+              before[i].rect[j] + (j % 2 === 0 ? 25 : -35),
+              3,
+            ),
+          );
+          expect(after[i].contents).toBe(before[i].contents);
+        }
+        expect(after.find((a) => a.type === "Ink")!.ink![0][0]).toEqual({
+          x: 65,
+          y: 165,
+        });
+        editor.apply({ action: "undo" });
+        expect(editor.list(index).filter((a) => ids.includes(a.id))).toEqual(
+          before,
+        );
+        editor.apply({ action: "redo" });
+        expect(editor.list(index).filter((a) => ids.includes(a.id))).toEqual(
+          after,
+        );
+        const bytes = editor.export();
+        const saved = new mupdf.PDFDocument(bytes);
+        try {
+          const reopened = new AnnotationEditor(saved, bytes);
+          expect(
+            reopened.list(index).filter((a) => ids.includes(a.id)),
+          ).toEqual(after);
+        } finally {
+          saved.destroy();
+        }
+        editor.apply({ action: "undo" });
+        create(editor, "Ink", index);
+        editor.apply({
+          action: "move",
+          page: index,
+          ids,
+          offset: { x: -10, y: 12 },
+        });
+        const branched = new mupdf.PDFDocument(editor.export());
+        try {
+          const page = branched.loadPage(index);
+          expect(
+            page.getAnnotations().filter((a) => a.getType() === "Ink"),
+          ).toHaveLength(2);
+          page.destroy();
+          expect(branched.wasRepaired()).toBe(false);
+        } finally {
+          branched.destroy();
+        }
+      } finally {
+        doc.destroy();
+      }
+    },
+  );
+  it("rolls back the entire group if a later item is protected, missing or has invalid destination geometry", () => {
+    const doc = new mupdf.PDFDocument(input());
+    const page = doc.loadPage(0);
+    const lockedId = page.getAnnotations()[0].getObject().asIndirect();
+    page.getAnnotations()[0].setFlags(mupdf.PDFAnnotation.IS_LOCKED);
+    page.destroy();
+    const editor = new AnnotationEditor(doc, input());
+    try {
+      const id = create(editor, "Ink");
+      const before = editor.list(0),
+        state = editor.state();
+      for (const ids of [[id, lockedId], [id, 999999], [id, id], []]) {
+        expect(() =>
+          editor.apply({
+            action: "move",
+            page: 0,
+            ids,
+            offset: { x: 10, y: 20 },
+          }),
+        ).toThrow();
+        expect(editor.list(0)).toEqual(before);
+        expect(editor.state()).toEqual(state);
+      }
+      expect(() =>
+        editor.apply({
+          action: "move",
+          page: 0,
+          ids: [id],
+          offset: { x: Infinity, y: 0 },
+        }),
+      ).toThrow();
+      expect(editor.list(0)).toEqual(before);
+    } finally {
+      doc.destroy();
+    }
+  });
+});

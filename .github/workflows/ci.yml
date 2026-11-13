@@ -26,8 +26,8 @@ jobs:
       - run: npm run poc
       - run: npx playwright install --with-deps chromium firefox
       - run: npm run test:e2e
-      - name: Firefox responsive layout
-        run: npm run test:e2e -- tests/e2e/layout.spec.ts
+      - name: Firefox layout and group selection
+        run: npm run test:e2e -- tests/e2e/layout.spec.ts tests/e2e/selection.spec.ts
         env:
           PLAYWRIGHT_BROWSER: firefox
           PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report-firefox

@@ -179,6 +179,27 @@ export class AnnotationEditor {
         const v = transform(pt, matrix);
         return [v.x, v.y];
       };
+      const move = (
+        a: mupdf.PDFAnnotation,
+        item: Annotation,
+        offset: Point,
+      ) => {
+        checkPoint(offset);
+        const { x, y } = offset;
+        if (item.type === "Ink")
+          a.setInkList(
+            item.ink!.map((path) =>
+              path.map((pt) => toPage({ x: pt.x + x, y: pt.y + y })),
+            ),
+          );
+        else {
+          const rect = item.rect.map(
+            (v, i) => v + (i % 2 === 0 ? x : y),
+          ) as PdfRect;
+          checkRect(rect);
+          a.setRect(mupdf.Rect.transform(rect, matrix));
+        }
+      };
       const beforePosition = this.doc.getJournal().position;
       this.doc.beginOperation(c.action);
       try {
@@ -216,6 +237,27 @@ export class AnnotationEditor {
             }
           }
           a.update();
+        } else if (c.action === "move") {
+          if (!c.ids.length || new Set(c.ids).size !== c.ids.length)
+            throw new Error("Ungültige Gruppenauswahl.");
+          checkPoint(c.offset);
+          const items = new Map(
+            this.list(c.page).map((item) => [item.id, item]),
+          );
+          const native = new Map(
+            p.getAnnotations().map((a) => [a.getObject().asIndirect(), a]),
+          );
+          for (const selectedId of c.ids) {
+            const item = items.get(selectedId);
+            const a = native.get(selectedId);
+            if (!item?.editable || !a)
+              throw new Error(
+                "Die Auswahl enthält eine nicht bearbeitbare Annotation.",
+              );
+            move(a, item, c.offset);
+            a.update();
+          }
+          id = null;
         } else {
           const item = this.list(c.page).find((a) => a.id === c.id);
           if (!item?.editable)
@@ -273,23 +315,7 @@ export class AnnotationEditor {
                 da.color,
               );
             }
-            if (patch.offset) {
-              checkPoint(patch.offset);
-              const { x, y } = patch.offset;
-              if (item.type === "Ink")
-                a.setInkList(
-                  item.ink!.map((path) =>
-                    path.map((pt) => toPage({ x: pt.x + x, y: pt.y + y })),
-                  ),
-                );
-              else {
-                const rect = item.rect.map(
-                  (v, i) => v + (i % 2 === 0 ? x : y),
-                ) as PdfRect;
-                checkRect(rect);
-                a.setRect(mupdf.Rect.transform(rect, matrix));
-              }
-            }
+            if (patch.offset) move(a, item, patch.offset);
             a.update();
           }
         }
@@ -333,6 +359,8 @@ export class AnnotationEditor {
       )) {
         const command = structuredClone(operation.command);
         if ("id" in command) command.id = ids.get(command.id) ?? command.id;
+        if (command.action === "move")
+          command.ids = command.ids.map((id) => ids.get(id) ?? id);
         const id = replay.apply(command);
         if (operation.createdId !== null && id !== null)
           ids.set(operation.createdId, id);
