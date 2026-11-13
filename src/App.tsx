@@ -1,6 +1,6 @@
 import { useAnnotations } from "./app/useAnnotations";
 import { AnnotationToolbar, AnnotationPanel } from "./app/AnnotationToolbar";
-import { MenuHeading, Icon } from "./app/CompactMenu";
+import { MenuHeading, Icon, handleMenuKeyDown } from "./app/CompactMenu";
 import { AnnotationOverlay } from "./app/AnnotationOverlay";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PdfClient } from "./adapters/pdf/client";
@@ -503,6 +503,7 @@ export default function App() {
         </button>
       </header>
       <section
+        onKeyDown={handleMenuKeyDown}
         id="view-menu"
         popover="auto"
         className="compact-menu view-menu"

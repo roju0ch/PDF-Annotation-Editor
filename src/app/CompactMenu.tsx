@@ -1,5 +1,20 @@
-import type { ReactNode } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
 
+function dismissMenu(target: string) {
+  document.getElementById(target)?.hidePopover();
+  document
+    .querySelector<HTMLButtonElement>(
+      `header button[popovertarget="${target}"]`,
+    )
+    ?.focus();
+}
+export function handleMenuKeyDown(event: KeyboardEvent<HTMLElement>) {
+  if (event.key === "Escape") {
+    event.preventDefault();
+    event.stopPropagation();
+    dismissMenu(event.currentTarget.id);
+  }
+}
 const paths = {
   open: "M3 7h6l2-3h10v16H3V7Zm0 4h18",
   pen: "m4 16-1 5 5-1L21 7l-4-4L4 16Zm10-10 4 4",
@@ -37,8 +52,7 @@ export function MenuHeading({
     <div className="menu-heading">
       <h2>{children}</h2>
       <button
-        popoverTarget={target}
-        popoverTargetAction="hide"
+        onClick={() => dismissMenu(target)}
         aria-label="Menü schließen"
         title="Schließen"
       >
