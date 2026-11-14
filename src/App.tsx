@@ -1,3 +1,4 @@
+import { AnnotationContextMenu } from "./app/AnnotationContextMenu";
 import { useAnnotations } from "./app/useAnnotations";
 import { AnnotationToolbar, AnnotationPanel } from "./app/AnnotationToolbar";
 import { MenuHeading, Icon, useMenuKeyboard } from "./app/CompactMenu";
@@ -68,7 +69,7 @@ export default function App() {
   }, []);
   const annotation = useAnnotations(
     client,
-    { view, pages, tops, continuous, page },
+    { view, pages, tops, continuous, page, box },
     name,
     invalidate,
     setError,
@@ -126,6 +127,14 @@ export default function App() {
   useEffect(() => {
     const el = stage.current!;
     let space = false;
+    let hold: ReturnType<typeof setTimeout> | undefined;
+    let holdStart: Point | null = null;
+    const consumed = new Set<number>();
+    const clearHold = () => {
+      clearTimeout(hold);
+      hold = undefined;
+      holdStart = null;
+    };
     const points = new Map<number, Point>();
     let drag: Point | null = null;
     const local = (e: { clientX: number; clientY: number }): Point => {
@@ -133,6 +142,8 @@ export default function App() {
       return { x: e.clientX - b.left, y: e.clientY - b.top };
     };
     const wheel = (e: WheelEvent) => {
+      clearHold();
+      annotationInput.current.closeContext();
       if (!current.current.pages.length) return;
       e.preventDefault();
       annotationInput.current.cancel();
@@ -151,12 +162,30 @@ export default function App() {
     };
     const down = (e: PointerEvent) => {
       // A click outside a menu dismisses it; it must not also draw on the PDF.
-      if (document.querySelector(".compact-menu:popover-open")) return;
+      if (
+        document.querySelector(
+          ".compact-menu:popover-open, .annotation-context-menu",
+        )
+      )
+        return;
       if (!current.current.pages.length) return;
+      annotationInput.current.hover(local(e));
       if (e.pointerType === "touch") {
         points.set(e.pointerId, local(e));
-        if (points.size === 1) annotationInput.current.begin(local(e));
-        else annotationInput.current.cancel();
+        clearHold();
+        if (points.size === 1) {
+          annotationInput.current.begin(local(e));
+          const start = local(e),
+            screen = { x: e.clientX, y: e.clientY };
+          holdStart = start;
+          hold = setTimeout(() => {
+            if (annotationInput.current.openContext(start, screen)) {
+              consumed.add(e.pointerId);
+              points.clear();
+            }
+            clearHold();
+          }, 600);
+        } else annotationInput.current.cancel();
         el.setPointerCapture(e.pointerId);
         e.preventDefault();
       } else if (e.button === 1 || (e.button === 0 && space)) {
@@ -173,6 +202,10 @@ export default function App() {
     };
     const move = (e: PointerEvent) => {
       const p = local(e);
+      annotationInput.current.hover(p);
+      if (holdStart && Math.hypot(p.x - holdStart.x, p.y - holdStart.y) > 8)
+        clearHold();
+      if (consumed.has(e.pointerId)) return;
       if (points.has(e.pointerId)) {
         const old = [...points.values()];
         points.set(e.pointerId, p);
@@ -216,6 +249,13 @@ export default function App() {
       }
     };
     const up = (e: PointerEvent) => {
+      clearHold();
+      if (consumed.delete(e.pointerId)) {
+        e.preventDefault();
+        annotationInput.current.cancel();
+        points.delete(e.pointerId);
+        return;
+      }
       if (e.type === "pointerup") annotationInput.current.finish();
       else annotationInput.current.cancel();
       points.delete(e.pointerId);
@@ -223,6 +263,7 @@ export default function App() {
       el.classList.remove("panning");
     };
     const keydown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") clearHold();
       if (e.code === "Space" && !inputTarget(e.target)) {
         space = true;
         e.preventDefault();
@@ -232,12 +273,28 @@ export default function App() {
       if (e.code === "Space") space = false;
     };
     const reset = () => {
+      clearHold();
+      consumed.clear();
       annotationInput.current.cancel();
       space = false;
       drag = null;
       points.clear();
       el.classList.remove("panning");
     };
+    const context = (e: MouseEvent) => {
+      clearHold();
+      if (
+        annotationInput.current.openContext(local(e), {
+          x: e.clientX,
+          y: e.clientY,
+        })
+      ) {
+        e.preventDefault();
+        for (const id of points.keys()) consumed.add(id);
+        points.clear();
+      }
+    };
+    const leave = () => annotationInput.current.hover(null);
     const aux = (e: MouseEvent) => {
       if (e.button === 1) e.preventDefault();
     };
@@ -248,10 +305,15 @@ export default function App() {
     el.addEventListener("pointercancel", up);
     el.addEventListener("lostpointercapture", up);
     el.addEventListener("auxclick", aux);
+    el.addEventListener("contextmenu", context);
+    el.addEventListener("pointerleave", leave);
     window.addEventListener("keydown", keydown);
     window.addEventListener("keyup", keyup);
     window.addEventListener("blur", reset);
     return () => {
+      clearHold();
+      el.removeEventListener("contextmenu", context);
+      el.removeEventListener("pointerleave", leave);
       el.removeEventListener("wheel", wheel);
       el.removeEventListener("pointerdown", down);
       el.removeEventListener("pointermove", move);
@@ -694,6 +756,13 @@ export default function App() {
         </div>
         <AnnotationPanel editor={annotation} page={page} />
       </div>
+      {annotation.contextMenu && (
+        <AnnotationContextMenu
+          editor={annotation}
+          context={annotation.contextMenu}
+          stage={stage}
+        />
+      )}
       <footer>
         {annotation.selection.length > 1 && (
           <span className="selection-count" role="status">
@@ -706,7 +775,9 @@ export default function App() {
             : annotation.unsaved
               ? "Ungesicherte Änderungen"
               : ""}
-          {annotation.notice && !annotation.unsaved ? annotation.notice : ""}
+          {annotation.notice && !annotation.busy
+            ? `${annotation.unsaved ? " · " : ""}${annotation.notice}`
+            : ""}
         </span>
         <span className="filename">{name || "Keine Datei geöffnet"}</span>
         <span className="document-status">

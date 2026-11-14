@@ -449,3 +449,37 @@ footer .edit-status {
     display: none;
   }
 }
+
+.annotation-context-menu {
+  position: fixed;
+  z-index: 10;
+  width: max-content;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100dvh - 16px);
+  overflow: auto;
+  padding: 4px;
+  border: 1px solid #bccdcc;
+  border-radius: 8px;
+  background: #fbfdfc;
+  box-shadow: 0 8px 30px #17343b30;
+  font-size: 12px;
+}
+.annotation-context-menu button {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 36px;
+  border: 0;
+  text-align: left;
+}
+.annotation-context-menu kbd {
+  font: inherit;
+  font-size: 10px;
+  color: #62777e;
+}
+.stage {
+  -webkit-touch-callout: none;
+  user-select: none;
+}

@@ -1,4 +1,4 @@
-import type { Point } from "../viewport";
+import type { Matrix, Point } from "../viewport";
 /** Coordinates are unrotated PDF user-space points, not CSS or MuPDF page space. */
 export type PdfRect = [number, number, number, number];
 export type AnnotationKind = "Ink" | "Text" | "FreeText";
@@ -13,6 +13,13 @@ export type Annotation = {
   width: number;
   fontSize: number;
   ink?: Point[][];
+};
+/** In-memory native PDF snapshot; never written to the system clipboard. */
+export type AnnotationClipboard = {
+  bytes: Uint8Array<ArrayBuffer>;
+  items: Annotation[];
+  matrix: Matrix;
+  pageRotation: number;
 };
 export type AnnotationPatch = {
   contents?: string;
@@ -33,6 +40,13 @@ export type AnnotationCommand =
       width: number;
       fontSize: number;
     }
+  | {
+      action: "paste";
+      page: number;
+      point: Point;
+      clipboard: AnnotationClipboard;
+    }
+  | { action: "delete-many"; page: number; ids: number[] }
   | { action: "move"; page: number; ids: number[]; offset: Point }
   | { action: "update"; page: number; id: number; patch: AnnotationPatch }
   | { action: "delete"; page: number; id: number }

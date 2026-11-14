@@ -66,6 +66,16 @@ self.onmessage = ({ data: r }: MessageEvent<Request>) => {
         annotations: editor.list(r.page),
         editor: editor.state(),
       } satisfies Reply);
+    } else if (r.type === "copy") {
+      if (!editor) throw new Error("Keine PDF geöffnet.");
+      const clipboard = editor.copy(r.page, r.ids);
+      if (r.cut)
+        editor.apply({ action: "delete-many", page: r.page, ids: r.ids });
+      self.postMessage({
+        id: r.id,
+        clipboard,
+        editor: editor.state(),
+      } satisfies Reply);
     } else if (r.type === "edit") {
       if (!editor) throw new Error("Keine PDF geöffnet.");
       const selected = editor.apply(r.command);

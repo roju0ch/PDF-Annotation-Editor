@@ -22,6 +22,7 @@ import {
 import type {
   Annotation,
   AnnotationCommand,
+  AnnotationClipboard,
   AnnotationKind,
   EditorState,
   PdfRect,
@@ -41,7 +42,14 @@ const empty: EditorState = {
   canRedo: false,
   readOnly: null,
 };
+export type AnnotationContext = {
+  mode: "selection" | "blank";
+  screen: Point;
+  page: number;
+  point: Point;
+};
 type Layout = {
+  box: Point;
   view: View;
   pages: PageInfo[];
   tops: number[];
@@ -68,6 +76,21 @@ export function useAnnotations(
     [text, setText] = useState("Notiz"),
     [radius, setRadius] = useState(12),
     [formDirty, setFormDirty] = useState(false);
+  const [contextMenu, setContextMenu] = useState<AnnotationContext | null>(
+    null,
+  );
+  const [hasClipboard, setHasClipboard] = useState(false);
+  const clipboard = useRef<AnnotationClipboard | null>(null);
+  const contextRef = useRef<AnnotationContext | null>(null);
+  const lastPointer = useRef<Point | null>(null);
+  const clipboardActions = useRef({
+    selectAll: () => {},
+    copy: (_cut: boolean) => {
+      void _cut;
+    },
+    paste: () => {},
+    closeContext: () => {},
+  });
   const lock = useRef(false),
     epoch = useRef(0),
     draftRef = useRef<Draft | null>(null),
@@ -111,12 +134,15 @@ export function useAnnotations(
     state,
     formDirty,
   ]);
-  const showDraft = (d: Draft | null) => {
+  const showDraft = useCallback((d: Draft | null) => {
     draftRef.current = d;
     setDraft(d);
-  };
+  }, []);
   const reset = useCallback((next: EditorState = empty) => {
     epoch.current++;
+    contextRef.current = null;
+    lastPointer.current = null;
+    setContextMenu(null);
     setState(next);
     setItems([]);
     setSelection([]);
@@ -163,9 +189,16 @@ export function useAnnotations(
         setState(r.editor!);
         if (command.action === "move") setSelection(command.ids);
         else if (command.action !== "undo" && command.action !== "redo")
-          setSelection(r.selected == null ? [] : [r.selected]);
+          setSelection(
+            Array.isArray(r.selected)
+              ? r.selected
+              : r.selected == null
+                ? []
+                : [r.selected],
+          );
         setFormDirty(false);
         invalidate();
+        return r;
       } catch (e) {
         if (token === epoch.current)
           onError(
@@ -220,6 +253,150 @@ export function useAnnotations(
       }
     }
   }, [client, name, onError]);
+  const closeContext = useCallback(() => {
+    contextRef.current = null;
+    setContextMenu(null);
+  }, []);
+  const copySelection = useCallback(
+    async (cut = false) => {
+      const cur = current.current,
+        c = client.current;
+      if (
+        !c ||
+        lock.current ||
+        cur.formDirty ||
+        cur.state.readOnly ||
+        !cur.selection.length
+      )
+        return;
+      const ids = cur.selection.filter((id) =>
+        cur.items.some(
+          (a) => a.id === id && a.page === cur.layout.page && a.editable,
+        ),
+      );
+      if (ids.length !== cur.selection.length) return;
+      showDraft(null);
+      closeContext();
+      const token = epoch.current;
+      lock.current = true;
+      setBusy(true);
+      try {
+        const r = await c.request({
+          type: "copy",
+          page: cur.layout.page,
+          ids,
+          cut,
+        });
+        if (token !== epoch.current) return;
+        clipboard.current = r.clipboard!;
+        setHasClipboard(true);
+        setState(r.editor!);
+        if (cut) {
+          setSelection([]);
+          invalidate();
+        }
+        setNotice(
+          `${ids.length} ${ids.length === 1 ? "Markierung" : "Markierungen"} ${cut ? "ausgeschnitten" : "kopiert"}.`,
+        );
+      } catch (e) {
+        if (token === epoch.current)
+          onError(e instanceof Error ? e.message : "Kopieren fehlgeschlagen.");
+      } finally {
+        if (token === epoch.current) {
+          lock.current = false;
+          setBusy(false);
+        }
+      }
+    },
+    [client, closeContext, invalidate, onError, showDraft],
+  );
+  const selectAll = useCallback(() => {
+    const cur = current.current;
+    if (lock.current || cur.formDirty || cur.state.readOnly) return;
+    showDraft(null);
+    closeContext();
+    setTool("select");
+    setSelection(
+      cur.items
+        .filter((a) => a.page === cur.layout.page && a.editable)
+        .map((a) => a.id),
+    );
+  }, [closeContext, showDraft]);
+  async function paste() {
+    const cur = current.current,
+      clip = clipboard.current;
+    if (
+      !clip ||
+      lock.current ||
+      cur.formDirty ||
+      cur.state.readOnly ||
+      !cur.layout.pages.length
+    )
+      return;
+    const at =
+      contextRef.current ??
+      (lastPointer.current ? locate(lastPointer.current) : null);
+    const target =
+      at?.page === cur.layout.page
+        ? at
+        : locate(
+            { x: cur.layout.box.x / 2, y: cur.layout.box.y / 2 },
+            cur.layout.page,
+          );
+    if (!target) return;
+    showDraft(null);
+    closeContext();
+    setTool("select");
+    const result = await edit({
+      action: "paste",
+      page: target.page,
+      point: target.point,
+      clipboard: clip,
+    });
+    if (result)
+      setNotice(
+        `${clip.items.length} ${clip.items.length === 1 ? "Markierung" : "Markierungen"} eingefügt.`,
+      );
+  }
+  function openContext(p: Point, screen: Point) {
+    const cur = current.current,
+      at = locate(p);
+    if (
+      cur.tool !== "select" ||
+      cur.formDirty ||
+      cur.state.readOnly ||
+      !at ||
+      at.page !== cur.layout.page
+    )
+      return false;
+    const item = hit(at.point, at.page);
+    if (item && !item.editable) return false;
+    if (item && !cur.selection.includes(item.id)) setSelection([item.id]);
+    showDraft(null);
+    document
+      .querySelectorAll<HTMLElement>(".compact-menu:popover-open")
+      .forEach((menu) => menu.hidePopover());
+    const value: AnnotationContext = {
+      mode: item ? "selection" : "blank",
+      screen,
+      ...at,
+    };
+    contextRef.current = value;
+    setContextMenu(value);
+    return true;
+  }
+  useEffect(() => {
+    clipboardActions.current = {
+      selectAll,
+      copy: (cut) => {
+        void copySelection(cut);
+      },
+      paste: () => {
+        void paste();
+      },
+      closeContext,
+    };
+  });
   const unsaved =
     state.dirty ||
     formDirty ||
@@ -243,6 +420,10 @@ export function useAnnotations(
           e.target.closest("input,textarea,select")
         )
       ) {
+        if (contextRef.current) {
+          clipboardActions.current.closeContext();
+          return;
+        }
         if (draftRef.current) {
           draftRef.current = null;
           setDraft(null);
@@ -256,7 +437,23 @@ export function useAnnotations(
       }
       const typing =
         e.target instanceof HTMLElement &&
-        !!e.target.closest("input,textarea,select");
+        !!e.target.closest(
+          "input:not([type=file]),textarea,select,[contenteditable]:not([contenteditable=false])",
+        );
+      if (
+        !typing &&
+        !e.altKey &&
+        ["a", "c", "x", "v"].includes(e.key.toLowerCase())
+      ) {
+        e.preventDefault();
+        if (e.repeat) return;
+        const action = e.key.toLowerCase();
+        if (action === "a") clipboardActions.current.selectAll();
+        if (action === "c" || action === "x")
+          clipboardActions.current.copy(action === "x");
+        if (action === "v") clipboardActions.current.paste();
+        return;
+      }
       if (
         !typing &&
         !current.current.formDirty &&
@@ -447,6 +644,12 @@ export function useAnnotations(
     });
   }
   return {
+    contextMenu,
+    closeContext,
+    hasClipboard,
+    copySelection,
+    paste,
+    selectAll,
     state,
     tool,
     setTool,
@@ -474,6 +677,11 @@ export function useAnnotations(
     edit,
     save,
     gesture: {
+      openContext,
+      closeContext,
+      hover: (p: Point | null) => {
+        lastPointer.current = p;
+      },
       begin,
       move,
       finish,
