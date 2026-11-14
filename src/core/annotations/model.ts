@@ -29,7 +29,16 @@ export type AnnotationPatch = {
   offset?: Point;
   rect?: PdfRect;
 };
+export type PageCommand =
+  | { action: "reorder-pages"; order: number[] }
+  | {
+      action: "insert-pdf";
+      at: number;
+      bytes: Uint8Array<ArrayBuffer>;
+      name: string;
+    };
 export type AnnotationCommand =
+  | PageCommand
   | {
       action: "create-image";
       page: number;
@@ -67,6 +76,7 @@ export type EditorState = {
   canUndo: boolean;
   canRedo: boolean;
   readOnly: string | null;
+  pageReadOnly?: string | null;
 };
 export const annotationLabels: Record<string, string> = {
   Stamp: "Bild",

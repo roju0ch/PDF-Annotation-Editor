@@ -1,3 +1,4 @@
+import { PageOrganizer } from "./app/PageOrganizer";
 import { AnnotationContextMenu } from "./app/AnnotationContextMenu";
 import { useAnnotations } from "./app/useAnnotations";
 import {
@@ -71,12 +72,32 @@ export default function App() {
     cache.current.clear();
     setRenderRevision((v) => v + 1);
   }, []);
+  const pageContext = useRef({ pages, page, continuous, box });
+  useEffect(() => {
+    pageContext.current = { pages, page, continuous, box };
+  }, [pages, page, continuous, box]);
+  const pagesChanged = useCallback((next: PageInfo[], focusPage?: number) => {
+    const cur = pageContext.current;
+    const retained = next.findIndex((p) => p.id === cur.pages[cur.page]?.id);
+    const index =
+      focusPage ??
+      (retained >= 0 ? retained : Math.min(cur.page, next.length - 1));
+    setPages(next);
+    setPage(index);
+    const fitted = fit(next[index].width, next[index].height, cur.box);
+    if (cur.continuous)
+      fitted.y -=
+        next.slice(0, index).reduce((sum, p) => sum + p.height + 24, 0) *
+        fitted.scale;
+    setView(fitted);
+  }, []);
   const annotation = useAnnotations(
     client,
     { view, pages, tops, continuous, page, box },
     name,
     invalidate,
     setError,
+    pagesChanged,
   );
   const annotationInput = useRef(annotation.gesture);
   useEffect(() => {
@@ -506,6 +527,15 @@ export default function App() {
         <div className="document-actions">
           <button
             className="icon-button"
+            popoverTarget="pages-menu"
+            aria-label="Seitenübersicht"
+            title="Seiten sortieren und PDFs hinzufügen"
+            disabled={!ready}
+          >
+            <Icon name="pages" />
+          </button>
+          <button
+            className="icon-button"
             popoverTarget="annotations-menu"
             aria-label="Annotationen anzeigen"
             title="Annotationen und Eigenschaften"
@@ -681,6 +711,16 @@ export default function App() {
         }}
       />
       <AnnotationToolbar editor={annotation} ready={ready} />
+      <PageOrganizer
+        key={generation.current}
+        pages={pages}
+        page={page}
+        client={client}
+        editor={annotation}
+        navigate={navigate}
+        documentKey={generation.current}
+        onError={setError}
+      />
       {error && (
         <div role="alert" className="error">
           {error}

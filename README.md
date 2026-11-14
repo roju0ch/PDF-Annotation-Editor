@@ -16,6 +16,8 @@ Die [Browser-Vorschau](https://roju0ch.github.io/PDF-Annotation-Editor/) zeigt d
 7. **Ink-Teilradierer (Klick)** schneidet einen Kreis aus einem angeklickten Freihandobjekt. Er ist kein durchgehender Wischradierer. **Annotation löschen** entfernt das ausgewählte unterstützte Objekt vollständig.
 8. Das **Downloadsymbol** (**PDF herunterladen**) oder Ctrl/Cmd+S erzeugt eine neue `…-annotiert.pdf`. Das Original wird nicht überschrieben. Nach dem Download die neue Datei prüfen; der Browser bestätigt dem Programm nicht, ob sie endgültig auf Datenträger gespeichert wurde.
 
+**Seiten verwalten:** Über das **Seitensymbol** die Miniaturübersicht öffnen. Seiten per Drag-and-drop umordnen, auf Touch kurz halten und ziehen; **Vorher/Nachher** bietet eine Alternative. **PDF hinzufügen …** fügt eine weitere Datei am Ende oder nach der aktuellen Seite ein. Beides unterstützt Undo/Redo und wird mit **PDF herunterladen** gespeichert. Formulare und strukturierte/tagged PDFs sowie bestimmte komplexe Importquellen werden noch nicht unterstützt. [Bedienung, Erhalt nativer Objekte und Grenzen](docs/PAGE_ORGANIZER.md).
+
 Die Oberfläche zeigt eine schmale Hauptleiste und eine Statuszeile. Am Computer stehen die Werkzeuge in einer Zeile; bis 720 Pixel Breite gibt es zwei kompakte Zeilen mit Dokumentfunktionen oben und Werkzeugsymbolen darunter. Ansicht, Werkzeugeigenschaften und Annotationsliste erscheinen bei Bedarf als überlagerte Menüs. Schließen mit **×**, Escape oder einem Klick außerhalb; dieser Klick zeichnet keine Annotation. Auch ausgeblendete, noch nicht übernommene Eigenschaften bleiben erhalten. Die Menüs benötigen einen aktuellen Browser mit Popover-Unterstützung. [Aktuelle Symbolleiste und Screenshots](docs/DIRECT_TOOLS.md); [frühere Layout-Prüfung](docs/COMPACT_LAYOUT.md).
 
 Im Auswahlwerkzeug öffnet **Rechtsklick** oder **langes Drücken (ca. 0,6 Sekunden)** ein Kontextmenü: auf einer ausgewählten Markierung **Kopieren/Ausschneiden/Löschen**, auf freier Blattfläche **Einfügen/Alle Kommentare markieren**. Die Aktion betrifft die gesamte Auswahl. Löschen verändert die Zwischenablage nicht. Einfügen platziert die Gruppe an der gedrückten Stelle. Bewegung oder ein zweiter Finger verhindern das Langdruck-Menü.
@@ -56,7 +58,7 @@ npm test
 npm run poc
 npx playwright install --with-deps chromium firefox
 npm run test:e2e
-PLAYWRIGHT_BROWSER=firefox PLAYWRIGHT_HTML_OUTPUT_DIR=playwright-report-firefox npm run test:e2e -- tests/e2e/layout.spec.ts tests/e2e/selection.spec.ts tests/e2e/clipboard.spec.ts tests/e2e/images.spec.ts
+PLAYWRIGHT_BROWSER=firefox PLAYWRIGHT_HTML_OUTPUT_DIR=playwright-report-firefox npm run test:e2e -- tests/e2e/layout.spec.ts tests/e2e/selection.spec.ts tests/e2e/clipboard.spec.ts tests/e2e/images.spec.ts tests/e2e/pages.spec.ts
 npm run build
 ```
 

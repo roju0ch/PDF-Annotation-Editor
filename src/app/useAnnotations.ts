@@ -70,6 +70,7 @@ export function useAnnotations(
   name: string,
   invalidate: () => void,
   onError: (s: string) => void,
+  onPagesChange: (pages: PageInfo[], focusPage?: number) => void,
 ) {
   const [state, setState] = useState(empty),
     [tool, setTool] = useState<Tool>("select"),
@@ -196,7 +197,12 @@ export function useAnnotations(
   const edit = useCallback(
     async (command: AnnotationCommand) => {
       const c = client.current;
-      if (!c || lock.current) return;
+      if (
+        !c ||
+        lock.current ||
+        (current.current.formDirty && command.action !== "update")
+      )
+        return;
       const token = epoch.current;
       lock.current = true;
       setBusy(true);
@@ -205,7 +211,14 @@ export function useAnnotations(
         const r = await c.request({ type: "edit", command });
         if (token !== epoch.current) return;
         setState(r.editor!);
-        if (command.action === "move") setSelection(command.ids);
+        if (r.pages) {
+          setItems([]);
+          setSelection([]);
+          showDraft(null);
+          contextRef.current = null;
+          setContextMenu(null);
+          onPagesChange(r.pages, r.focusPage);
+        } else if (command.action === "move") setSelection(command.ids);
         else if (command.action !== "undo" && command.action !== "redo")
           setSelection(
             Array.isArray(r.selected)
@@ -229,8 +242,49 @@ export function useAnnotations(
         }
       }
     },
-    [client, invalidate, onError],
+    [client, invalidate, onError, onPagesChange, showDraft],
   );
+  async function insertPdf(file: File, at: number) {
+    if (
+      lock.current ||
+      current.current.formDirty ||
+      current.current.state.pageReadOnly
+    )
+      return;
+    const token = epoch.current;
+    lock.current = true;
+    setBusy(true);
+    try {
+      if (file.size < 5 || file.size > 100 * 1024 * 1024)
+        throw new Error("Bitte eine PDF bis 100 MB hinzufügen.");
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      if (token !== epoch.current) return;
+      lock.current = false;
+      const result = await edit({
+        action: "insert-pdf",
+        at,
+        bytes,
+        name: file.name,
+      });
+      if (result)
+        setNotice(
+          "PDF hinzugefügt. Rückgängig entfernt alle eingefügten Seiten gemeinsam.",
+        );
+      return !!result;
+    } catch (error) {
+      if (token === epoch.current)
+        onError(
+          error instanceof Error
+            ? error.message
+            : "PDF konnte nicht hinzugefügt werden.",
+        );
+    } finally {
+      if (token === epoch.current) {
+        lock.current = false;
+        setBusy(false);
+      }
+    }
+  }
   const save = useCallback(async () => {
     const c = client.current;
     if (!c || lock.current || current.current.state.readOnly) return;
@@ -926,6 +980,7 @@ export function useAnnotations(
   }
   return {
     contextMenu,
+    insertPdf,
     closeContext,
     hasClipboard,
     imageInput,

@@ -547,3 +547,91 @@ header .tool-button[aria-pressed="true"] {
     max-height: calc(100dvh - 116px);
   }
 }
+
+.page-organizer {
+  width: min(350px, calc(100vw - 16px));
+}
+.page-organizer-actions,
+.page-import {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.page-organizer-actions > span {
+  margin-left: auto;
+  font-size: 11px;
+}
+.page-import select {
+  flex: 1;
+  min-width: 0;
+  width: 0;
+  font-size: 11px;
+}
+.page-list {
+  height: min(440px, 45dvh);
+  min-height: 100px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.page-list-space {
+  position: relative;
+}
+.page-card {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  touch-action: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+.page-card[aria-current="page"] {
+  border: 2px solid #138579;
+  background: #e4f2ed;
+}
+.page-card.dragging {
+  opacity: 0.45;
+}
+.page-thumbnail {
+  width: 90px;
+  height: 108px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+}
+.page-thumbnail canvas {
+  max-width: 90px;
+  max-height: 108px;
+  background: white;
+  box-shadow: 0 1px 5px #18333730;
+  pointer-events: none;
+}
+.page-card-label {
+  flex: 1;
+}
+.page-card-label small {
+  display: block;
+  color: #62777e;
+  font-size: 10px;
+  margin-top: 6px;
+}
+.page-grip {
+  font-size: 22px;
+  color: #62777e;
+}
+.page-insertion {
+  position: absolute;
+  height: 4px;
+  background: #138579;
+  border-radius: 2px;
+  width: 100%;
+  pointer-events: none;
+}
+@media (max-width: 359px) {
+  header .view-toggle span:last-of-type {
+    display: none;
+  }
+}

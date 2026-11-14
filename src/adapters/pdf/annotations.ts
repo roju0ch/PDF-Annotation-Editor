@@ -1,3 +1,10 @@
+import {
+  pageEditingReason,
+  pageLabels,
+  setLabels,
+  prepareImport,
+  importPages,
+} from "./pages";
 import { imageInfo } from "../../core/annotations/image";
 import * as mupdf from "mupdf";
 import { inverse, transform, type Point } from "../../core/viewport";
@@ -9,6 +16,7 @@ import type {
   AnnotationKind,
   EditorState,
   PdfRect,
+  PageCommand,
 } from "../../core/annotations/model";
 const supported = (s: string): s is AnnotationKind =>
   ["Ink", "Text", "FreeText", "Stamp"].includes(s);
@@ -131,6 +139,7 @@ export class AnnotationEditor {
       canUndo: this.doc.canUndo(),
       canRedo: this.doc.canRedo(),
       readOnly: this.readOnly,
+      pageReadOnly: this.readOnly ?? pageEditingReason(this.doc),
     };
   }
   list(index: number): Annotation[] {
@@ -245,8 +254,12 @@ export class AnnotationEditor {
       page.destroy();
     }
   }
-  apply(c: Extract<AnnotationCommand, { action: "paste" }>): number[];
-  apply(c: Exclude<AnnotationCommand, { action: "paste" }>): number | null;
+  apply(
+    c: Extract<AnnotationCommand, { action: "paste" | "insert-pdf" }>,
+  ): number[];
+  apply(
+    c: Exclude<AnnotationCommand, { action: "paste" | "insert-pdf" }>,
+  ): number | null;
   apply(c: AnnotationCommand): number | number[] | null;
   apply(c: AnnotationCommand): number | number[] | null {
     if (this.readOnly) throw new Error(this.readOnly);
@@ -255,6 +268,8 @@ export class AnnotationEditor {
       if (c.action === "redo" && this.doc.canRedo()) this.doc.redo();
       return null;
     }
+    if (c.action === "reorder-pages" || c.action === "insert-pdf")
+      return this.editPages(c);
     const p = this.doc.loadPage(c.page);
     let id: number | number[] | null;
     try {
@@ -574,21 +589,16 @@ export class AnnotationEditor {
           }
         }
         this.doc.endOperation();
-        const position = this.doc.getJournal().position;
-        if (position > beforePosition) {
-          this.history.splice(position);
-          this.history[position] = ++this.sequence;
-          this.operations.splice(position - 1);
-          this.operations[position - 1] = {
-            command: structuredClone(c),
-            createdIds: Array.isArray(id)
-              ? [...id]
-              : (c.action === "create" || c.action === "create-image") &&
-                  id !== null
-                ? [id]
-                : [],
-          };
-        }
+        this.record(
+          c,
+          beforePosition,
+          Array.isArray(id)
+            ? [...id]
+            : (c.action === "create" || c.action === "create-image") &&
+                id !== null
+              ? [id]
+              : [],
+        );
       } catch (e) {
         this.doc.abandonOperation();
         throw e;
@@ -596,6 +606,94 @@ export class AnnotationEditor {
       return id;
     } finally {
       p.destroy();
+    }
+  }
+  private record(
+    command: AnnotationCommand,
+    before: number,
+    createdIds: number[],
+  ) {
+    const position = this.doc.getJournal().position;
+    if (position > before) {
+      this.history.splice(position);
+      this.history[position] = ++this.sequence;
+      this.operations.splice(position - 1);
+      this.operations[position - 1] = {
+        command: structuredClone(command),
+        createdIds,
+      };
+    }
+  }
+  private editPages(c: PageCommand): number[] | null {
+    const reason = pageEditingReason(this.doc);
+    if (reason) throw new Error(reason);
+    const count = this.doc.countPages();
+    let source: mupdf.PDFDocument | undefined;
+    try {
+      if (c.action === "reorder-pages") {
+        if (
+          c.order.length !== count ||
+          new Set(c.order).size !== count ||
+          c.order.some((i) => !Number.isInteger(i) || i < 0 || i >= count)
+        )
+          throw new Error("Ungültige Seitenreihenfolge.");
+        if (c.order.every((v, i) => v === i)) return null;
+      } else {
+        if (!Number.isInteger(c.at) || c.at < 0 || c.at > count)
+          throw new Error("Ungültige Einfügeposition.");
+        if (
+          c.bytes.length < 5 ||
+          c.bytes.length > 100 * 1024 * 1024 ||
+          !new TextDecoder().decode(c.bytes.slice(0, 1024)).includes("%PDF-")
+        )
+          throw new Error("Bitte eine gültige PDF bis 100 MB hinzufügen.");
+        const retained = this.operations
+          .slice(0, this.doc.getJournal().position)
+          .reduce(
+            (sum, op) =>
+              sum +
+              (op.command.action === "insert-pdf"
+                ? op.command.bytes.length
+                : 0),
+            this.original.length,
+          );
+        if (retained + c.bytes.length > 150 * 1024 * 1024)
+          throw new Error(
+            "Die zusammengestellten Quelldateien überschreiten 150 MB.",
+          );
+        source = new mupdf.PDFDocument(c.bytes);
+        if (source.needsPassword() || source.wasRepaired())
+          throw new Error(
+            "Geschützte oder beschädigte PDFs können nicht hinzugefügt werden.",
+          );
+        const protectedSource = protectedReason(source);
+        if (protectedSource) throw new Error(protectedSource);
+        if (count + source.countPages() > 2000)
+          throw new Error("Zusammen sind maximal 2000 Seiten erlaubt.");
+        prepareImport(source);
+      }
+      const before = this.doc.getJournal().position;
+      this.doc.beginOperation(c.action);
+      try {
+        let ids: number[] | null = null;
+        if (c.action === "reorder-pages") {
+          const labels = pageLabels(this.doc);
+          this.doc.rearrangePages(c.order);
+          if (labels)
+            setLabels(
+              this.doc,
+              c.order.map((i) => labels[i]),
+            );
+        } else ids = importPages(this.doc, source!, c.at, c.name.slice(0, 255));
+        this.doc.endOperation();
+        this.record(c, before, ids ? [...ids] : []);
+        return ids;
+      } catch (error) {
+        this.doc.abandonOperation();
+        throw error;
+      }
+    } finally {
+      source?.destroy();
     }
   }
   export(): Uint8Array<ArrayBuffer> {

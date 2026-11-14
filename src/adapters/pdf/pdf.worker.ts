@@ -1,3 +1,4 @@
+import { pageInfos } from "./pages";
 import { AnnotationEditor } from "./annotations";
 import * as mupdf from "mupdf";
 import type { Request, Reply, PageInfo } from "./types";
@@ -21,33 +22,7 @@ self.onmessage = ({ data: r }: MessageEvent<Request>) => {
           throw new Error(
             "Die PDF ist beschädigt und müsste repariert werden. Bitte eine intakte Datei verwenden.",
           );
-        const n = candidate.countPages();
-        if (n < 1 || n > 2000)
-          throw new Error("Bitte eine PDF mit 1 bis 2000 Seiten öffnen.");
-        pages = Array.from({ length: n }, (_, i) => {
-          const p = candidate.loadPage(i);
-          try {
-            const b = p.getBounds();
-            const width = b[2] - b[0],
-              height = b[3] - b[1];
-            if (
-              !Number.isFinite(width + height) ||
-              width <= 0 ||
-              height <= 0 ||
-              width > 20000 ||
-              height > 20000
-            )
-              throw new Error("Nicht unterstützte Seitengröße.");
-            return {
-              width,
-              height,
-              origin: [b[0], b[1]],
-              pdfToPage: p.getTransform(),
-            };
-          } finally {
-            p.destroy();
-          }
-        });
+        pages = pageInfos(candidate);
         editor = new AnnotationEditor(candidate, new Uint8Array(r.data));
         doc = candidate;
       } catch (e) {
@@ -78,8 +53,31 @@ self.onmessage = ({ data: r }: MessageEvent<Request>) => {
       } satisfies Reply);
     } else if (r.type === "edit") {
       if (!editor) throw new Error("Keine PDF geöffnet.");
+      const before = pages.map((p) => p.id);
       const selected = editor.apply(r.command);
+      const structural = [
+        "reorder-pages",
+        "insert-pdf",
+        "undo",
+        "redo",
+      ].includes(r.command.action);
+      const after = structural
+        ? Array.from({ length: doc!.countPages() }, (_, i) =>
+            doc!.findPage(i).asIndirect(),
+          )
+        : before;
+      const changed =
+        before.length !== after.length ||
+        after.some((id, i) => id !== before[i]);
+      if (changed) pages = pageInfos(doc!);
       self.postMessage({
+        ...(changed
+          ? {
+              pages,
+              focusPage:
+                r.command.action === "insert-pdf" ? r.command.at : undefined,
+            }
+          : {}),
         id: r.id,
         selected,
         editor: editor.state(),
