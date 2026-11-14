@@ -4,7 +4,7 @@
 
 - PNG-/JPEG-Screenshot kopieren, PDF-Arbeitsfläche aktivieren und **Strg/Cmd+V** drücken. Textfelder behalten ihre normalen Textkürzel.
 - Im Auswahlwerkzeug auf freie Blattfläche rechtsklicken/lang drücken: **Bild aus Zwischenablage** liest nach dieser bewussten Aktion ein Bild aus der Systemzwischenablage. Je nach Browser ist eine Freigabe erforderlich. Bei Ablehnung/fehlender Unterstützung erscheint eine verständliche Meldung.
-- **Bild einfügen …** im Kontext- oder Werkzeugmenü öffnet die native Dateiauswahl (mobil je nach System Dateien/Galerie). PNG und JPEG werden unterstützt.
+- **Bild einfügen …** im Kontextmenü oder das **Bildsymbol** in der Hauptleiste öffnet die native Dateiauswahl (mobil je nach System Dateien/Galerie). PNG und JPEG werden unterstützt.
 - Platzierung an der Menüposition bzw. letzten Mausposition auf dem aktiven Blatt, sonst in der sichtbaren Mitte. Das Anfangsrechteck wird auf das Blatt begrenzt, maximal 60 % der Seitenabmessungen und 320 PDF-Punkte breit. Größenverhältnis bleibt erhalten.
 - Ein einzelnes Bild auswählen. Vier Eckgriffe erlauben proportionale Größenänderung; Ziehen im Bild verschiebt es. Während des Ziehens zeigt der Auswahlrahmen die neue Größe; nach dem Loslassen wird das native Bild aktualisiert. Escape oder ein zweiter Finger bricht die laufende Geste ab.
 - **Annotationen → Inhalt → Übernehmen** setzt den Kommentartext. Dieser ist Annotationsinhalt, kein ins Bild gemalter Text. Bilder können auch gemeinsam mit anderen Annotationen ausgewählt, verschoben, kopiert, ausgeschnitten und gelöscht werden.

@@ -38,7 +38,6 @@ async function insertFile(
   page: Page,
   file: Parameters<import("@playwright/test").FileChooser["setFiles"]>[0] = png,
 ) {
-  await menu(page, "tools");
   const chooser = page.waitForEvent("filechooser");
   await page
     .getByRole("button", { name: "Bild einfügen …", exact: true })

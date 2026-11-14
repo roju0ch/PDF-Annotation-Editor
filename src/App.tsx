@@ -1,6 +1,10 @@
 import { AnnotationContextMenu } from "./app/AnnotationContextMenu";
 import { useAnnotations } from "./app/useAnnotations";
-import { AnnotationToolbar, AnnotationPanel } from "./app/AnnotationToolbar";
+import {
+  AnnotationToolbar,
+  AnnotationPanel,
+  DirectTools,
+} from "./app/AnnotationToolbar";
 import { MenuHeading, Icon, useMenuKeyboard } from "./app/CompactMenu";
 import { AnnotationOverlay } from "./app/AnnotationOverlay";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -470,100 +474,87 @@ export default function App() {
   return (
     <main>
       <header>
-        <label className="open" title="PDF öffnen">
-          <Icon name="open" />
-          <span>Öffnen</span>
-          <input
-            aria-label="PDF öffnen"
-            type="file"
-            accept="application/pdf,.pdf"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) void open(f);
-              e.target.value = "";
-            }}
-          />
-        </label>
-        <button
-          className="view-toggle"
-          popoverTarget="view-menu"
-          aria-label="Ansicht und Navigation"
-          title="Seiten, Zoom und Eingabe"
-        >
-          <span>
-            {page + 1}/{pages.length || "–"}
-          </span>
-          <span>{Math.round(view.scale * 100)} %</span>
-          <Icon name="chevron" />
-        </button>
-        <button
-          popoverTarget="tools-menu"
-          aria-label="Werkzeuge"
-          title="Werkzeug und Zeicheneinstellungen"
-        >
-          <Icon name="pen" />
-          <span className="tool-name">
-            {
-              {
-                select: "Auswahl",
-                Ink: "Freihand",
-                Text: "Notiz",
-                FreeText: "Textfeld",
-                erase: "Radierer",
-              }[annotation.tool]
+        <div className="document-controls">
+          <label className="open" title="PDF öffnen">
+            <Icon name="open" />
+            <span>Öffnen</span>
+            <input
+              aria-label="PDF öffnen"
+              type="file"
+              accept="application/pdf,.pdf"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) void open(f);
+                e.target.value = "";
+              }}
+            />
+          </label>
+          <button
+            className="view-toggle"
+            popoverTarget="view-menu"
+            aria-label="Ansicht und Navigation"
+            title="Seiten, Zoom und Eingabe"
+          >
+            <span>
+              {page + 1}/{pages.length || "–"}
+            </span>
+            <span>{Math.round(view.scale * 100)} %</span>
+            <Icon name="chevron" />
+          </button>
+        </div>
+        <DirectTools editor={annotation} ready={ready} />
+        <div className="document-actions">
+          <button
+            className="icon-button"
+            popoverTarget="annotations-menu"
+            aria-label="Annotationen anzeigen"
+            title="Annotationen und Eigenschaften"
+          >
+            <Icon name="list" />
+          </button>
+          <button
+            className="icon-button"
+            aria-label="Rückgängig"
+            title="Rückgängig"
+            disabled={
+              !ready ||
+              annotation.busy ||
+              annotation.formDirty ||
+              !annotation.state.canUndo
             }
-          </span>
-        </button>
-        <button
-          className="icon-button"
-          popoverTarget="annotations-menu"
-          aria-label="Annotationen anzeigen"
-          title="Annotationen und Eigenschaften"
-        >
-          <Icon name="list" />
-        </button>
-        <button
-          className="icon-button"
-          aria-label="Rückgängig"
-          title="Rückgängig"
-          disabled={
-            !ready ||
-            annotation.busy ||
-            annotation.formDirty ||
-            !annotation.state.canUndo
-          }
-          onClick={() => void annotation.edit({ action: "undo" })}
-        >
-          <Icon name="undo" />
-        </button>
-        <button
-          className="icon-button"
-          aria-label="Wiederholen"
-          title="Wiederholen"
-          disabled={
-            !ready ||
-            annotation.busy ||
-            annotation.formDirty ||
-            !annotation.state.canRedo
-          }
-          onClick={() => void annotation.edit({ action: "redo" })}
-        >
-          <Icon name="redo" />
-        </button>
-        <button
-          className="icon-button export"
-          aria-label="PDF herunterladen"
-          title="PDF herunterladen"
-          disabled={
-            !ready ||
-            annotation.busy ||
-            annotation.formDirty ||
-            !!annotation.state.readOnly
-          }
-          onClick={() => void annotation.save()}
-        >
-          <Icon name="download" />
-        </button>
+            onClick={() => void annotation.edit({ action: "undo" })}
+          >
+            <Icon name="undo" />
+          </button>
+          <button
+            className="icon-button"
+            aria-label="Wiederholen"
+            title="Wiederholen"
+            disabled={
+              !ready ||
+              annotation.busy ||
+              annotation.formDirty ||
+              !annotation.state.canRedo
+            }
+            onClick={() => void annotation.edit({ action: "redo" })}
+          >
+            <Icon name="redo" />
+          </button>
+          <button
+            className="icon-button export"
+            aria-label="PDF herunterladen"
+            title="PDF herunterladen"
+            disabled={
+              !ready ||
+              annotation.busy ||
+              annotation.formDirty ||
+              !!annotation.state.readOnly
+            }
+            onClick={() => void annotation.save()}
+          >
+            <Icon name="download" />
+          </button>
+        </div>
       </header>
       <section
         id="view-menu"

@@ -73,7 +73,6 @@ header .icon-button {
   flex-shrink: 0;
 }
 header .view-toggle {
-  margin-right: auto;
   font-variant-numeric: tabular-nums;
 }
 header svg {
@@ -417,11 +416,6 @@ footer .edit-status {
   .document-status {
     display: none;
   }
-  .tool-name {
-    max-width: 56px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
   header .view-toggle {
     gap: 4px;
     font-size: 11px;
@@ -442,11 +436,6 @@ footer .edit-status {
   }
   .empty p {
     font-size: 12px;
-  }
-}
-@media (max-width: 359px) {
-  .tool-name {
-    display: none;
   }
 }
 
@@ -482,4 +471,79 @@ footer .edit-status {
 .stage {
   -webkit-touch-callout: none;
   user-select: none;
+}
+
+.document-controls,
+.document-actions,
+.direct-tools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.document-actions {
+  margin-left: auto;
+}
+.direct-tools {
+  margin-left: 8px;
+  padding: 0 10px;
+  border-left: 1px solid #d4ddde;
+  border-right: 1px solid #d4ddde;
+}
+header .tool-button[aria-pressed="true"] {
+  background: #176f65;
+  color: #fff;
+  border-color: #176f65;
+  box-shadow: inset 0 -3px 0 #b2e4d6;
+}
+.tool-tooltip {
+  position: fixed;
+  z-index: 30;
+  max-width: calc(100vw - 16px);
+  padding: 6px 9px;
+  border-radius: 5px;
+  background: #203d42;
+  color: white;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.4;
+  white-space: normal;
+  pointer-events: none;
+  box-shadow: 0 2px 8px #17343b30;
+}
+@media (max-width: 720px) {
+  header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 4px;
+    padding: 4px;
+  }
+  .document-controls {
+    grid-column: 1;
+    grid-row: 1;
+    min-width: 0;
+  }
+  .document-actions {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .direct-tools {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    margin: 0;
+    justify-content: center;
+    padding: 0;
+    border: 0;
+  }
+  .open {
+    width: 36px;
+    padding: 0;
+  }
+  .open > span {
+    display: none;
+  }
+  .compact-menu {
+    top: 89px;
+    max-height: calc(100dvh - 116px);
+  }
 }

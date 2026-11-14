@@ -1,7 +1,111 @@
 import type { AnnotationControls, Tool } from "./useAnnotations";
 import { annotationLabels, type Annotation } from "../core/annotations/model";
-import { MenuHeading } from "./CompactMenu";
+import { MenuHeading, ToolButton } from "./CompactMenu";
 import { useState } from "react";
+export const toolNames: Record<Tool, string> = {
+  select: "Auswählen / Verschieben",
+  Ink: "Freihand",
+  Text: "Notiz",
+  FreeText: "Textfeld",
+  erase: "Ink-Teilradierer (Klick)",
+};
+export function DirectTools({
+  editor: e,
+  ready,
+}: {
+  editor: AnnotationControls;
+  ready: boolean;
+}) {
+  const blocked = !ready || e.busy || e.formDirty || !!e.state.readOnly;
+  const choose = (tool: Tool) => {
+    e.gesture.cancel();
+    e.closeContext();
+    document
+      .querySelectorAll<HTMLElement>(".compact-menu:popover-open")
+      .forEach((menu) => menu.hidePopover());
+    e.setTool(tool);
+  };
+  return (
+    <div
+      className="direct-tools"
+      role="toolbar"
+      aria-label="Annotationswerkzeuge"
+      onKeyDown={(event) => {
+        if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key))
+          return;
+        const buttons = [
+          ...event.currentTarget.querySelectorAll<HTMLButtonElement>(
+            "button:not(:disabled)",
+          ),
+        ];
+        if (!buttons.length) return;
+        event.preventDefault();
+        const index = buttons.indexOf(
+          document.activeElement as HTMLButtonElement,
+        );
+        const next =
+          event.key === "Home"
+            ? 0
+            : event.key === "End"
+              ? buttons.length - 1
+              : (index +
+                  (event.key === "ArrowRight" ? 1 : -1) +
+                  buttons.length) %
+                buttons.length;
+        buttons[next]?.focus();
+      }}
+    >
+      <ToolButton
+        icon="select"
+        label={toolNames.select}
+        pressed={e.tool === "select"}
+        disabled={blocked}
+        onClick={() => choose("select")}
+      />
+      <ToolButton
+        icon="pen"
+        label={toolNames.Ink}
+        pressed={e.tool === "Ink"}
+        disabled={blocked}
+        onClick={() => choose("Ink")}
+      />
+      <ToolButton
+        icon="note"
+        label={toolNames.Text}
+        pressed={e.tool === "Text"}
+        disabled={blocked}
+        onClick={() => choose("Text")}
+      />
+      <ToolButton
+        icon="text"
+        label={toolNames.FreeText}
+        pressed={e.tool === "FreeText"}
+        disabled={blocked}
+        onClick={() => choose("FreeText")}
+      />
+      <ToolButton
+        icon="image"
+        label="Bild einfügen …"
+        disabled={blocked}
+        onClick={e.chooseImage}
+      />
+      <ToolButton
+        icon="eraser"
+        label={toolNames.erase}
+        pressed={e.tool === "erase"}
+        disabled={blocked}
+        onClick={() => choose("erase")}
+      />
+      <ToolButton
+        icon="settings"
+        label="Werkzeugeigenschaften"
+        disabled={blocked || e.tool === "select"}
+        popoverTarget="tools-menu"
+        onClick={e.closeContext}
+      />
+    </div>
+  );
+}
 export function AnnotationToolbar({
   editor: e,
   ready,
@@ -15,24 +119,11 @@ export function AnnotationToolbar({
       id="tools-menu"
       popover="auto"
       className="compact-menu annotation-toolbar"
-      aria-label="Annotationswerkzeuge"
+      aria-label="Werkzeugeigenschaften"
     >
-      <MenuHeading target="tools-menu">Werkzeuge</MenuHeading>
-      <label>
-        Werkzeug{" "}
-        <select
-          aria-label="Werkzeug"
-          disabled={blocked || e.formDirty}
-          value={e.tool}
-          onChange={(ev) => e.setTool(ev.target.value as Tool)}
-        >
-          <option value="select">Auswählen / Verschieben</option>
-          <option value="Ink">Freihand</option>
-          <option value="Text">Notiz</option>
-          <option value="FreeText">Textfeld</option>
-          <option value="erase">Ink-Teilradierer (Klick)</option>
-        </select>
-      </label>
+      <MenuHeading target="tools-menu">
+        {toolNames[e.tool]} · Eigenschaften
+      </MenuHeading>
       {e.tool !== "select" && e.tool !== "erase" && (
         <label>
           Farbe{" "}
@@ -103,9 +194,6 @@ export function AnnotationToolbar({
           pt
         </label>
       )}
-      <button disabled={blocked || e.formDirty} onClick={e.chooseImage}>
-        Bild einfügen …
-      </button>
       <span className="edit-status">
         {e.state.readOnly ||
           (e.tool === "select"
