@@ -103,6 +103,9 @@ export function AnnotationToolbar({
           pt
         </label>
       )}
+      <button disabled={blocked || e.formDirty} onClick={e.chooseImage}>
+        Bild einfügen …
+      </button>
       <span className="edit-status">
         {e.state.readOnly ||
           (e.tool === "select"
@@ -152,19 +155,27 @@ function Properties({ item, e }: { item: Annotation; e: AnnotationControls }) {
       </label>
       {item.editable && (
         <>
-          <label>
-            Farbe
-            <input
-              type="color"
-              aria-label="Annotationsfarbe"
-              disabled={e.busy}
-              value={color}
-              onChange={(ev) => {
-                setColor(ev.target.value);
-                e.setFormDirty(true);
-              }}
-            />
-          </label>
+          {item.type !== "Stamp" && (
+            <label>
+              Farbe
+              <input
+                type="color"
+                aria-label="Annotationsfarbe"
+                disabled={e.busy}
+                value={color}
+                onChange={(ev) => {
+                  setColor(ev.target.value);
+                  e.setFormDirty(true);
+                }}
+              />
+            </label>
+          )}
+          {item.type === "Stamp" && (
+            <p className="small">
+              Bild über die Eckgriffe proportional skalieren. „Inhalt“ dient als
+              Kommentar zum Bild.
+            </p>
+          )}
           {item.type === "Ink" && (
             <label>
               Strichbreite

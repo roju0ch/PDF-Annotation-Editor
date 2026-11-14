@@ -117,6 +117,20 @@ export function AnnotationContextMenu({
           </button>
           <button
             role="menuitem"
+            disabled={editor.busy}
+            onClick={() => activate(editor.pasteImage)}
+          >
+            Bild aus Zwischenablage
+          </button>
+          <button
+            role="menuitem"
+            disabled={editor.busy}
+            onClick={() => activate(editor.chooseImage)}
+          >
+            Bild einfügen …
+          </button>
+          <button
+            role="menuitem"
             disabled={
               editor.busy ||
               !editor.items.some((a) => a.editable && a.page === context.page)

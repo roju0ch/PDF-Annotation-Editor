@@ -27,7 +27,9 @@ Im Auswahlwerkzeug öffnet **Rechtsklick** oder **langes Drücken (ca. 0,6 Sekun
 | Strg+X | Auswahl ausschneiden |
 | Strg+V | An der letzten Mausposition auf dem Blatt einfügen; sonst in der Mitte des sichtbaren Bereichs |
 
-Auf macOS ist auch Cmd statt Strg möglich. In Text-/Eigenschaftsfeldern bleiben die normalen Textkürzel erhalten. Die **App-Zwischenablage** bleibt beim PDF-Wechsel erhalten, endet aber beim Neuladen/Schließen des Tabs. Sie nutzt weder die Systemzwischenablage noch dauerhafte Speicherung. Ausschneiden, Einfügen und Löschen sind jeweils als gesamte Gruppe rückgängig machbar. [Details und Testnachweise](docs/CONTEXT_CLIPBOARD.md).
+Auf macOS ist auch Cmd statt Strg möglich. In Text-/Eigenschaftsfeldern bleiben die normalen Textkürzel erhalten. Die **App-Zwischenablage** bleibt beim PDF-Wechsel erhalten, endet aber beim Neuladen/Schließen des Tabs. Die PDF-Objekte werden nicht in die Systemzwischenablage übertragen oder dauerhaft gespeichert. Beim Kopieren wird dort, soweit der Browser es erlaubt, eine leere App-Markierung gesetzt, damit ein alter Screenshot beim nächsten Strg+V nicht die Annotationskopie verdrängt. Ausschneiden, Einfügen und Löschen sind jeweils als gesamte Gruppe rückgängig machbar. [Details und Testnachweise](docs/CONTEXT_CLIPBOARD.md).
+
+**Screenshots als Bild-Kommentar:** Ein PNG-/JPEG-Bild kopieren und **Strg/Cmd+V** drücken. Auf freier Blattfläche bietet das Kontextmenü zusätzlich **Bild aus Zwischenablage** und **Bild einfügen …** (Dateien/Galerie); auch im Werkzeugmenü gibt es **Bild einfügen …**. Das Bild wird passend zur Seite eingesetzt. Ein ausgewähltes Bild über die vier Eckgriffe proportional skalieren, am Bild verschieben und im Annotationsmenü unter **Inhalt** kommentieren. Kopieren/Ausschneiden/Löschen und Undo/Redo funktionieren auch mit Bildern. PNG-Transparenz bleibt erhalten. Der direkte Bildzugriff hängt vom Browser und dessen Berechtigungen ab; die Dateiauswahl ist die Alternative. Maximal 20 MB, 20 Megapixel und 16.384 Pixel je Kante; keine stille Qualitätsreduzierung. [Bildannotation, Prüfungen und Grenzen](docs/IMAGE_ANNOTATIONS.md).
 
 Touch unterstützt Auswahlbox und Gruppenbewegung mit einem Finger sowie Pan und Zoom mit zwei Fingern; ein zweiter Finger bricht eine laufende Auswahlbox, Verschiebung, einen Strich bzw. eine Platzierung ab. [Gruppenauswahl und tatsächliche Prüfung](docs/GROUP_SELECTION.md). Reale Geräte müssen weiter geprüft werden. Der Editor warnt beim Dateiwechsel und Schließen vor ungesicherten Änderungen. **Automatische Wiederherstellung ist noch nicht enthalten:** regelmäßig exportieren. Textfelder haben zunächst eine feste Ausgangsgröße; nachträgliche Größenänderung, weitere Formen, Textmarker und kontinuierliches Radieren folgen später.
 
@@ -54,7 +56,7 @@ npm test
 npm run poc
 npx playwright install --with-deps chromium firefox
 npm run test:e2e
-PLAYWRIGHT_BROWSER=firefox PLAYWRIGHT_HTML_OUTPUT_DIR=playwright-report-firefox npm run test:e2e -- tests/e2e/layout.spec.ts tests/e2e/selection.spec.ts tests/e2e/clipboard.spec.ts
+PLAYWRIGHT_BROWSER=firefox PLAYWRIGHT_HTML_OUTPUT_DIR=playwright-report-firefox npm run test:e2e -- tests/e2e/layout.spec.ts tests/e2e/selection.spec.ts tests/e2e/clipboard.spec.ts tests/e2e/images.spec.ts
 npm run build
 ```
 

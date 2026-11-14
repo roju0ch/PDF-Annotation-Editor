@@ -677,6 +677,18 @@ export default function App() {
           Prototyp · Quellcode · AGPL
         </a>
       </section>
+      <input
+        ref={annotation.imageInput}
+        type="file"
+        accept="image/png,image/jpeg,.png,.jpg,.jpeg"
+        aria-label="Bilddatei auswählen"
+        hidden
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          e.target.value = "";
+          if (file) annotation.imageFile(file);
+        }}
+      />
       <AnnotationToolbar editor={annotation} ready={ready} />
       {error && (
         <div role="alert" className="error">
