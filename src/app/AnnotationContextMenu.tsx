@@ -86,14 +86,14 @@ export function AnnotationContextMenu({
         <>
           <button
             role="menuitem"
-            disabled={editor.busy}
+            disabled={editor.busy || editor.selection.length === 0}
             onClick={() => activate(() => void editor.copySelection())}
           >
             Kopieren <kbd>Strg+C</kbd>
           </button>
           <button
             role="menuitem"
-            disabled={editor.busy}
+            disabled={editor.busy || editor.selection.length === 0}
             onClick={() => activate(() => void editor.copySelection(true))}
           >
             Ausschneiden <kbd>Strg+X</kbd>

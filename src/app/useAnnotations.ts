@@ -364,7 +364,6 @@ export function useAnnotations(
     if (
       cur.tool !== "select" ||
       cur.formDirty ||
-      lock.current ||
       cur.state.readOnly ||
       !at ||
       at.page !== cur.layout.page

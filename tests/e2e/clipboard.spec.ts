@@ -42,6 +42,33 @@ test("right-click menus copy and cut the full selection with native paste and at
   page,
   browserName,
 }) => {
+  // Hold the first real worker copy request until its menu is inspected. This
+  // reproduces slow copying without substituting a fake PDF/clipboard response.
+  await page.addInitScript(() => {
+    const original = Worker.prototype.postMessage;
+    let held = false;
+    Worker.prototype.postMessage = function (
+      message: unknown,
+      options?: StructuredSerializeOptions | Transferable[],
+    ) {
+      const deliver = () =>
+        original.call(
+          this,
+          message,
+          Array.isArray(options) ? { transfer: options } : options,
+        );
+      if (
+        !held &&
+        message !== null &&
+        typeof message === "object" &&
+        "type" in message &&
+        message.type === "copy"
+      ) {
+        held = true;
+        (window as Window & { finishCopy?: () => void }).finishCopy = deliver;
+      } else deliver();
+    };
+  });
   await open(page);
   await right(page, 30, 30);
   await expect(
@@ -55,6 +82,14 @@ test("right-click menus copy and cut the full selection with native paste and at
     page.getByRole("button", { name: "Rückgängig", exact: true }),
   ).toBeDisabled();
   await right(page, 30, 30);
+  await expect(
+    page.getByRole("menuitem", { name: /^Einfügen/ }),
+  ).toBeDisabled();
+  await page.evaluate(() => {
+    const finish = (window as Window & { finishCopy?: () => void }).finishCopy;
+    if (!finish) throw new Error("Expected a pending copy request");
+    finish();
+  });
   await page.getByRole("menuitem", { name: /^Einfügen/ }).click();
   await expect(page.locator(".annotation-list button")).toHaveCount(10);
   await expect(page.getByTestId("selection-outline")).toHaveCount(5);

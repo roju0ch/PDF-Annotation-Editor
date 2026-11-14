@@ -4,7 +4,7 @@ Im Werkzeug **Auswählen / Verschieben**:
 
 - Rechtsklick oder etwa 600 ms lang drücken auf eine ausgewählte Markierung: **Kopieren**, **Ausschneiden**. Die gesamte bestehende Auswahl bleibt erhalten. Auf einem noch nicht ausgewählten bearbeitbaren Objekt wird dieses zuerst ausgewählt.
 - Rechtsklick oder lang drücken auf freie Blattfläche: **Einfügen**, **Alle Kommentare markieren**. Einfügen ist ohne kopierten Inhalt deaktiviert.
-- Das Menü bleibt im sichtbaren Browserbereich. Escape, Schließen oder ein Klick außerhalb schließen es. Pfeiltasten/Home/End navigieren im Menü.
+- Das Menü bleibt im sichtbaren Browserbereich. Es öffnet sich auch während eines laufenden Kopiervorgangs; Aktionen bleiben bis zu dessen Abschluss deaktiviert. Escape, Schließen oder ein Klick außerhalb schließen es. Pfeiltasten/Home/End navigieren im Menü.
 - Bewegung von mehr als 8 CSS-Pixeln, Loslassen, Abbruch, Escape, Zoom oder ein zweiter Finger stoppen die Langdruck-Erkennung. Das Öffnen des Menüs verwirft nur die laufende Geste, ohne Annotationen zu verschieben.
 - Strg+A/C/X/V (auch Cmd) wählen aus, kopieren, schneiden aus und fügen ein. Eingaben in Text-/Eigenschaftsfeldern sind davon ausgenommen. Die vorhandenen Kürzel für Undo/Redo/Download bleiben erhalten.
 
