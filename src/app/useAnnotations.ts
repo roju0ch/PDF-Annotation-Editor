@@ -310,6 +310,32 @@ export function useAnnotations(
     },
     [client, closeContext, invalidate, onError, showDraft],
   );
+  async function deleteSelection() {
+    const cur = current.current;
+    if (
+      lock.current ||
+      cur.formDirty ||
+      cur.state.readOnly ||
+      !cur.selection.length ||
+      !cur.selection.every((id) =>
+        cur.items.some(
+          (a) => a.id === id && a.page === cur.layout.page && a.editable,
+        ),
+      )
+    )
+      return;
+    showDraft(null);
+    closeContext();
+    const result = await edit({
+      action: "delete-many",
+      page: cur.layout.page,
+      ids: cur.selection,
+    });
+    if (result)
+      setNotice(
+        `${cur.selection.length} ${cur.selection.length === 1 ? "Markierung" : "Markierungen"} gelöscht.`,
+      );
+  }
   const selectAll = useCallback(() => {
     const cur = current.current;
     if (lock.current || cur.formDirty || cur.state.readOnly) return;
@@ -648,6 +674,7 @@ export function useAnnotations(
     closeContext,
     hasClipboard,
     copySelection,
+    deleteSelection,
     paste,
     selectAll,
     state,

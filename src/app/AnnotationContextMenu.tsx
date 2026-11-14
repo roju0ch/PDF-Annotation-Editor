@@ -98,6 +98,13 @@ export function AnnotationContextMenu({
           >
             Ausschneiden <kbd>Strg+X</kbd>
           </button>
+          <button
+            role="menuitem"
+            disabled={editor.busy || editor.selection.length === 0}
+            onClick={() => activate(() => void editor.deleteSelection())}
+          >
+            Löschen
+          </button>
         </>
       ) : (
         <>

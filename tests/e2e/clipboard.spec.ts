@@ -181,6 +181,69 @@ test("right-click menus copy and cut the full selection with native paste and at
   await page.getByRole("button", { name: "Wiederholen", exact: true }).click();
   await expect(page.locator(".annotation-list button")).toHaveCount(10);
 });
+test("context delete removes only the selected group, supports undo/redo and preserves the clipboard", async ({
+  page,
+  browserName,
+}) => {
+  await open(page);
+  await page.getByTestId("viewport").focus();
+  await page.keyboard.press("Control+a");
+  await page.keyboard.press("Control+c");
+  await expect(
+    page.getByRole("status").filter({ hasText: "5 Markierungen kopiert." }),
+  ).toBeVisible();
+  const start = await point(page, 90, 130),
+    end = await point(page, 220, 215);
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await page.mouse.move(end.x, end.y, { steps: 8 });
+  await page.mouse.up();
+  await expect(page.getByTestId("selection-outline")).toHaveCount(3);
+  await right(page, 80, 140);
+  await page.getByRole("menuitem", { name: "Löschen", exact: true }).click();
+  await expect(page.locator(".annotation-list button")).toHaveCount(2);
+  await expect(page.getByTestId("selection-outline")).toHaveCount(0);
+  await expect(
+    page.getByRole("menu", { name: "Annotationsaktionen" }),
+  ).toHaveCount(0);
+  const saved = await download(
+    page,
+    `artifacts/context-delete-${browserName}.pdf`,
+  );
+  const baseline = new mupdf.PDFDocument(
+    new Uint8Array(await readFile("artifacts/clipboard-fixture.pdf")),
+  );
+  try {
+    for (const index of [0, 1]) {
+      const before = baseline.loadPage(index),
+        after = saved.loadPage(index);
+      try {
+        const expected = before
+          .getAnnotations()
+          .filter(
+            (a) => index !== 0 || !["A", "B", "C"].includes(a.getContents()),
+          );
+        expect(
+          after.getAnnotations().map((a) => a.getObject().toString()),
+        ).toEqual(expected.map((a) => a.getObject().toString()));
+      } finally {
+        before.destroy();
+        after.destroy();
+      }
+    }
+  } finally {
+    baseline.destroy();
+    saved.destroy();
+  }
+  await page.getByRole("button", { name: "Rückgängig", exact: true }).click();
+  await expect(page.locator(".annotation-list button")).toHaveCount(5);
+  await page.getByRole("button", { name: "Wiederholen", exact: true }).click();
+  await expect(page.locator(".annotation-list button")).toHaveCount(2);
+  await right(page, 30, 30);
+  await page.getByRole("menuitem", { name: /^Einfügen/ }).click();
+  await expect(page.locator(".annotation-list button")).toHaveCount(7);
+  await expect(page.getByTestId("selection-outline")).toHaveCount(5);
+});
 test("Ctrl+A/C/X/V, rotated target page and text-field shortcuts", async ({
   page,
   browserName,
@@ -306,4 +369,24 @@ test("touch long-press opens menus without moving selection and cancels on drag 
   await expect(
     page.getByRole("button", { name: "Rückgängig", exact: true }),
   ).toBeDisabled();
+  await page.getByTestId("viewport").focus();
+  await page.keyboard.press("Control+a");
+  const target = await point(page, 80, 140);
+  await touch("touchStart", [{ ...target, id: 1 }]);
+  const remove = page.getByRole("menuitem", { name: "Löschen", exact: true });
+  await expect(remove).toBeVisible();
+  await touch("touchEnd", []);
+  const removeBox = (await remove.boundingBox())!;
+  await touch("touchStart", [
+    {
+      x: removeBox.x + removeBox.width / 2,
+      y: removeBox.y + removeBox.height / 2,
+      id: 1,
+    },
+  ]);
+  await touch("touchEnd", []);
+  await expect(page.locator(".annotation-list button")).toHaveCount(0);
+  await expect(page.getByTestId("selection-outline")).toHaveCount(0);
+  await page.getByRole("button", { name: "Rückgängig", exact: true }).click();
+  await expect(page.locator(".annotation-list button")).toHaveCount(5);
 });
