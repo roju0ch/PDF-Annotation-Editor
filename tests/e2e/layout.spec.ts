@@ -40,8 +40,10 @@ for (const size of [
     const buttons = await tools.getByRole("button").all();
     for (const button of buttons) {
       const bounds = (await button.boundingBox())!;
-      expect(bounds.width).toBeGreaterThanOrEqual(36);
-      expect(bounds.height).toBeGreaterThanOrEqual(36);
+      // Firefox DOMRect can report 35.9999847 for a CSS width of 36px.
+      // Allow only subpixel representation error, not a smaller touch target.
+      expect(bounds.width).toBeGreaterThanOrEqual(36 - 0.01);
+      expect(bounds.height).toBeGreaterThanOrEqual(36 - 0.01);
       expect(bounds.x).toBeGreaterThanOrEqual(0);
       expect(bounds.x + bounds.width).toBeLessThanOrEqual(size.width);
     }
