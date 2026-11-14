@@ -18,7 +18,7 @@ Die [Browser-Vorschau](https://roju0ch.github.io/PDF-Annotation-Editor/) zeigt d
 
 Die Oberfläche zeigt nur eine schmale Hauptleiste und eine Statuszeile. Ansicht, Werkzeuge und Annotationsliste erscheinen bei Bedarf als überlagerte Menüs. Schließen mit **×**, Escape oder einem Klick außerhalb; dieser Klick zeichnet keine Annotation. Auch ausgeblendete, noch nicht übernommene Eigenschaften bleiben erhalten. Die Menüs benötigen einen aktuellen Browser mit Popover-Unterstützung. [Layout-Prüfung und Screenshots](docs/COMPACT_LAYOUT.md).
 
-Im Auswahlwerkzeug öffnet **Rechtsklick** oder **langes Drücken (ca. 0,6 Sekunden)** ein Kontextmenü: auf einer ausgewählten Markierung **Kopieren/Ausschneiden**, auf freier Blattfläche **Einfügen/Alle Kommentare markieren**. Die gesamte Auswahl wird kopiert oder ausgeschnitten. Einfügen platziert die Gruppe an der gedrückten Stelle. Bewegung oder ein zweiter Finger verhindern das Langdruck-Menü.
+Im Auswahlwerkzeug öffnet **Rechtsklick** oder **langes Drücken (ca. 0,6 Sekunden)** ein Kontextmenü: auf einer ausgewählten Markierung **Kopieren/Ausschneiden/Löschen**, auf freier Blattfläche **Einfügen/Alle Kommentare markieren**. Die Aktion betrifft die gesamte Auswahl. Löschen verändert die Zwischenablage nicht. Einfügen platziert die Gruppe an der gedrückten Stelle. Bewegung oder ein zweiter Finger verhindern das Langdruck-Menü.
 
 | Kürzel | Aktion |
 | --- | --- |
@@ -27,7 +27,7 @@ Im Auswahlwerkzeug öffnet **Rechtsklick** oder **langes Drücken (ca. 0,6 Sekun
 | Strg+X | Auswahl ausschneiden |
 | Strg+V | An der letzten Mausposition auf dem Blatt einfügen; sonst in der Mitte des sichtbaren Bereichs |
 
-Auf macOS ist auch Cmd statt Strg möglich. In Text-/Eigenschaftsfeldern bleiben die normalen Textkürzel erhalten. Die **App-Zwischenablage** bleibt beim PDF-Wechsel erhalten, endet aber beim Neuladen/Schließen des Tabs. Sie nutzt weder die Systemzwischenablage noch dauerhafte Speicherung. Ausschneiden und Einfügen sind jeweils als gesamte Gruppe rückgängig machbar. [Details und Testnachweise](docs/CONTEXT_CLIPBOARD.md).
+Auf macOS ist auch Cmd statt Strg möglich. In Text-/Eigenschaftsfeldern bleiben die normalen Textkürzel erhalten. Die **App-Zwischenablage** bleibt beim PDF-Wechsel erhalten, endet aber beim Neuladen/Schließen des Tabs. Sie nutzt weder die Systemzwischenablage noch dauerhafte Speicherung. Ausschneiden, Einfügen und Löschen sind jeweils als gesamte Gruppe rückgängig machbar. [Details und Testnachweise](docs/CONTEXT_CLIPBOARD.md).
 
 Touch unterstützt Auswahlbox und Gruppenbewegung mit einem Finger sowie Pan und Zoom mit zwei Fingern; ein zweiter Finger bricht eine laufende Auswahlbox, Verschiebung, einen Strich bzw. eine Platzierung ab. [Gruppenauswahl und tatsächliche Prüfung](docs/GROUP_SELECTION.md). Reale Geräte müssen weiter geprüft werden. Der Editor warnt beim Dateiwechsel und Schließen vor ungesicherten Änderungen. **Automatische Wiederherstellung ist noch nicht enthalten:** regelmäßig exportieren. Textfelder haben zunächst eine feste Ausgangsgröße; nachträgliche Größenänderung, weitere Formen, Textmarker und kontinuierliches Radieren folgen später.
 

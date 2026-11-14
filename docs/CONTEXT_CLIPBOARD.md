@@ -2,7 +2,7 @@
 
 Im Werkzeug **Auswählen / Verschieben**:
 
-- Rechtsklick oder etwa 600 ms lang drücken auf eine ausgewählte Markierung: **Kopieren**, **Ausschneiden**. Die gesamte bestehende Auswahl bleibt erhalten. Auf einem noch nicht ausgewählten bearbeitbaren Objekt wird dieses zuerst ausgewählt.
+- Rechtsklick oder etwa 600 ms lang drücken auf eine ausgewählte Markierung: **Kopieren**, **Ausschneiden**, **Löschen**. Die gesamte bestehende Auswahl bleibt erhalten. Auf einem noch nicht ausgewählten bearbeitbaren Objekt wird dieses zuerst ausgewählt.
 - Rechtsklick oder lang drücken auf freie Blattfläche: **Einfügen**, **Alle Kommentare markieren**. Einfügen ist ohne kopierten Inhalt deaktiviert.
 - Das Menü bleibt im sichtbaren Browserbereich. Es öffnet sich auch während eines laufenden Kopiervorgangs; Aktionen bleiben bis zu dessen Abschluss deaktiviert. Escape, Schließen oder ein Klick außerhalb schließen es. Pfeiltasten/Home/End navigieren im Menü.
 - Bewegung von mehr als 8 CSS-Pixeln, Loslassen, Abbruch, Escape, Zoom oder ein zweiter Finger stoppen die Langdruck-Erkennung. Das Öffnen des Menüs verwirft nur die laufende Geste, ohne Annotationen zu verschieben.
@@ -14,7 +14,7 @@ Die linke obere Ecke des Gruppenrahmens wird an die Kontextmenü-Position gesetz
 
 Die App-Zwischenablage ist eine unabhängige Momentaufnahme. Spätere Änderungen am Original verändern die Kopie nicht. Sie bleibt bei Seiten- und PDF-Wechseln in derselben App-Sitzung erhalten. Neuladen/Schließen des Tabs verwirft sie. Kein Zugriff auf die Systemzwischenablage, keine Übertragung, keine dauerhafte Speicherung. Extern kopierte PDF-Objekte/Text werden dadurch nicht als Annotationen importiert; Textfelder behalten ihre normale Browser-Zwischenablage.
 
-Auswahl/Kopieren verändert die PDF nicht. Ausschneiden entfernt die ausgewählten Objekte als eine Undo-Operation; Einfügen erzeugt die gesamte Gruppe als eine weitere Undo-Operation. Undo stellt beim Ausschneiden alle Objekte wieder her bzw. entfernt beim Einfügen alle neu erzeugten Objekte. Die Zwischenablage bleibt dabei verfügbar.
+Auswahl/Kopieren verändert die PDF nicht. Ausschneiden entfernt die ausgewählten Objekte als eine Undo-Operation; Einfügen erzeugt die gesamte Gruppe als eine weitere Undo-Operation. Undo stellt beim Ausschneiden alle Objekte wieder her bzw. entfernt beim Einfügen alle neu erzeugten Objekte. Die Zwischenablage bleibt dabei verfügbar. **Löschen** entfernt die gesamte Auswahl ebenfalls als eine Undo-Operation, ohne die Zwischenablage zu ändern. Rückgängig stellt alle gelöschten Objekte gemeinsam wieder her.
 
 ## Native PDF-Umsetzung
 
@@ -25,6 +25,8 @@ Ausschneiden/Einfügen verwenden jeweils eine MuPDF-Journaloperation. Ungültige
 Grenzen: bearbeitbare Ink-, Text- und einfache FreeText-Annotationen; geschützte oder nicht unterstützte Typen werden weder kopiert noch mit „Alle Kommentare markieren“ ausgewählt. Zwischenablage-PDF maximal 20 MB. Keine vollständige Kompatibilitätszusage für beliebige Drittanbieter-Sonderdaten oder Schriften.
 
 ## Tatsächliche Prüfungen
+
+Ergänzung **Löschen im Kontextmenü**: Typecheck, Lint und vier gezielte Chromium-Browsertests bestanden. Per Rechtsklick drei von fünf Objekten gelöscht, Download mit nativen PDF-Objekten geprüft (übrige Objekte und andere Seite unverändert), Gruppe mit einem Undo/Redo wiederhergestellt/erneut gelöscht und zuvor kopierte fünf Objekte anschließend unverändert eingefügt. Bei 390 × 844 per Langdruck geöffnet und per simuliertem Touch-Tap alle fünf Objekte gelöscht; ein Undo stellt die Gruppe wieder her. Aktuelles CI-Ergebnis steht im zugehörigen PR.
 
 Codex Cloud:
 
