@@ -34,6 +34,7 @@ export function useMenuKeyboard() {
   }, []);
 }
 const paths = {
+  pages: "M8 3h12v15H8V3ZM4 7v14h12",
   select: "m4 3 6 18 3-8 8-3L4 3Z",
   note: "M4 3h16v12l-6 6H4V3Zm10 18v-7h6M8 7h8M8 11h5",
   text: "M3 4h18v16H3V4Zm5 4h8M12 8v8M10 16h4",
