@@ -12,7 +12,7 @@ Im Werkzeug **Auswählen / Verschieben**:
 
 Die linke obere Ecke des Gruppenrahmens wird an die Kontextmenü-Position gesetzt. Strg+V verwendet die letzte Mausposition auf der aktiven PDF-Seite, ansonsten die Mitte des sichtbaren Bereichs, auf das Blatt begrenzt. Abstände und Größen der Gruppe bleiben in Seitenansichtskoordinaten erhalten. Kopierte Textfelder behalten auch ihre individuelle Drehung relativ zur Seite.
 
-Die App-Zwischenablage ist eine unabhängige Momentaufnahme. Spätere Änderungen am Original verändern die Kopie nicht. Sie bleibt bei Seiten- und PDF-Wechseln in derselben App-Sitzung erhalten. Neuladen/Schließen des Tabs verwirft sie. Kein Zugriff auf die Systemzwischenablage, keine Übertragung, keine dauerhafte Speicherung. Extern kopierte PDF-Objekte/Text werden dadurch nicht als Annotationen importiert; Textfelder behalten ihre normale Browser-Zwischenablage.
+Die App-Zwischenablage ist eine unabhängige Momentaufnahme. Spätere Änderungen am Original verändern die Kopie nicht. Sie bleibt bei Seiten- und PDF-Wechseln in derselben App-Sitzung erhalten. Neuladen/Schließen des Tabs verwirft sie. Die PDF-Objekte verbleiben lokal im Arbeitsspeicher; keine Übertragung oder dauerhafte Speicherung. Kopieren setzt soweit möglich eine leere App-Markierung in der Systemzwischenablage, damit alte Bilder nicht die Annotationskopie verdrängen. Externe PNG-/JPEG-Bilder können inzwischen per Strg+V oder über **Bild aus Zwischenablage** übernommen werden; siehe [Bildannotation](IMAGE_ANNOTATIONS.md). Extern kopierte PDF-Objekte/Text werden nicht importiert; Textfelder behalten ihre normale Browser-Zwischenablage.
 
 Auswahl/Kopieren verändert die PDF nicht. Ausschneiden entfernt die ausgewählten Objekte als eine Undo-Operation; Einfügen erzeugt die gesamte Gruppe als eine weitere Undo-Operation. Undo stellt beim Ausschneiden alle Objekte wieder her bzw. entfernt beim Einfügen alle neu erzeugten Objekte. Die Zwischenablage bleibt dabei verfügbar. **Löschen** entfernt die gesamte Auswahl ebenfalls als eine Undo-Operation, ohne die Zwischenablage zu ändern. Rückgängig stellt alle gelöschten Objekte gemeinsam wieder her.
 
@@ -22,7 +22,7 @@ Der Worker erstellt eine kleine eigenständige PDF mit den nativen Annotation-Di
 
 Ausschneiden/Einfügen verwenden jeweils eine MuPDF-Journaloperation. Ungültige Gruppen oder fehlgeschlagene Einfügungen werden vollständig zurückgenommen. Export-Replay berücksichtigt auch mehrere durch einen Paste erzeugte IDs, einschließlich späterer Änderungen, Löschung, Undo/Redo und neuer Historienzweige.
 
-Grenzen: bearbeitbare Ink-, Text- und einfache FreeText-Annotationen; geschützte oder nicht unterstützte Typen werden weder kopiert noch mit „Alle Kommentare markieren“ ausgewählt. Zwischenablage-PDF maximal 20 MB. Keine vollständige Kompatibilitätszusage für beliebige Drittanbieter-Sonderdaten oder Schriften.
+Grenzen: bearbeitbare Ink-, Text-, einfache FreeText- und Bildstempel-Annotationen; geschützte oder nicht unterstützte Typen werden weder kopiert noch mit „Alle Kommentare markieren“ ausgewählt. Zwischenablage-PDF maximal 20 MB. Keine vollständige Kompatibilitätszusage für beliebige Drittanbieter-Sonderdaten oder Schriften.
 
 ## Tatsächliche Prüfungen
 

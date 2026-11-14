@@ -1,3 +1,4 @@
+import { resizeImage, rectCorners } from "../core/annotations/image";
 import {
   intersectingAnnotations,
   selectionRect,
@@ -22,6 +23,19 @@ export function AnnotationOverlay({
     return { x: pt.x - info.origin[0], y: pt.y - info.origin[1] };
   };
   const d = e.draft?.page === page ? e.draft : null;
+  const resized =
+    d?.kind === "resize"
+      ? resizeImage(d.annotation!.rect, d.corner!, {
+          x:
+            rectCorners(d.annotation!.rect)[d.corner!].x +
+            d.points.at(-1)!.x -
+            d.points[0].x,
+          y:
+            rectCorners(d.annotation!.rect)[d.corner!].y +
+            d.points.at(-1)!.y -
+            d.points[0].y,
+        })
+      : null;
   const offset =
     d?.kind === "select"
       ? {
@@ -68,7 +82,9 @@ export function AnnotationOverlay({
           data-testid="selection-outline"
           data-annotation-id={a.id}
           {...box(
-            a.rect,
+            d?.kind === "resize" && d.annotation?.id === a.id
+              ? resized!
+              : a.rect,
             d?.kind === "select" && d.ids?.includes(a.id) ? offset : undefined,
           )}
           fill="#13857912"
@@ -77,6 +93,27 @@ export function AnnotationOverlay({
           strokeDasharray={`${5 / scale} ${3 / scale}`}
         />
       ))}
+      {selectedItems.length === 1 &&
+        selectedItems[0].type === "Stamp" &&
+        selectedItems[0].editable &&
+        e.tool === "select" &&
+        rectCorners(
+          d?.kind === "resize" ? resized! : selectedItems[0].rect,
+        ).map((p, i) => {
+          const q = display({ x: p.x + offset.x, y: p.y + offset.y });
+          return (
+            <circle
+              key={i}
+              data-testid={`image-resize-${i}`}
+              cx={q.x}
+              cy={q.y}
+              r={6 / scale}
+              fill="white"
+              stroke="#138579"
+              strokeWidth={2 / scale}
+            />
+          );
+        })}
       {marquee && (
         <rect
           data-testid="selection-marquee"

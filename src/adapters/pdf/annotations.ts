@@ -1,3 +1,4 @@
+import { imageInfo } from "../../core/annotations/image";
 import * as mupdf from "mupdf";
 import { inverse, transform, type Point } from "../../core/viewport";
 import { eraseInk } from "../../core/annotations/erase";
@@ -10,7 +11,7 @@ import type {
   PdfRect,
 } from "../../core/annotations/model";
 const supported = (s: string): s is AnnotationKind =>
-  ["Ink", "Text", "FreeText"].includes(s);
+  ["Ink", "Text", "FreeText", "Stamp"].includes(s);
 const finite = (n: number, min: number, max: number) => {
   if (!Number.isFinite(n) || n < min || n > max)
     throw new Error("Wert außerhalb des zulässigen Bereichs.");
@@ -83,6 +84,29 @@ function protectedReason(doc: mupdf.PDFDocument): string | null {
     ? "Diese PDF enthält ein Signaturfeld. Nur Ansicht; Signaturen werden nicht verändert."
     : null;
 }
+// MuPDF regenerates a Stamp appearance on update, resetting its Matrix. Reapply
+// the existing custom appearance to retain image orientation/alpha on later edits.
+function updateAnnotation(a: mupdf.PDFAnnotation) {
+  if (a.getType() === "Stamp") {
+    const ap = a.getObject().get("AP", "N");
+    if (!ap.isStream()) throw new Error("Bilddarstellung fehlt.");
+    const bbox = [0, 1, 2, 3].map((i) =>
+      ap.get("BBox", i).asNumber(),
+    ) as mupdf.Rect;
+    const matrix = ap.get("Matrix").isNull()
+      ? mupdf.Matrix.identity
+      : ([0, 1, 2, 3, 4, 5].map((i) =>
+          ap.get("Matrix", i).asNumber(),
+        ) as mupdf.Matrix);
+    const data = ap.readStream();
+    try {
+      a.setAppearance(null, null, matrix, bbox, ap.get("Resources"), data);
+    } finally {
+      data.destroy();
+    }
+  }
+  a.update();
+}
 export class AnnotationEditor {
   readonly readOnly: string | null;
   private sequence = 0;
@@ -125,6 +149,9 @@ export class AnnotationEditor {
         const editable =
           !this.readOnly &&
           supported(type) &&
+          (type !== "Stamp" ||
+            (a.getObject().get("IT").asName() === "StampImage" &&
+              a.getObject().get("AP", "N").isStream())) &&
           a.getObject().isIndirect() &&
           !(
             type === "FreeText" &&
@@ -261,8 +288,43 @@ export class AnnotationEditor {
       const beforePosition = this.doc.getJournal().position;
       this.doc.beginOperation(c.action);
       try {
-        if (c.action === "create") {
-          if (!supported(c.kind))
+        if (c.action === "create-image") {
+          const size = imageInfo(c.bytes);
+          checkRect(c.rect);
+          if (c.contents.length > 10000) throw new Error("Text ist zu lang.");
+          const image = new mupdf.Image(c.bytes);
+          try {
+            if (
+              image.getWidth() !== size.width ||
+              image.getHeight() !== size.height
+            )
+              throw new Error("Ungültige Bildabmessungen.");
+            const a = p.createAnnotation("Stamp");
+            id = a.getObject().asIndirect();
+            a.setRect(mupdf.Rect.transform(c.rect, matrix));
+            a.setContents(c.contents);
+            a.setFlags(mupdf.PDFAnnotation.IS_PRINT);
+            // MuPDF.js 1.28.6 declares StampImage but its intent setter writes null.
+            a.getObject().put("IT", this.doc.newName("StampImage"));
+            a.getObject().put("Name", this.doc.newName("Image"));
+            a.setColor([]);
+            // Custom appearance retains image alpha and compensates page rotation.
+            a.setAppearance(
+              null,
+              null,
+              mupdf.Matrix.rotate(
+                p.getObject().getInheritable("Rotate").asNumber(),
+              ),
+              [0, 0, 1, 1],
+              { XObject: { I: this.doc.addImage(image) } },
+              "/I Do",
+            );
+            updateAnnotation(a);
+          } finally {
+            image.destroy();
+          }
+        } else if (c.action === "create") {
+          if (!supported(c.kind) || c.kind === "Stamp")
             throw new Error("Nicht unterstützter Annotationstyp.");
           checkRect(c.rect);
           if (c.contents.length > 10000) throw new Error("Text ist zu lang.");
@@ -294,7 +356,7 @@ export class AnnotationEditor {
               a.setDefaultAppearance("Helv", c.fontSize, color);
             }
           }
-          a.update();
+          updateAnnotation(a);
         } else if (c.action === "paste") {
           const clip = c.clipboard;
           if (!clip.items.length || clip.bytes.length > 20 * 1024 * 1024)
@@ -360,7 +422,37 @@ export class AnnotationEditor {
                       360,
                   );
               }
-              a.update();
+              if (item.type === "Stamp") {
+                const rotation =
+                  p.getObject().getInheritable("Rotate").asNumber() -
+                  clip.pageRotation;
+                if (rotation % 360 !== 0) {
+                  const sourceAP = object.get("AP", "N");
+                  const bbox = [0, 1, 2, 3].map((i) =>
+                    sourceAP.get("BBox", i).asNumber(),
+                  ) as mupdf.Rect;
+                  const sourceMatrix = sourceAP.get("Matrix");
+                  const effective = sourceMatrix.isNull()
+                    ? bbox
+                    : mupdf.Rect.transform(
+                        bbox,
+                        [0, 1, 2, 3, 4, 5].map((i) =>
+                          sourceMatrix.get(i).asNumber(),
+                        ) as mupdf.Matrix,
+                      );
+                  // Detach first: appearances may be shared with other annotations.
+                  object.put("AP", this.doc.newDictionary());
+                  a.setAppearance(
+                    null,
+                    null,
+                    mupdf.Matrix.rotate(rotation),
+                    effective,
+                    { XObject: { Source: sourceAP } },
+                    "/Source Do",
+                  );
+                }
+              }
+              updateAnnotation(a);
               return object.asIndirect();
             });
           } finally {
@@ -402,7 +494,7 @@ export class AnnotationEditor {
                 "Die Auswahl enthält eine nicht bearbeitbare Annotation.",
               );
             move(a, item, c.offset);
-            a.update();
+            updateAnnotation(a);
           }
           id = null;
         } else {
@@ -428,7 +520,7 @@ export class AnnotationEditor {
             );
             if (paths.length) {
               a.setInkList(paths.map((path) => path.map(toPage)));
-              a.update();
+              updateAnnotation(a);
             } else {
               p.deleteAnnotation(a);
               id = null;
@@ -440,7 +532,22 @@ export class AnnotationEditor {
                 throw new Error("Text ist zu lang.");
               a.setContents(patch.contents);
             }
+            if (patch.rect) {
+              if (item.type !== "Stamp")
+                throw new Error("Größenänderung ist nur für Bilder verfügbar.");
+              checkRect(patch.rect);
+              const ratio =
+                (item.rect[2] - item.rect[0]) / (item.rect[3] - item.rect[1]);
+              const nextRatio =
+                (patch.rect[2] - patch.rect[0]) /
+                (patch.rect[3] - patch.rect[1]);
+              if (Math.abs(nextRatio / ratio - 1) > 0.001)
+                throw new Error("Das Seitenverhältnis muss erhalten bleiben.");
+              a.setRect(mupdf.Rect.transform(patch.rect, matrix));
+            }
             if (patch.color !== undefined) {
+              if (item.type === "Stamp")
+                throw new Error("Bildfarben können nicht geändert werden.");
               const color = rgb(patch.color);
               if (item.type === "FreeText") {
                 const da = a.getDefaultAppearance();
@@ -463,7 +570,7 @@ export class AnnotationEditor {
               );
             }
             if (patch.offset) move(a, item, patch.offset);
-            a.update();
+            updateAnnotation(a);
           }
         }
         this.doc.endOperation();
@@ -476,7 +583,8 @@ export class AnnotationEditor {
             command: structuredClone(c),
             createdIds: Array.isArray(id)
               ? [...id]
-              : c.action === "create" && id !== null
+              : (c.action === "create" || c.action === "create-image") &&
+                  id !== null
                 ? [id]
                 : [],
           };

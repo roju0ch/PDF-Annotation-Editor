@@ -1,7 +1,7 @@
 import type { Matrix, Point } from "../viewport";
 /** Coordinates are unrotated PDF user-space points, not CSS or MuPDF page space. */
 export type PdfRect = [number, number, number, number];
-export type AnnotationKind = "Ink" | "Text" | "FreeText";
+export type AnnotationKind = "Ink" | "Text" | "FreeText" | "Stamp";
 export type Annotation = {
   id: number;
   page: number;
@@ -27,8 +27,16 @@ export type AnnotationPatch = {
   width?: number;
   fontSize?: number;
   offset?: Point;
+  rect?: PdfRect;
 };
 export type AnnotationCommand =
+  | {
+      action: "create-image";
+      page: number;
+      rect: PdfRect;
+      bytes: Uint8Array<ArrayBuffer>;
+      contents: string;
+    }
   | {
       action: "create";
       page: number;
@@ -61,6 +69,7 @@ export type EditorState = {
   readOnly: string | null;
 };
 export const annotationLabels: Record<string, string> = {
+  Stamp: "Bild",
   Ink: "Freihand",
   Text: "Notiz",
   FreeText: "Textfeld",
