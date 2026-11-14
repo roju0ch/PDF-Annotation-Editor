@@ -6,6 +6,7 @@ import type {
 } from "../../core/annotations/model";
 import type { Matrix } from "../../core/viewport";
 export type PageInfo = {
+  id: number;
   width: number;
   height: number;
   origin: [number, number];
@@ -29,6 +30,7 @@ export type Reply = {
   id: number;
   error?: string;
   pages?: PageInfo[];
+  focusPage?: number;
   pixels?: Uint8ClampedArray<ArrayBuffer>;
   width?: number;
   height?: number;
