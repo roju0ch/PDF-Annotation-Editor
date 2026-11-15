@@ -87,3 +87,21 @@ export function intersectingAnnotations(
     .filter((a) => a.page === page && a.editable && touchesAnnotation(a, rect))
     .map((a) => a.id);
 }
+
+/** Bounds used by both the visible group frame and its context-menu hit area. */
+export function selectionBounds(
+  items: Annotation[],
+  page: number,
+  ids: number[],
+): PdfRect | null {
+  const selected = items.filter(
+    (a) => a.page === page && a.editable && ids.includes(a.id),
+  );
+  if (!selected.length) return null;
+  return [
+    Math.min(...selected.map((a) => a.rect[0])),
+    Math.min(...selected.map((a) => a.rect[1])),
+    Math.max(...selected.map((a) => a.rect[2])),
+    Math.max(...selected.map((a) => a.rect[3])),
+  ];
+}

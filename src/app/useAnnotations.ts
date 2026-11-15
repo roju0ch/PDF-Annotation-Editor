@@ -8,6 +8,7 @@ import {
 import {
   intersectingAnnotations,
   selectionRect,
+  selectionBounds,
   touchesAnnotation,
 } from "../core/annotations/selection";
 import {
@@ -606,6 +607,29 @@ export function useAnnotations(
         `${clip.items.length} ${clip.items.length === 1 ? "Markierung" : "Markierungen"} eingefügt.`,
       );
   }
+  function selectionContains(point: Point, page: number) {
+    const cur = current.current;
+    const bounds = selectionBounds(cur.items, page, cur.selection);
+    return (
+      !!bounds &&
+      point.x >= bounds[0] &&
+      point.x <= bounds[2] &&
+      point.y >= bounds[1] &&
+      point.y <= bounds[3]
+    );
+  }
+  function selectionContextAt(p: Point) {
+    const cur = current.current,
+      at = locate(p);
+    return (
+      cur.tool === "select" &&
+      !cur.formDirty &&
+      !cur.state.readOnly &&
+      !!at &&
+      at.page === cur.layout.page &&
+      selectionContains(at.point, at.page)
+    );
+  }
   function openContext(p: Point, screen: Point) {
     const cur = current.current,
       at = locate(p);
@@ -617,7 +641,10 @@ export function useAnnotations(
       at.page !== cur.layout.page
     )
       return false;
-    const item = hit(at.point, at.page);
+    const inSelection = selectionContains(at.point, at.page);
+    // The existing selection takes precedence over empty space or other objects
+    // inside its frame. Outside it, ordinary precise hit testing still applies.
+    const item = inSelection ? undefined : hit(at.point, at.page);
     if (item && !item.editable) return false;
     if (item && !cur.selection.includes(item.id)) setSelection([item.id]);
     showDraft(null);
@@ -625,7 +652,7 @@ export function useAnnotations(
       .querySelectorAll<HTMLElement>(".compact-menu:popover-open")
       .forEach((menu) => menu.hidePopover());
     const value: AnnotationContext = {
-      mode: item ? "selection" : "blank",
+      mode: inSelection || item ? "selection" : "blank",
       screen,
       ...at,
     };
@@ -1018,6 +1045,7 @@ export function useAnnotations(
     edit,
     save,
     gesture: {
+      selectionContextAt,
       openContext,
       closeContext,
       hover: (p: Point | null) => {

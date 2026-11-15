@@ -154,11 +154,13 @@ export default function App() {
     let space = false;
     let hold: ReturnType<typeof setTimeout> | undefined;
     let holdStart: Point | null = null;
+    let deferredTouch: Point | null = null;
     const consumed = new Set<number>();
     const clearHold = () => {
       clearTimeout(hold);
       hold = undefined;
       holdStart = null;
+      deferredTouch = null;
     };
     const points = new Map<number, Point>();
     let drag: Point | null = null;
@@ -199,9 +201,13 @@ export default function App() {
         points.set(e.pointerId, local(e));
         clearHold();
         if (points.size === 1) {
-          annotationInput.current.begin(local(e));
           const start = local(e),
             screen = { x: e.clientX, y: e.clientY };
+          // Preserve the current selection until a hold, tap or drag is known.
+          // Otherwise touching another object inside the group frame replaces it.
+          if (annotationInput.current.selectionContextAt(start))
+            deferredTouch = start;
+          else annotationInput.current.begin(start);
           holdStart = start;
           hold = setTimeout(() => {
             if (annotationInput.current.openContext(start, screen)) {
@@ -228,8 +234,11 @@ export default function App() {
     const move = (e: PointerEvent) => {
       const p = local(e);
       annotationInput.current.hover(p);
-      if (holdStart && Math.hypot(p.x - holdStart.x, p.y - holdStart.y) > 8)
+      if (holdStart && Math.hypot(p.x - holdStart.x, p.y - holdStart.y) > 8) {
+        const start = deferredTouch;
         clearHold();
+        if (start && points.size === 1) annotationInput.current.begin(start);
+      }
       if (consumed.has(e.pointerId)) return;
       if (points.has(e.pointerId)) {
         const old = [...points.values()];
@@ -255,7 +264,7 @@ export default function App() {
           });
         } else if (now.length === 1 && annotationInput.current.active()) {
           annotationInput.current.move(p);
-        } else if (now.length === 1)
+        } else if (now.length === 1 && !deferredTouch)
           updateView((v) => ({
             ...v,
             x: v.x + p.x - old[0].x,
@@ -274,6 +283,8 @@ export default function App() {
       }
     };
     const up = (e: PointerEvent) => {
+      if (e.type === "pointerup" && deferredTouch && !consumed.has(e.pointerId))
+        annotationInput.current.begin(deferredTouch);
       clearHold();
       if (consumed.delete(e.pointerId)) {
         e.preventDefault();

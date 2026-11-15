@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import * as mupdf from "mupdf";
 import { writeSelectionFixture } from "./fixtures";
 import { menu, closeMenu, viewAction } from "./menus";
@@ -389,4 +389,221 @@ test("touch long-press opens menus without moving selection and cancels on drag 
   await expect(page.getByTestId("selection-outline")).toHaveCount(0);
   await page.getByRole("button", { name: "Rückgängig", exact: true }).click();
   await expect(page.locator(".annotation-list button")).toHaveCount(5);
+});
+
+// Diagonal ink leaves substantial empty space inside its visible selection box.
+test.beforeAll(async () => {
+  const doc = new mupdf.PDFDocument(
+    new Uint8Array(await readFile("artifacts/fixture.pdf")),
+  );
+  try {
+    for (const index of [0, 1]) {
+      const p = doc.loadPage(index);
+      try {
+        for (const a of p.getAnnotations()) p.deleteAnnotation(a);
+        for (const [name, path] of [
+          [
+            "Diagonal",
+            [
+              [50, 100],
+              [150, 200],
+            ],
+          ],
+          [
+            "Second",
+            [
+              [220, 260],
+              [260, 310],
+            ],
+          ],
+        ] as const) {
+          const a = p.createAnnotation("Ink");
+          a.setInkList([path.map(([x, y]) => [x, y])]);
+          a.setContents(name);
+          a.setBorderWidth(3);
+          a.setColor([1, 0, 0]);
+          a.update();
+        }
+        const note = p.createAnnotation("Text");
+        note.setRect([100, 160, 120, 180]);
+        note.setContents("Inside box");
+        note.update();
+        const square = p.createAnnotation("Square");
+        square.setRect([70, 220, 90, 240]);
+        square.setContents("Locked");
+        square.setFlags(mupdf.PDFAnnotation.IS_LOCKED);
+        square.update();
+      } finally {
+        p.destroy();
+      }
+    }
+    const buffer = doc.saveToBuffer("compress=yes");
+    try {
+      await writeFile("artifacts/context-box.pdf", buffer.asUint8Array());
+    } finally {
+      buffer.destroy();
+    }
+  } finally {
+    doc.destroy();
+  }
+});
+async function openBoxFixture(page: Page, index = 0) {
+  await page.goto("");
+  await page
+    .getByLabel("PDF öffnen", { exact: true })
+    .setInputFiles("artifacts/context-box.pdf");
+  await expect(page.getByLabel("PDF-Seite 1")).toHaveAttribute(
+    "data-rendered",
+    "true",
+  );
+  if (index) await viewAction(page, "Nächste Seite");
+  await expect(page.locator(".annotation-list button")).toHaveCount(4);
+  const p = await point(page, 75, 125, index);
+  await page.mouse.click(p.x, p.y);
+  await expect(page.getByTestId("selection-outline")).toHaveCount(1);
+}
+for (const index of [0, 1]) {
+  test(`right click uses the selected box including gaps and overlapping objects on page ${index + 1}`, async ({
+    page,
+    browserName,
+  }) => {
+    await openBoxFixture(page, index);
+    if (index) {
+      const p = await point(page, 100, 180, index);
+      await page.mouse.move(p.x, p.y);
+      await page.mouse.wheel(0, -80);
+    }
+    const selected = await page
+      .getByTestId("selection-outline")
+      .getAttribute("data-annotation-id");
+    await right(page, 60, 180, index); // inside diagonal bounds, far from its stroke
+    await expect(
+      page.getByRole("menuitem", { name: /^Kopieren/ }),
+    ).toBeEnabled();
+    await page.keyboard.press("Escape");
+    await right(page, 110, 170, index); // unselected note must not replace the selection
+    await expect(page.getByTestId("selection-outline")).toHaveAttribute(
+      "data-annotation-id",
+      selected!,
+    );
+    await page.getByRole("menuitem", { name: "Löschen", exact: true }).click();
+    await expect(page.locator(".annotation-list button")).toHaveCount(3);
+    await menu(page, "annotations");
+    await expect(page.locator(".annotation-list")).not.toContainText(
+      "Diagonal",
+    );
+    await expect(page.locator(".annotation-list")).toContainText("Inside box");
+    await closeMenu(page);
+    await page.getByRole("button", { name: "Rückgängig", exact: true }).click();
+    await expect(page.locator(".annotation-list button")).toHaveCount(4);
+    await page.getByTestId("viewport").focus();
+    await page.keyboard.press("Control+a");
+    await expect(page.getByTestId("selection-outline")).toHaveCount(3);
+    await expect(page.getByTestId("group-selection-outline")).toBeVisible();
+    await right(page, 170, 230, index); // gap between selected objects
+    await expect(
+      page.getByRole("menuitem", { name: /^Ausschneiden/ }),
+    ).toBeEnabled();
+    await page.keyboard.press("Escape");
+    await right(page, 80, 230, index); // locked, unselected object inside group bounds
+    await expect(
+      page.getByRole("menuitem", { name: /^Kopieren/ }),
+    ).toBeEnabled();
+    await expect(page.getByTestId("selection-outline")).toHaveCount(3);
+    await page.screenshot({
+      path: `artifacts/context-box-${index}-${browserName}.png`,
+    });
+    await page.keyboard.press("Escape");
+    await right(page, 280, 350, index); // outside group bounds remains the blank menu
+    await expect(
+      page.getByRole("menuitem", { name: /^Alle Kommentare/ }),
+    ).toBeVisible();
+    await expect(page.getByRole("menuitem", { name: /^Kopieren/ })).toHaveCount(
+      0,
+    );
+    await page.keyboard.press("Escape");
+    await right(page, 170, 230, index);
+    await page.getByRole("menuitem", { name: "Löschen", exact: true }).click();
+    await expect(page.locator(".annotation-list button")).toHaveCount(1);
+    await page.getByRole("button", { name: "Rückgängig", exact: true }).click();
+    await expect(page.locator(".annotation-list button")).toHaveCount(4);
+  });
+}
+test("touch holds inside selection boxes preserve the selection; short taps and cancelled holds keep normal behavior", async ({
+  page,
+  context,
+  browserName,
+}) => {
+  test.skip(
+    browserName !== "chromium",
+    "Touch injection requires Chromium CDP.",
+  );
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openBoxFixture(page);
+  const selected = await page
+    .getByTestId("selection-outline")
+    .getAttribute("data-annotation-id");
+  const session = await context.newCDPSession(page);
+  const touch = (
+    type: "touchStart" | "touchMove" | "touchEnd",
+    points: { x: number; y: number; id: number }[],
+  ) => session.send("Input.dispatchTouchEvent", { type, touchPoints: points });
+  for (const [x, y] of [
+    [60, 180],
+    [110, 170],
+  ]) {
+    const p = await point(page, x, y);
+    const before = await page.getByTestId("page-0").boundingBox();
+    await touch("touchStart", [{ ...p, id: 1 }]);
+    await touch("touchMove", [{ x: p.x + 2, y: p.y + 2, id: 1 }]);
+    await expect(
+      page.getByRole("menuitem", { name: /^Kopieren/ }),
+    ).toBeVisible();
+    await touch("touchEnd", []);
+    expect(await page.getByTestId("page-0").boundingBox()).toEqual(before);
+    await expect(page.getByTestId("selection-outline")).toHaveAttribute(
+      "data-annotation-id",
+      selected!,
+    );
+    await page.keyboard.press("Escape");
+  }
+  const nested = await point(page, 110, 170);
+  await touch("touchStart", [{ ...nested, id: 1 }]);
+  await touch("touchEnd", []);
+  await expect(page.getByTestId("selection-outline")).not.toHaveAttribute(
+    "data-annotation-id",
+    selected!,
+  );
+  await page.getByTestId("viewport").focus();
+  await page.keyboard.press("Control+a");
+  const gap = await point(page, 170, 230);
+  await touch("touchStart", [{ ...gap, id: 1 }]);
+  await expect(page.getByRole("menuitem", { name: /^Kopieren/ })).toBeVisible();
+  await touch("touchEnd", []);
+  await expect(page.getByTestId("selection-outline")).toHaveCount(3);
+  await page.screenshot({ path: "artifacts/context-box-touch.png" });
+  await page.keyboard.press("Escape");
+  await touch("touchStart", [{ ...gap, id: 1 }]);
+  await touch("touchMove", [{ x: gap.x + 35, y: gap.y, id: 1 }]);
+  await page.waitForTimeout(700);
+  await expect(
+    page.getByRole("menu", { name: "Annotationsaktionen" }),
+  ).toHaveCount(0);
+  await touch("touchEnd", []);
+  await page.getByTestId("viewport").focus();
+  await page.keyboard.press("Control+a");
+  await touch("touchStart", [{ ...gap, id: 1 }]);
+  await touch("touchStart", [
+    { ...gap, id: 1 },
+    { x: gap.x + 50, y: gap.y, id: 2 },
+  ]);
+  await page.waitForTimeout(700);
+  await expect(
+    page.getByRole("menu", { name: "Annotationsaktionen" }),
+  ).toHaveCount(0);
+  await touch("touchEnd", []);
+  await expect(page.getByTestId("selection-outline")).toHaveCount(3);
+  await expect(
+    page.getByRole("button", { name: "Rückgängig", exact: true }),
+  ).toBeDisabled();
 });
