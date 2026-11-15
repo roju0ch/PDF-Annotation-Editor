@@ -268,7 +268,11 @@ export class AnnotationEditor {
       if (c.action === "redo" && this.doc.canRedo()) this.doc.redo();
       return null;
     }
-    if (c.action === "reorder-pages" || c.action === "insert-pdf")
+    if (
+      c.action === "reorder-pages" ||
+      c.action === "insert-pdf" ||
+      c.action === "rotate-page"
+    )
       return this.editPages(c);
     const p = this.doc.loadPage(c.page);
     let id: number | number[] | null;
@@ -630,7 +634,15 @@ export class AnnotationEditor {
     const count = this.doc.countPages();
     let source: mupdf.PDFDocument | undefined;
     try {
-      if (c.action === "reorder-pages") {
+      if (c.action === "rotate-page") {
+        if (
+          !Number.isInteger(c.page) ||
+          c.page < 0 ||
+          c.page >= count ||
+          (c.degrees !== -90 && c.degrees !== 90)
+        )
+          throw new Error("Ungültige Seitendrehung.");
+      } else if (c.action === "reorder-pages") {
         if (
           c.order.length !== count ||
           new Set(c.order).size !== count ||
@@ -684,6 +696,12 @@ export class AnnotationEditor {
               this.doc,
               c.order.map((i) => labels[i]),
             );
+        } else if (c.action === "rotate-page") {
+          const page = this.doc.findPage(c.page);
+          const rotation = page.getInheritable("Rotate").asNumber();
+          // Override inherited rotation on this page only. Native annotations,
+          // content streams, CropBox and appearance flags remain untouched.
+          page.put("Rotate", (((rotation + c.degrees) % 360) + 360) % 360);
         } else ids = importPages(this.doc, source!, c.at, c.name.slice(0, 255));
         this.doc.endOperation();
         this.record(c, before, ids ? [...ids] : []);

@@ -53,18 +53,20 @@ self.onmessage = ({ data: r }: MessageEvent<Request>) => {
       } satisfies Reply);
     } else if (r.type === "edit") {
       if (!editor) throw new Error("Keine PDF geöffnet.");
-      const before = pages.map((p) => p.id);
+      const before = pages.map((p) => `${p.id}:${p.rotation}`);
       const selected = editor.apply(r.command);
       const structural = [
+        "rotate-page",
         "reorder-pages",
         "insert-pdf",
         "undo",
         "redo",
       ].includes(r.command.action);
       const after = structural
-        ? Array.from({ length: doc!.countPages() }, (_, i) =>
-            doc!.findPage(i).asIndirect(),
-          )
+        ? Array.from({ length: doc!.countPages() }, (_, i) => {
+            const page = doc!.findPage(i);
+            return `${page.asIndirect()}:${page.getInheritable("Rotate").asNumber()}`;
+          })
         : before;
       const changed =
         before.length !== after.length ||
