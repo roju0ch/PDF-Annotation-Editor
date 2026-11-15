@@ -2,6 +2,7 @@ import { resizeImage, rectCorners } from "../core/annotations/image";
 import {
   intersectingAnnotations,
   selectionRect,
+  selectionBounds,
 } from "../core/annotations/selection";
 import type { PdfRect } from "../core/annotations/model";
 import { transform, type Point } from "../core/viewport";
@@ -69,6 +70,7 @@ export function AnnotationOverlay({
   const selectedItems = e.items.filter(
     (a) => a.page === page && selected.includes(a.id),
   );
+  const groupBounds = selectionBounds(selectedItems, page, selected);
   return (
     <svg
       className="annotation-overlay"
@@ -93,6 +95,16 @@ export function AnnotationOverlay({
           strokeDasharray={`${5 / scale} ${3 / scale}`}
         />
       ))}
+      {selectedItems.length > 1 && groupBounds && (
+        <rect
+          data-testid="group-selection-outline"
+          {...box(groupBounds, offset)}
+          fill="none"
+          stroke="#138579"
+          strokeWidth={1 / scale}
+          strokeDasharray={`${3 / scale} ${3 / scale}`}
+        />
+      )}
       {selectedItems.length === 1 &&
         selectedItems[0].type === "Stamp" &&
         selectedItems[0].editable &&

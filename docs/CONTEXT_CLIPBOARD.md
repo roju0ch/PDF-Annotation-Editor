@@ -2,8 +2,8 @@
 
 Im Werkzeug **Auswählen / Verschieben**:
 
-- Rechtsklick oder etwa 600 ms lang drücken auf eine ausgewählte Markierung: **Kopieren**, **Ausschneiden**, **Löschen**. Die gesamte bestehende Auswahl bleibt erhalten. Auf einem noch nicht ausgewählten bearbeitbaren Objekt wird dieses zuerst ausgewählt.
-- Rechtsklick oder lang drücken auf freie Blattfläche: **Einfügen**, **Alle Kommentare markieren**. Einfügen ist ohne kopierten Inhalt deaktiviert.
+- Rechtsklick oder etwa 600 ms lang drücken **innerhalb der gesamten Auswahlbox**: **Kopieren**, **Ausschneiden**, **Löschen**. Die gesamte bestehende Auswahl bleibt erhalten; die Linie selbst muss nicht getroffen werden. Bei mehreren ausgewählten Objekten gilt der gemeinsame sichtbare Rahmen, einschließlich der Lücken dazwischen. Die bestehende Auswahl hat innerhalb dieses Rahmens Vorrang vor anderen darunterliegenden Objekten. Außerhalb des Rahmens wird ein getroffenes, noch nicht ausgewähltes bearbeitbares Objekt zuerst ausgewählt.
+- Rechtsklick oder lang drücken auf freie Blattfläche **außerhalb der Auswahlbox**: **Einfügen**, **Alle Kommentare markieren**. Einfügen ist ohne kopierten Inhalt deaktiviert.
 - Das Menü bleibt im sichtbaren Browserbereich. Es öffnet sich auch während eines laufenden Kopiervorgangs; Aktionen bleiben bis zu dessen Abschluss deaktiviert. Escape, Schließen oder ein Klick außerhalb schließen es. Pfeiltasten/Home/End navigieren im Menü.
 - Bewegung von mehr als 8 CSS-Pixeln, Loslassen, Abbruch, Escape, Zoom oder ein zweiter Finger stoppen die Langdruck-Erkennung. Das Öffnen des Menüs verwirft nur die laufende Geste, ohne Annotationen zu verschieben.
 - Strg+A/C/X/V (auch Cmd) wählen aus, kopieren, schneiden aus und fügen ein. Eingaben in Text-/Eigenschaftsfeldern sind davon ausgenommen. Die vorhandenen Kürzel für Undo/Redo/Download bleiben erhalten.
@@ -24,7 +24,17 @@ Ausschneiden/Einfügen verwenden jeweils eine MuPDF-Journaloperation. Ungültige
 
 Grenzen: bearbeitbare Ink-, Text-, einfache FreeText- und Bildstempel-Annotationen; geschützte oder nicht unterstützte Typen werden weder kopiert noch mit „Alle Kommentare markieren“ ausgewählt. Zwischenablage-PDF maximal 20 MB. Keine vollständige Kompatibilitätszusage für beliebige Drittanbieter-Sonderdaten oder Schriften.
 
-## Tatsächliche Prüfungen
+## Auswahlbox als Kontextfläche
+
+Die Kontextfläche und der gemeinsame Gruppenrahmen verwenden dieselben Grenzen in PDF-Koordinaten. Sie gelten für bearbeitbare ausgewählte Objekte auf der aktiven Seite und folgen Zoom, Seitendrehung und CropBox. Präzise Stricherkennung beim normalen Auswählen und Ziehen bleibt bestehen.
+
+Bei Touch innerhalb der Auswahlbox wird der Beginn der normalen Auswahlgeste bis zur Unterscheidung von kurzem Tippen, Ziehen und Langdruck aufgeschoben. Dadurch wählt ein Langdruck auf einem darunterliegenden anderen Objekt nicht versehentlich dieses aus. Kleine Fingerbewegungen innerhalb der Langdruck-Toleranz verschieben die Seite nicht. Kurzes Tippen führt weiterhin die normale Auswahl aus; Bewegung über 8 CSS-Pixel startet die normale Ziehgeste und verhindert das Menü. Ein zweiter Finger bricht die wartende Geste ab.
+
+Drei zusätzliche Browsertests prüfen freie Stellen in der Box einer diagonalen Linie, Lücken in einer Gruppe, ein anderes und ein gesperrtes Objekt unter dem Rahmen, unveränderte Auswahl, Löschen/Undo, die weiterhin freie Fläche außerhalb sowie eine gedrehte CropBox bei Zoom. Chromium-Touch prüft Langdruck mit leichtem Fingerzittern, kurzes Tippen und Abbruch durch Bewegung/zweiten Finger. Die Mausfälle laufen auch in Firefox. Abschließende Testzahlen und CI-Links stehen im PR.
+
+![Kontextmenü in der gemeinsamen Auswahlbox](images/context-box-touch.png)
+
+## Frühere Prüfungen
 
 Ergänzung **Löschen im Kontextmenü**: Typecheck, Lint und vier gezielte Chromium-Browsertests bestanden. Per Rechtsklick drei von fünf Objekten gelöscht, Download mit nativen PDF-Objekten geprüft (übrige Objekte und andere Seite unverändert), Gruppe mit einem Undo/Redo wiederhergestellt/erneut gelöscht und zuvor kopierte fünf Objekte anschließend unverändert eingefügt. Bei 390 × 844 per Langdruck geöffnet und per simuliertem Touch-Tap alle fünf Objekte gelöscht; ein Undo stellt die Gruppe wieder her. Aktuelles CI-Ergebnis steht im zugehörigen PR.
 
