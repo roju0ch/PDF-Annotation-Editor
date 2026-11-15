@@ -294,6 +294,30 @@ export function PageOrganizer({
         </button>
         <span>Seite {page + 1}</span>
       </div>
+      <div
+        className="page-organizer-actions"
+        role="group"
+        aria-label="Seite drehen"
+      >
+        {([-90, 90] as const).map((degrees) => (
+          <button
+            key={degrees}
+            disabled={blocked}
+            aria-label={`Seite 90° nach ${degrees < 0 ? "links" : "rechts"} drehen`}
+            title={`Aktuelle Seite 90° nach ${degrees < 0 ? "links" : "rechts"} drehen`}
+            onClick={() => {
+              cancel();
+              void editor
+                .edit({ action: "rotate-page", page, degrees })
+                .then((result) => {
+                  if (!result) panel.current?.hidePopover();
+                });
+            }}
+          >
+            {degrees < 0 ? "↶ 90° links" : "↷ 90° rechts"}
+          </button>
+        ))}
+      </div>
       <div className="page-import">
         <select
           aria-label="PDF einfügen"

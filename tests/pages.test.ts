@@ -291,3 +291,140 @@ it("imports a plain PDF without Names/Outlines and retains popup/reply reference
     doc.destroy();
   }
 });
+
+it.each([-90, 90] as const)(
+  "rotates a cropped page by %i with atomic undo/redo and native export",
+  (degrees) => {
+    const original = source(),
+      doc = new m.PDFDocument(original),
+      editor = new AnnotationEditor(doc, original);
+    try {
+      const before = pageInfos(doc),
+        contents = doc.findPage(1).get("Contents").toString(),
+        crop = doc.findPage(1).get("CropBox").toString();
+      editor.apply({ action: "rotate-page", page: 1, degrees });
+      const after = pageInfos(doc);
+      expect(after[1]).toMatchObject({
+        rotation: degrees === 90 ? 180 : 0,
+        width: 500,
+        height: 400,
+      });
+      expect(after[1].pdfToPage).not.toEqual(before[1].pdfToPage);
+      expect(after[0]).toEqual(before[0]);
+      expect(after[2]).toEqual(before[2]);
+      expect(doc.findPage(1).get("CropBox").toString()).toBe(crop);
+      expect(doc.findPage(1).get("Contents").toString()).toBe(contents);
+      editor.apply({ action: "undo" });
+      expect(pageInfos(doc)).toEqual(before);
+      expect(editor.state().canUndo).toBe(false);
+      editor.apply({ action: "redo" });
+      expect(pageInfos(doc)).toEqual(after);
+      const saved = new m.PDFDocument(editor.export());
+      try {
+        expect(pageInfos(saved)).toEqual(after);
+        expect(saved.resolveLink(saved.loadOutline()![0].uri!)).toBe(1);
+        expect(saved.wasRepaired()).toBe(false);
+      } finally {
+        saved.destroy();
+      }
+    } finally {
+      doc.destroy();
+    }
+  },
+);
+it("overrides inherited rotation on one page without modifying annotations and retains later edits after import/reorder", () => {
+  const base = new m.PDFDocument(source());
+  base.findPage(0).get("Parent").put("Rotate", 90);
+  const original = bytes(base);
+  base.destroy();
+  const doc = new m.PDFDocument(original),
+    editor = new AnnotationEditor(doc, original);
+  try {
+    const before = pageInfos(doc),
+      annots = doc.findPage(0).get("Annots"),
+      objects: string[] = [];
+    annots.forEach((a) => objects.push(a.resolve().toString()));
+    for (let n = 0; n < 4; n++)
+      editor.apply({ action: "rotate-page", page: 0, degrees: -90 });
+    expect(pageInfos(doc)).toEqual(before);
+    annots.forEach((a, i) =>
+      expect(a.resolve().toString()).toBe(objects[Number(i)]),
+    );
+    for (let n = 0; n < 4; n++) editor.apply({ action: "undo" });
+    expect(doc.findPage(0).get("Rotate").isNull()).toBe(true);
+    editor.apply({ action: "rotate-page", page: 0, degrees: 90 });
+    expect(pageInfos(doc).map((p) => p.rotation)).toEqual([180, 90, 90]);
+    const note = editor.list(0).find((a) => a.type === "Text")!;
+    editor.apply({
+      action: "update",
+      page: 0,
+      id: note.id,
+      patch: { contents: "After rotation" },
+    });
+    editor.apply({
+      action: "insert-pdf",
+      at: 3,
+      bytes: input(),
+      name: "More.pdf",
+    });
+    editor.apply({ action: "rotate-page", page: 3, degrees: -90 });
+    editor.apply({ action: "reorder-pages", order: [3, 0, 1, 2, 4, 5] });
+    for (let n = 0; n < 2; n++) {
+      const output = editor.export(),
+        saved = new m.PDFDocument(output),
+        check = new AnnotationEditor(saved, output);
+      try {
+        expect(pageInfos(saved).map((p) => p.rotation)).toEqual([
+          270, 180, 90, 90, 90, 0,
+        ]);
+        expect(check.list(1).some((a) => a.contents === "After rotation")).toBe(
+          true,
+        );
+        expect(
+          check.list(1).some((a) => a.contents === "Unsupported square"),
+        ).toBe(true);
+        expect(saved.wasRepaired()).toBe(false);
+      } finally {
+        saved.destroy();
+      }
+    }
+  } finally {
+    doc.destroy();
+  }
+});
+it("rejects invalid rotations and protected page operations without changing history", () => {
+  const original = input(),
+    doc = new m.PDFDocument(original),
+    editor = new AnnotationEditor(doc, original);
+  try {
+    const before = pageInfos(doc),
+      state = editor.state();
+    for (const page of [-1, 3, 0.5])
+      expect(() =>
+        editor.apply({ action: "rotate-page", page, degrees: 90 }),
+      ).toThrow("Seitendrehung");
+    expect(() =>
+      editor.apply({ action: "rotate-page", page: 0, degrees: 45 as 90 }),
+    ).toThrow("Seitendrehung");
+    expect(pageInfos(doc)).toEqual(before);
+    expect(editor.state()).toEqual(state);
+  } finally {
+    doc.destroy();
+  }
+  for (const key of ["AcroForm", "StructTreeRoot"]) {
+    const source = new m.PDFDocument(original);
+    source.getTrailer().get("Root").put(key, {});
+    const data = bytes(source);
+    source.destroy();
+    const blocked = new m.PDFDocument(data),
+      edit = new AnnotationEditor(blocked, data);
+    try {
+      expect(() =>
+        edit.apply({ action: "rotate-page", page: 0, degrees: 90 }),
+      ).toThrow();
+      expect(edit.state().canUndo).toBe(false);
+    } finally {
+      blocked.destroy();
+    }
+  }
+});

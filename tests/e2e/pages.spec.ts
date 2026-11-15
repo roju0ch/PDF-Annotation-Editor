@@ -329,3 +329,137 @@ test("drag autoscroll retains capture through virtual rows and reopening restore
     "Page 1",
   ]);
 });
+
+for (const mobile of [false, true]) {
+  test(`page rotation ${mobile ? "with touch" : "with mouse and continuous view"} preserves native comments and refreshes geometry`, async ({
+    page,
+    context,
+    browserName,
+  }) => {
+    test.skip(
+      mobile && browserName !== "chromium",
+      "Touch injection requires Chromium CDP.",
+    );
+    if (mobile) await page.setViewportSize({ width: 390, height: 844 });
+    await open(page);
+    if (!mobile) {
+      await menu(page, "view");
+      await page
+        .getByLabel("Ansicht", { exact: true })
+        .selectOption("continuous");
+      await closeMenu(page);
+    }
+    await overview(page);
+    const session = mobile ? await context.newCDPSession(page) : null;
+    const rotate = async (direction: "links" | "rechts") => {
+      const button = page.getByRole("button", {
+        name: `Seite 90° nach ${direction} drehen`,
+        exact: true,
+      });
+      if (!session) await button.click();
+      else {
+        const b = (await button.boundingBox())!;
+        await session.send("Input.dispatchTouchEvent", {
+          type: "touchStart",
+          touchPoints: [{ x: b.x + b.width / 2, y: b.y + b.height / 2, id: 1 }],
+        });
+        await session.send("Input.dispatchTouchEvent", {
+          type: "touchEnd",
+          touchPoints: [],
+        });
+      }
+    };
+    const dimensions = () =>
+      page
+        .getByTestId("page-0")
+        .evaluate((el) => [el.style.width, el.style.height]);
+    const thumb = page.getByLabel("Miniatur Seite 1", { exact: true });
+    await expect(thumb).toHaveAttribute("data-rendered", "true");
+    await rotate("rechts");
+    await expect.poll(dimensions).toEqual(["400px", "300px"]);
+    // Actual pixels must rotate, including after a second turn that keeps width/height.
+    const redAt = async (x: number, y: number) =>
+      page.getByLabel("PDF-Seite 1", { exact: true }).evaluate(
+        (el, [x, y]) => {
+          const c = el as HTMLCanvasElement;
+          return Array.from(
+            c
+              .getContext("2d")!
+              .getImageData(
+                Math.floor(c.width * x),
+                Math.floor(c.height * y),
+                1,
+                1,
+              ).data,
+          ).slice(0, 3);
+        },
+        [x, y],
+      );
+    await expect.poll(() => redAt(0.15, 0.5)).toEqual([255, 0, 0]);
+    await expect
+      .poll(() =>
+        thumb.evaluate((el) => [
+          (el as HTMLCanvasElement).width,
+          (el as HTMLCanvasElement).height,
+        ]),
+      )
+      .toEqual([90, 68]);
+    await rotate("rechts");
+    await expect.poll(dimensions).toEqual(["300px", "400px"]);
+    await expect.poll(() => redAt(0.5, 0.15)).toEqual([255, 0, 0]);
+    await closeMenu(page);
+    await page.getByRole("button", { name: "Rückgängig", exact: true }).click();
+    await expect.poll(dimensions).toEqual(["400px", "300px"]);
+    await expect.poll(() => redAt(0.15, 0.5)).toEqual([255, 0, 0]);
+    await page
+      .getByRole("button", { name: "Wiederholen", exact: true })
+      .click();
+    await expect.poll(dimensions).toEqual(["300px", "400px"]);
+    await overview(page);
+    await rotate("links");
+    await expect.poll(dimensions).toEqual(["400px", "300px"]);
+    await expect.poll(() => redAt(0.15, 0.5)).toEqual([255, 0, 0]);
+    await page.screenshot({
+      path: `artifacts/rotation-${mobile ? "mobile" : "desktop"}-${browserName}.png`,
+    });
+    await closeMenu(page);
+    // Click the rotated native note and edit it through the ordinary property UI.
+    const b = (await page.getByTestId("page-0").boundingBox())!;
+    await page.mouse.click(
+      b.x + (b.width * 268) / 400,
+      b.y + (b.height * 132) / 300,
+    );
+    await expect(page.getByTestId("selection-outline")).toHaveCount(1);
+    await menu(page, "annotations");
+    await page
+      .getByLabel("Annotationsinhalt", { exact: true })
+      .fill("Rotated note");
+    await page.getByRole("button", { name: "Übernehmen", exact: true }).click();
+    await expect(
+      page.getByRole("button", { name: "Übernehmen", exact: true }),
+    ).toBeDisabled();
+    const file = `artifacts/rotation-${mobile ? "mobile" : "desktop"}-${browserName}.pdf`;
+    const saved = await download(page, file);
+    expect(saved[0].comments).toEqual(["Rotated note"]);
+    const doc = new m.PDFDocument(new Uint8Array(await readFile(file)));
+    try {
+      expect(doc.findPage(0).get("Rotate").asNumber()).toBe(90);
+      expect(doc.findPage(1).get("Rotate").asNumber()).toBe(0);
+      const original = new m.PDFDocument(
+        new Uint8Array(await readFile("artifacts/pages-main.pdf")),
+      );
+      try {
+        expect(doc.findPage(0).get("Annots", 0, "Rect").asJS()).toEqual(
+          original.findPage(0).get("Annots", 0, "Rect").asJS(),
+        );
+      } finally {
+        original.destroy();
+      }
+    } finally {
+      doc.destroy();
+    }
+    await page.getByLabel("PDF öffnen", { exact: true }).setInputFiles(file);
+    await expect.poll(dimensions).toEqual(["400px", "300px"]);
+    await expect.poll(() => redAt(0.15, 0.5)).toEqual([255, 0, 0]);
+  });
+}

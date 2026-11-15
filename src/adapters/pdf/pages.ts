@@ -20,6 +20,7 @@ export function pageInfos(doc: mupdf.PDFDocument): PageInfo[] {
         throw new Error("Nicht unterstützte Seitengröße.");
       return {
         id: doc.findPage(i).asIndirect(),
+        rotation: p.getObject().getInheritable("Rotate").asNumber(),
         width,
         height,
         origin: [b[0], b[1]],
@@ -182,6 +183,8 @@ export function importPages(
       for (const key of ["Resources", "MediaBox", "CropBox", "Rotate"]) {
         const value = page.getInheritable(key);
         if (!value.isNull()) page.put(key, value);
+        // An absent source rotation means zero, not the target parent’s rotation.
+        else if (key === "Rotate") page.put(key, 0);
       }
     imported.forEach((page, i) => target.insertPage(at + i, page));
     const outlines = source.getTrailer().get("Root", "Outlines");

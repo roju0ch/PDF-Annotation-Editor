@@ -7,6 +7,7 @@ import type {
 import type { Matrix } from "../../core/viewport";
 export type PageInfo = {
   id: number;
+  rotation: number;
   width: number;
   height: number;
   origin: [number, number];

@@ -30,6 +30,7 @@ export type AnnotationPatch = {
   rect?: PdfRect;
 };
 export type PageCommand =
+  | { action: "rotate-page"; page: number; degrees: -90 | 90 }
   | { action: "reorder-pages"; order: number[] }
   | {
       action: "insert-pdf";
