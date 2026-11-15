@@ -4,19 +4,25 @@ import { resolve, extname, sep } from "node:path";
 import * as mupdf from "mupdf";
 import { tool } from "./menus";
 
-test("cold start with network disabled loads bundled worker/WASM and edits/exports a local PDF", async ({
+test("cold start from local bundled assets without network access edits/exports a PDF", async ({
   browser,
   browserName,
 }) => {
-  const context = await browser.newContext({ offline: true });
+  // Firefox rejects navigation before route fulfillment when offline=true.
+  // Both engines fulfill every app request from disk and abort every other URL;
+  // the deliberately unresolvable origin also prevents a server fallback.
+  const context = await browser.newContext({
+    offline: browserName !== "firefox",
+  });
+  const origin = "http://pdf-editor-offline.invalid";
   const files = new Set<string>(),
     external: string[] = [];
   const root = resolve("dist");
   // Tauri serves frontendDist from local embedded assets. This harness supplies
-  // those exact build files while the browser's actual network is disabled.
+  // those exact build files with no request allowed to reach the network.
   await context.route("**/*", async (route) => {
     const url = new URL(route.request().url());
-    if (url.origin !== "http://127.0.0.1:4173") {
+    if (url.origin !== origin) {
       external.push(url.origin);
       await route.abort();
       return;
@@ -51,7 +57,7 @@ test("cold start with network disabled loads bundled worker/WASM and edits/expor
   });
   try {
     const page = await context.newPage();
-    await page.goto("http://127.0.0.1:4173/PDF-Annotation-Editor/");
+    await page.goto(`${origin}/PDF-Annotation-Editor/`);
     await page
       .getByLabel("PDF öffnen", { exact: true })
       .setInputFiles("artifacts/fixture.pdf");

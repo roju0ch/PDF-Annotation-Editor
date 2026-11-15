@@ -39,10 +39,11 @@ jobs:
           node scripts/release/run.mjs node node_modules/@tauri-apps/cli/tauri.js icon src-tauri/icon.svg --output "$RUNNER_TEMP/app-icons"
           mkdir -p src-tauri/icons/android
           cp -R "$RUNNER_TEMP/app-icons/android/." src-tauri/icons/android/
+      # npm supplies a stable CLI callback for Gradle, even from src-tauri/.
       - name: Generate Android project from pinned Tauri CLI
-        run: node scripts/release/run.mjs node node_modules/@tauri-apps/cli/tauri.js android init --ci --skip-targets-install
+        run: node scripts/release/run.mjs npm run tauri -- android init --ci --skip-targets-install
       - name: Build ARM64 release APK
-        run: node scripts/release/run.mjs node node_modules/@tauri-apps/cli/tauri.js android build --apk --target aarch64 --ci
+        run: node scripts/release/run.mjs npm run tauri -- android build --apk --target aarch64 --ci
       - name: Require unchanged Rust lockfile
         run: git diff --exit-code -- src-tauri/Cargo.lock
       - name: Sign and verify installable test APK
