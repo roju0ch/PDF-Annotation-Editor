@@ -4,6 +4,7 @@ import {
   mkdirSync,
   copyFileSync,
   writeFileSync,
+  appendFileSync,
 } from "node:fs";
 import { join, extname } from "node:path";
 import { createHash } from "node:crypto";
@@ -51,3 +52,16 @@ writeFileSync(
   ) + "\n",
 );
 console.log(JSON.stringify(entries, null, 2));
+
+for (const entry of entries) {
+  console.log(
+    `::notice title=Installation package::${entry.name} | ${entry.bytes} bytes | SHA256 ${entry.sha256}`,
+  );
+}
+if (process.env.GITHUB_STEP_SUMMARY)
+  appendFileSync(
+    process.env.GITHUB_STEP_SUMMARY,
+    entries
+      .map((e) => `- **${e.name}**: ${e.bytes} bytes; SHA256 \`${e.sha256}\``)
+      .join("\n") + "\n",
+  );

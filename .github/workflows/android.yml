@@ -34,6 +34,11 @@ jobs:
       - name: Install Android toolchain
         run: node scripts/release/run.mjs bash scripts/release/android-toolchain.sh
       - run: npm ci
+      - name: Generate launcher icons from the project SVG
+        run: |
+          node scripts/release/run.mjs node node_modules/@tauri-apps/cli/tauri.js icon src-tauri/icon.svg --output "$RUNNER_TEMP/app-icons"
+          mkdir -p src-tauri/icons/android
+          cp -R "$RUNNER_TEMP/app-icons/android/." src-tauri/icons/android/
       - name: Generate Android project from pinned Tauri CLI
         run: node scripts/release/run.mjs node node_modules/@tauri-apps/cli/tauri.js android init --ci --skip-targets-install
       - name: Build ARM64 release APK

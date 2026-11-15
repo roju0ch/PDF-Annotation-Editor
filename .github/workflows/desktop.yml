@@ -89,7 +89,9 @@ jobs:
           $pfx = Join-Path $env:RUNNER_TEMP 'signing.pfx'
           try {
             [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:CERTIFICATE))
-            $cert = Import-PfxCertificate -FilePath $pfx -CertStoreLocation Cert:\CurrentUser\My -Password (ConvertTo-SecureString $env:CERTIFICATE_PASSWORD -AsPlainText -Force)
+            $certificates = @(Import-PfxCertificate -FilePath $pfx -CertStoreLocation Cert:\CurrentUser\My -Password (ConvertTo-SecureString $env:CERTIFICATE_PASSWORD -AsPlainText -Force) | Where-Object HasPrivateKey)
+            if ($certificates.Count -ne 1) { throw 'Expected one signing certificate with a private key' }
+            $cert = $certificates[0]
             @{bundle=@{windows=@{certificateThumbprint=$cert.Thumbprint;digestAlgorithm='sha256';timestampUrl='http://timestamp.digicert.com';tsp=$true}}} | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $env:RUNNER_TEMP 'tauri-signing.json')
           } finally { Remove-Item $pfx -ErrorAction SilentlyContinue }
       - name: Configure Apple signing and notarization

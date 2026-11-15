@@ -59,7 +59,7 @@ Tauri übernimmt Code-Signing und Notarisierung für beide Architekturen. Der Jo
 
 ### Android
 
-Tauri 2 verwendet den gemeinsamen Rust-Library-Einstieg mit `mobile_entry_point`. Der Android-Gradle-Unterbau wird mit der im Lockfile fixierten Tauri-CLI in CI neu erzeugt; `src-tauri/gen/` und Build-Verzeichnisse bleiben aus Git ausgeschlossen. SDK/Build Tools 35, NDK 28 und Java 17 werden im Runner installiert. Zunächst wird nur `aarch64` gebaut; kein x86-Emulator- oder 32-Bit-APK.
+Tauri 2 verwendet den gemeinsamen Rust-Library-Einstieg mit `mobile_entry_point`. Der Android-Gradle-Unterbau und die Launcher-Icons aus dem eingecheckten SVG werden mit der im Lockfile fixierten Tauri-CLI in CI neu erzeugt; `src-tauri/gen/` und Build-Verzeichnisse bleiben aus Git ausgeschlossen. SDK/Build Tools 35, NDK 28 und Java 17 werden im Runner installiert. Zunächst wird nur `aarch64` gebaut; kein x86-Emulator- oder 32-Bit-APK.
 
 Jede installierbare APK braucht eine Signatur. Ohne eigene Secrets erzeugt CI einen **neuen 30 Tage gültigen Testschlüssel pro Lauf**, signiert die Release-APK, prüft `apksigner verify` und 16-KB-Zip-Ausrichtung und verwirft den privaten Schlüssel. Diese APKs sind ausschließlich Testversionen. **Updates zwischen verschiedenen Testläufen benötigen eine Deinstallation**, weil der Schlüssel wechselt; dabei können lokale App-Daten verloren gehen. Nicht als dauerhaft verteilte Android-Version verwenden.
 

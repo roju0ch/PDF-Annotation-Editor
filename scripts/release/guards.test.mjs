@@ -86,3 +86,24 @@ test("pull requests and manual runs cannot publish; missing artifacts block tag 
     rmSync(f.dir, { recursive: true });
   }
 });
+
+test("tampered package is rejected before any GitHub release is created", () => {
+  const f = fixture("0.1.0");
+  try {
+    mkdirSync(join(f.dir, "release-assets"));
+    const name = "PDF-Annotation-Editor_0.1.0_windows-x64.exe";
+    f.write("release-assets/" + name, "tampered");
+    f.write("release-assets/windows-x64.json", {
+      version: "0.1.0",
+      commit: process.env.GITHUB_SHA,
+      target: "windows-x64",
+      files: [{ name, bytes: 8, sha256: "incorrect" }],
+    });
+    assert.match(
+      run(publish, f.dir, "push", "refs/tags/v0.1.0").stderr,
+      /Artifact checksum mismatch/,
+    );
+  } finally {
+    rmSync(f.dir, { recursive: true });
+  }
+});
