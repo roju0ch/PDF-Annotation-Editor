@@ -5,7 +5,7 @@ plugins {
 
 android {
     namespace = "io.github.roju0ch.pdfannotationeditor.androidbridge"
-    compileSdk = 35
+    compileSdk = 37
 
     defaultConfig {
         minSdk = 24
