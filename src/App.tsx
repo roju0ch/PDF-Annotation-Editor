@@ -1,3 +1,5 @@
+import { usePdfRaster } from "./app/usePdfRaster";
+import { visibleTilePlan } from "./core/render/tiles";
 import { PageOrganizer } from "./app/PageOrganizer";
 import { AnnotationContextMenu } from "./app/AnnotationContextMenu";
 import { useAnnotations } from "./app/useAnnotations";
@@ -36,7 +38,7 @@ export default function App() {
     client = useRef<PdfClient | null>(null),
     generation = useRef(0);
   const canvases = useRef(new Map<number, HTMLCanvasElement>());
-  const cache = useRef(new Map<string, ImageData>());
+  const detailLayers = useRef(new Map<number, HTMLDivElement>());
   const [pages, setPages] = useState<PageInfo[]>([]),
     [name, setName] = useState(""),
     [error, setError] = useState(""),
@@ -69,7 +71,6 @@ export default function App() {
   );
   const [renderRevision, setRenderRevision] = useState(0);
   const invalidate = useCallback(() => {
-    cache.current.clear();
     setRenderRevision((v) => v + 1);
   }, []);
   const pageContext = useRef({ pages, page, continuous, box });
@@ -164,6 +165,7 @@ export default function App() {
     };
     const points = new Map<number, Point>();
     let drag: Point | null = null;
+    let middlePasteBlocked = false;
     const local = (e: { clientX: number; clientY: number }): Point => {
       const b = el.getBoundingClientRect();
       return { x: e.clientX - b.left, y: e.clientY - b.top };
@@ -188,6 +190,7 @@ export default function App() {
         );
     };
     const down = (e: PointerEvent) => {
+      middlePasteBlocked = e.button === 1;
       // A click outside a menu dismisses it; it must not also draw on the PDF.
       if (
         document.querySelector(
@@ -283,6 +286,17 @@ export default function App() {
       }
     };
     const up = (e: PointerEvent) => {
+      // Pointer moves can be coalesced; apply the final pan coordinate before
+      // releasing capture so the last movement is never lost on Firefox/touchpads.
+      if (e.type === "pointerup" && drag) {
+        const p = local(e),
+          from = drag;
+        updateView((v) => ({
+          ...v,
+          x: v.x + p.x - from.x,
+          y: v.y + p.y - from.y,
+        }));
+      }
       if (e.type === "pointerup" && deferredTouch && !consumed.has(e.pointerId))
         annotationInput.current.begin(deferredTouch);
       clearHold();
@@ -299,6 +313,7 @@ export default function App() {
       el.classList.remove("panning");
     };
     const keydown = (e: KeyboardEvent) => {
+      middlePasteBlocked = false;
       if (e.key === "Escape") clearHold();
       if (e.code === "Space" && !inputTarget(e.target)) {
         space = true;
@@ -309,6 +324,7 @@ export default function App() {
       if (e.code === "Space") space = false;
     };
     const reset = () => {
+      middlePasteBlocked = false;
       clearHold();
       consumed.clear();
       annotationInput.current.cancel();
@@ -334,15 +350,26 @@ export default function App() {
     const aux = (e: MouseEvent) => {
       if (e.button === 1) e.preventDefault();
     };
+    const preventMiddlePaste = (e: ClipboardEvent) => {
+      // Some Linux browsers dispatch primary-selection paste asynchronously,
+      // even when the compatibility mouse events were cancelled. The next
+      // pointer/keyboard action (including Ctrl+V) restores normal paste.
+      if (middlePasteBlocked && !inputTarget(e.target)) e.preventDefault();
+    };
     el.addEventListener("wheel", wheel, { passive: false });
     el.addEventListener("pointerdown", down);
     el.addEventListener("pointermove", move);
     el.addEventListener("pointerup", up);
     el.addEventListener("pointercancel", up);
     el.addEventListener("lostpointercapture", up);
+    // Linux middle-click can paste the primary selection on mouseup before
+    // auxclick. Reserve both compatibility mouse events for PDF panning.
+    el.addEventListener("mousedown", aux);
+    el.addEventListener("mouseup", aux);
     el.addEventListener("auxclick", aux);
     el.addEventListener("contextmenu", context);
     el.addEventListener("pointerleave", leave);
+    window.addEventListener("paste", preventMiddlePaste, true);
     window.addEventListener("keydown", keydown);
     window.addEventListener("keyup", keyup);
     window.addEventListener("blur", reset);
@@ -356,7 +383,10 @@ export default function App() {
       el.removeEventListener("pointerup", up);
       el.removeEventListener("pointercancel", up);
       el.removeEventListener("lostpointercapture", up);
+      el.removeEventListener("mousedown", aux);
+      el.removeEventListener("mouseup", aux);
       el.removeEventListener("auxclick", aux);
+      window.removeEventListener("paste", preventMiddlePaste, true);
       window.removeEventListener("keydown", keydown);
       window.removeEventListener("keyup", keyup);
       window.removeEventListener("blur", reset);
@@ -376,64 +406,25 @@ export default function App() {
         Math.abs((b.top + b.p.height / 2) * view.scale + view.y - box.y / 2),
     )
     .slice(0, 6);
-  const rasterScale = Math.pow(
-    Math.SQRT2,
-    Math.ceil(Math.log2(view.scale * (window.devicePixelRatio || 1)) * 2),
+  const tiles = visibleTilePlan(
+    pages,
+    tops,
+    visible.map(({ i }) => i),
+    view,
+    box,
+    window.devicePixelRatio || 1,
   );
-  const renderSpec = JSON.stringify(
-    visible.map(({ i }) => ({ page: i, scale: rasterScale })),
-  );
-  useEffect(() => {
-    let cancelled = false;
-    const c = client.current;
-    const timer = setTimeout(() => {
-      void (async () => {
-        if (!c) return;
-        setRendering(true);
-        try {
-          const requests = JSON.parse(renderSpec) as {
-            page: number;
-            scale: number;
-          }[];
-          for (const r of requests) {
-            if (cancelled) break;
-            const key = `${r.page}:${r.scale}`;
-            let img = cache.current.get(key);
-            if (!img) {
-              const result = await c.request({ type: "render", ...r });
-              if (cancelled) break;
-              img = new ImageData(
-                result.pixels!,
-                result.width!,
-                result.height!,
-              );
-              cache.current.set(key, img);
-              while (cache.current.size > 3)
-                cache.current.delete(cache.current.keys().next().value!);
-            }
-            const canvas = canvases.current.get(r.page);
-            if (canvas) {
-              canvas.width = img.width;
-              canvas.height = img.height;
-              canvas.getContext("2d")!.putImageData(img, 0, 0);
-              canvas.dataset.rendered = "true";
-            }
-          }
-        } catch (e) {
-          if (!cancelled)
-            setError(
-              e instanceof Error ? e.message : "Darstellung fehlgeschlagen.",
-            );
-        } finally {
-          if (!cancelled) setRendering(false);
-        }
-      })();
-    }, 140);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [renderSpec, pages, renderRevision]);
+  usePdfRaster({
+    client,
+    canvases,
+    layers: detailLayers,
+    pages,
+    tiles,
+    visible: visible.map(({ i }) => i),
+    revision: renderRevision,
+    onRendering: setRendering,
+    onError: setError,
+  });
   useEffect(() => {
     if (!continuous || !pages.length || annotation.formDirty) return;
     const center = toWorld({ x: box.x / 2, y: box.y / 2 }, view).y;
@@ -464,7 +455,6 @@ export default function App() {
     const token = ++generation.current;
     client.current?.dispose();
     client.current = null;
-    cache.current.clear();
     setPages([]);
     setError("");
     setLoading(true);
@@ -801,6 +791,16 @@ export default function App() {
                         else canvases.current.delete(i);
                       }}
                       style={{ width: p.width, height: p.height }}
+                    />
+                  )}
+                  {visible.some((v) => v.i === i) && (
+                    <div
+                      className="detail-layer"
+                      aria-hidden="true"
+                      ref={(el) => {
+                        if (el) detailLayers.current.set(i, el);
+                        else detailLayers.current.delete(i);
+                      }}
                     />
                   )}
                 </div>

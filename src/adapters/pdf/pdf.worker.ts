@@ -1,13 +1,17 @@
 import { pageInfos } from "./pages";
+import { TileRasterizer } from "./raster";
 import { AnnotationEditor } from "./annotations";
 import * as mupdf from "mupdf";
 import type { Request, Reply, PageInfo } from "./types";
 let doc: mupdf.PDFDocument | undefined;
 let pages: PageInfo[] = [];
 let editor: AnnotationEditor | undefined;
+let rasterizer: TileRasterizer | undefined;
 self.onmessage = ({ data: r }: MessageEvent<Request>) => {
   try {
     if (r.type === "open") {
+      rasterizer?.clear();
+      rasterizer = undefined;
       doc?.destroy();
       doc = undefined;
       editor = undefined;
@@ -25,6 +29,7 @@ self.onmessage = ({ data: r }: MessageEvent<Request>) => {
         pages = pageInfos(candidate);
         editor = new AnnotationEditor(candidate, new Uint8Array(r.data));
         doc = candidate;
+        rasterizer = new TileRasterizer(candidate);
       } catch (e) {
         candidate.destroy();
         throw e;
@@ -44,8 +49,10 @@ self.onmessage = ({ data: r }: MessageEvent<Request>) => {
     } else if (r.type === "copy") {
       if (!editor) throw new Error("Keine PDF geöffnet.");
       const clipboard = editor.copy(r.page, r.ids);
-      if (r.cut)
+      if (r.cut) {
+        rasterizer?.clear();
         editor.apply({ action: "delete-many", page: r.page, ids: r.ids });
+      }
       self.postMessage({
         id: r.id,
         clipboard,
@@ -53,6 +60,7 @@ self.onmessage = ({ data: r }: MessageEvent<Request>) => {
       } satisfies Reply);
     } else if (r.type === "edit") {
       if (!editor) throw new Error("Keine PDF geöffnet.");
+      rasterizer?.clear();
       const before = pages.map((p) => `${p.id}:${p.rotation}`);
       const selected = editor.apply(r.command);
       const structural = [
@@ -95,6 +103,12 @@ self.onmessage = ({ data: r }: MessageEvent<Request>) => {
       if (!editor) throw new Error("Keine PDF geöffnet.");
       editor.acknowledgeExport(r.revision);
       self.postMessage({ id: r.id, editor: editor.state() } satisfies Reply);
+    } else if (r.type === "render-tile") {
+      if (!rasterizer) throw new Error("Keine PDF geöffnet.");
+      const result = rasterizer.render(pages[r.page], r);
+      self.postMessage({ id: r.id, ...result } satisfies Reply, {
+        transfer: [result.pixels.buffer],
+      });
     } else {
       if (!doc) throw new Error("Keine PDF geöffnet.");
       const info = pages[r.page];

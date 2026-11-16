@@ -661,3 +661,14 @@ header .tool-button[aria-pressed="true"] {
     display: none;
   }
 }
+
+.detail-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.raster-tile {
+  position: absolute;
+  pointer-events: none;
+}

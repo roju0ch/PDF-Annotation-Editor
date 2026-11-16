@@ -4,6 +4,7 @@ import type {
   AnnotationClipboard,
   EditorState,
 } from "../../core/annotations/model";
+import type { TileRequest } from "./raster";
 import type { Matrix } from "../../core/viewport";
 export type PageInfo = {
   id: number;
@@ -16,6 +17,7 @@ export type PageInfo = {
 export type Payload =
   | { type: "open"; data: ArrayBuffer }
   | { type: "render"; page: number; scale: number }
+  | ({ type: "render-tile" } & TileRequest)
   | { type: "list"; page: number }
   | { type: "copy"; page: number; ids: number[]; cut: boolean }
   | { type: "edit"; command: AnnotationCommand }
