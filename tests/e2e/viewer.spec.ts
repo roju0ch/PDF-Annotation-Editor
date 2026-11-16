@@ -32,7 +32,7 @@ test("real multipage PDF, pointer zoom, middle/space pan and no content upload",
   await open(page);
   await expect(page.getByText("3 Seiten · Native Annotationen")).toBeVisible();
   const colors = await page
-    .locator("canvas")
+    .getByLabel("PDF-Seite 1", { exact: true })
     .evaluate((el: HTMLCanvasElement) => {
       const d = el
         .getContext("2d")!

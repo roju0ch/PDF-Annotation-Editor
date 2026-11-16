@@ -59,7 +59,7 @@ npm test
 npm run poc
 npx playwright install --with-deps chromium firefox
 npm run test:e2e
-PLAYWRIGHT_BROWSER=firefox PLAYWRIGHT_HTML_OUTPUT_DIR=playwright-report-firefox npm run test:e2e -- tests/e2e/layout.spec.ts tests/e2e/selection.spec.ts tests/e2e/clipboard.spec.ts tests/e2e/images.spec.ts tests/e2e/pages.spec.ts tests/e2e/offline.spec.ts
+PLAYWRIGHT_BROWSER=firefox PLAYWRIGHT_HTML_OUTPUT_DIR=playwright-report-firefox npm run test:e2e -- tests/e2e/layout.spec.ts tests/e2e/selection.spec.ts tests/e2e/clipboard.spec.ts tests/e2e/images.spec.ts tests/e2e/pages.spec.ts tests/e2e/offline.spec.ts tests/e2e/rendering.spec.ts
 npm run build
 ```
 
@@ -68,6 +68,8 @@ In der bereitgestellten Cloud kann `CHROMIUM_PATH=/usr/bin/chromium npm run test
 Die installierten Pakete enthalten Frontend, PDF-Worker und MuPDF-WASM lokal; kein Entwicklungsserver und keine Verbindung zu GitHub Pages sind für die PDF-Bearbeitung nötig. Der neue Offline-Test prüft Kaltstart und nativen Export mit abgeschaltetem Netzwerk. System-WebViews und Linux-Systemabhängigkeiten bleiben Voraussetzungen. Android berücksichtigt Systemleisten nativ und liest kopierte PNG-/JPEG-Bilder über einen lokalen Clipboard-Plugin. [Android-Geräteprüfung und Grenzen](docs/ANDROID.md); Dateiauswahl und Export sind weiterhin auf echten Geräten zu prüfen.
 
 Tauri 2 liegt in `src-tauri/`. Nach Installation der [offiziellen Plattformvoraussetzungen](https://v2.tauri.app/start/prerequisites/) startet `npm run tauri -- dev` die Desktop-Hülle. Sie nutzt dieselbe lokale File-API und hat keine eigenen Dateisystem-/Shell-Kommandos oder zusätzlichen Plugin-Berechtigungen. Windows/macOS werden auf ihren GitHub-Runnern gebaut.
+
+Große Pläne werden mit einer Ganzseitenvorschau und scharf nachgeladenen, sichtbaren Detailkacheln dargestellt. [Rendering, Speicherbudgets und Tests](docs/RENDERING.md).
 
 ## Architektur und Grenzen
 
