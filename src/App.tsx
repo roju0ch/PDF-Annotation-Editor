@@ -4,6 +4,7 @@ import { usePdfRaster } from "./app/usePdfRaster";
 import { visibleTilePlan } from "./core/render/tiles";
 import { PageOrganizer } from "./app/PageOrganizer";
 import { AnnotationContextMenu } from "./app/AnnotationContextMenu";
+import { FreeTextDialog } from "./app/FreeTextDialog";
 import { useAnnotations } from "./app/useAnnotations";
 import {
   AnnotationToolbar,
@@ -35,10 +36,10 @@ function inputTarget(target: EventTarget | null) {
   );
 }
 export default function App() {
-  useMenuKeyboard();
   const stage = useRef<HTMLDivElement>(null),
     client = useRef<PdfClient | null>(null),
     generation = useRef(0);
+  const cancelPendingPointer = useRef<() => void>(() => {});
   const canvases = useRef(new Map<number, HTMLCanvasElement>());
   const detailLayers = useRef(new Map<number, HTMLDivElement>());
   const overviewLayers = useRef(new Map<number, HTMLDivElement>());
@@ -109,6 +110,17 @@ export default function App() {
     setError,
     pagesChanged,
   );
+  const { escape: escapeEditor, contextMenu } = annotation;
+  const escape = useCallback(
+    (event: KeyboardEvent) => {
+      cancelPendingPointer.current();
+      const handled = escapeEditor(event);
+      if (handled && contextMenu) stage.current?.focus({ preventScroll: true });
+      return handled;
+    },
+    [escapeEditor, contextMenu],
+  );
+  useMenuKeyboard(escape);
   const annotationInput = useRef(annotation.gesture);
   useEffect(() => {
     annotationInput.current = annotation.gesture;
@@ -172,6 +184,7 @@ export default function App() {
       holdStart = null;
       deferredTouch = null;
     };
+    cancelPendingPointer.current = clearHold;
     const points = new Map<number, Point>();
     let drag: Point | null = null;
     let middlePasteBlocked = false;
@@ -323,7 +336,6 @@ export default function App() {
     };
     const keydown = (e: KeyboardEvent) => {
       middlePasteBlocked = false;
-      if (e.key === "Escape") clearHold();
       if (e.code === "Space" && !inputTarget(e.target)) {
         space = true;
         e.preventDefault();
@@ -383,6 +395,7 @@ export default function App() {
     window.addEventListener("keyup", keyup);
     window.addEventListener("blur", reset);
     return () => {
+      cancelPendingPointer.current = () => {};
       clearHold();
       el.removeEventListener("contextmenu", context);
       el.removeEventListener("pointerleave", leave);
@@ -732,6 +745,7 @@ export default function App() {
         }}
       />
       <AnnotationToolbar editor={annotation} ready={ready} />
+      <FreeTextDialog editor={annotation} />
       <PageOrganizer
         key={generation.current}
         pages={pages}

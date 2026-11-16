@@ -17,10 +17,15 @@ function dismissMenu(target: string) {
     )
     ?.focus();
 }
-export function useMenuKeyboard() {
+/** One Escape dispatcher: active editor dialog, then menu, then editor tool. */
+export function useMenuKeyboard(onEscape: (event: KeyboardEvent) => boolean) {
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || event.defaultPrevented) return;
+      if (document.querySelector(".free-text-dialog[open]")) {
+        if (onEscape(event)) event.preventDefault();
+        return;
+      }
       // Firefox can move focus to the document when a form button becomes
       // disabled. Handle Escape even when focus is no longer inside the menu.
       const menu = document.querySelector<HTMLElement>(
@@ -29,11 +34,13 @@ export function useMenuKeyboard() {
       if (menu) {
         event.preventDefault();
         dismissMenu(menu.id);
+        return;
       }
+      if (onEscape(event)) event.preventDefault();
     };
     document.addEventListener("keydown", keydown);
     return () => document.removeEventListener("keydown", keydown);
-  }, []);
+  }, [onEscape]);
 }
 const paths = {
   pages: "M8 3h12v15H8V3ZM4 7v14h12",
@@ -144,8 +151,6 @@ export function ToolButton({
       onKeyDown={(e) => {
         if (e.key === "Escape" && visible) {
           setVisible(false);
-          e.preventDefault();
-          e.stopPropagation();
         }
       }}
       onClick={() => {

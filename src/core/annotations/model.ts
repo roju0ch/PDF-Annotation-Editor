@@ -12,6 +12,8 @@ export type Annotation = {
   color: string;
   width: number;
   fontSize: number;
+  backgroundColor?: string | null;
+  autoSize?: boolean;
   ink?: Point[][];
 };
 /** In-memory native PDF snapshot; never written to the system clipboard. */
@@ -26,6 +28,8 @@ export type AnnotationPatch = {
   color?: string;
   width?: number;
   fontSize?: number;
+  backgroundColor?: string | null;
+  autoSize?: boolean;
   offset?: Point;
   rect?: PdfRect;
 };
@@ -57,6 +61,10 @@ export type AnnotationCommand =
       color: string;
       width: number;
       fontSize: number;
+      backgroundColor?: string | null;
+      autoSize?: boolean;
+      /** Placement anchor in unrotated PDF user space. */
+      anchor?: Point;
     }
   | {
       action: "paste";

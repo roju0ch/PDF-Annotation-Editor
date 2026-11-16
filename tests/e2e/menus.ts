@@ -28,6 +28,10 @@ export async function tool(page: Page, value: string, text?: string) {
   };
   await page.getByRole("button", { name: names[value], exact: true }).click();
   if (text !== undefined) {
+    if (value === "FreeText")
+      throw new Error(
+        "FreeText text is entered in the creation dialog after placement.",
+      );
     await menu(page, "tools");
     await page.getByLabel("Neuer Annotationstext").fill(text);
     await closeMenu(page);

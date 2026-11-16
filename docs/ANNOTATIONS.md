@@ -23,7 +23,7 @@ Alle Dateien und Operationen bleiben im Speicher des Geräts. Kein Upload, keine
 
 ## Tatsächlich geprüft
 
-In Codex Cloud mit Node.js 24.22.1 und MuPDF.js 1.28.6:
+Historische Ergebnisse des ersten Editor-Meilensteins in Codex Cloud mit Node.js 24.22.1 und MuPDF.js 1.28.6; die aktuelle Textfeld-Erweiterung ist in [TEXT_COMMENTS.md](TEXT_COMMENTS.md) dokumentiert:
 
 - TypeScript strict, ESLint und Produktionsbuild erfolgreich.
 - **22 Unit-/Integrationstests**: bisherige acht Viewporttests plus native Erstellung/Bearbeitung/Export für alle drei Typen, vorhandene Notiz, unabhängiger Stamp mit privatem Eintrag, unberührte Link-Annotation und Seiteninhalte, gesperrte Objekte, Signaturfelder, RichText-Schutz, atomarer Fehler-Rollback, Undo/Redo und verzweigte Historie, wiederholte Exporte, rotierte CropBox und geometrische Ink-Teilradierung. Rendering nach Undo/Redo wird ebenfalls geprüft.
@@ -37,7 +37,7 @@ Nachweise im CI-Artefakt `browser-preview-and-test-evidence`: `browser-annotatio
 
 - Adobe Acrobat und echte Dateien aus Drittprogrammen sind noch manuell zu prüfen. Die bestehende Fremdnotiz stammt aus einem unabhängigen synthetischen PDF-Schreiber. Poppler ist ein unabhängiger Renderer, ersetzt aber keine Acrobat-Interoperabilitätsabnahme.
 - Kein Recovery-Journal, keine automatische Wiederherstellung, kein direktes Dateisystem-Speichern. Browserwarnungen beim Schließen sind auf mobilen Geräten nicht in jedem Beendigungsfall garantiert.
-- Textfelder starten mit fester Größe. Größenänderung, lange Texte/automatischer Umbruch, weitere Schriften/Schriftsysteme, Transparenz, Pfeile, Formen und Textmarker sind Folgearbeit. Neu erzeugte Textfelder verwenden Helv; die Appearance-Rotation folgt der Seite über MuPDFs unterstütztes `/Rotate`-Attribut.
-- Neue Werkzeugparameter gelten für die Sitzung; persistente Werkzeugprofile sind noch offen.
+- Neue Textfelder verwenden den [Textkommentar-Dialog mit automatischer Größe](TEXT_COMMENTS.md). Weitere Schriftwahl, Pfeile, Formen und Textmarker sind Folgearbeit. Fremde Textfelder behalten ihre Abmessungen.
+- Textfeld-Darstellungseinstellungen werden lokal gespeichert; andere Werkzeugprofile gelten weiterhin nur für die Sitzung.
 - Bearbeitung nur auf der in der Seitenanzeige aktuellen Seite. In der fortlaufenden Ansicht kann weiterhin unabhängig navigiert werden; bei unübernommenen Eigenschaften bleibt die aktuelle Seite fest.
 - Touch in Chromium wird emuliert geprüft. Reale Stifte/Tablets, Drucksensitivität, Safari/Firefox, native Desktop-Bedienung und komplexe A0-Pläne bleiben offen.

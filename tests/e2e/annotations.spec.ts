@@ -141,12 +141,23 @@ test("edit existing note, create Text and rotated FreeText, preserve originals a
     "true",
   );
   await expect(page.locator(".annotation-list button")).toHaveCount(0);
-  await tool(page, "FreeText", "Planprüfung äöü");
+  await tool(page, "FreeText");
   await clickAt(page, 100, 150, 1);
+  const dialog = page.getByRole("dialog", { name: "Textkommentar erstellen" });
+  await expect(dialog.getByLabel("Textkommentar", { exact: true })).toHaveValue(
+    "",
+  );
+  await dialog
+    .getByLabel("Textkommentar", { exact: true })
+    .fill("Planprüfung äöü");
+  await dialog.getByLabel("Textfarbe", { exact: true }).fill("#d22f32");
+  await dialog.getByLabel("Transparenter Hintergrund", { exact: true }).check();
+  await dialog.getByRole("button", { name: "OK", exact: true }).click();
+  await expect(dialog).not.toBeVisible();
   await expect(page.locator(".annotation-list button")).toHaveCount(1);
   await tool(page, "select");
-  const a = await sheetPoint(page, 140, 170, 1),
-    b = await sheetPoint(page, 160, 200, 1);
+  const a = await sheetPoint(page, 120, 160, 1),
+    b = await sheetPoint(page, 140, 190, 1);
   await page.mouse.move(a.x, a.y);
   await page.mouse.down();
   await page.mouse.move(b.x, b.y, { steps: 5 });
@@ -178,9 +189,12 @@ test("edit existing note, create Text and rotated FreeText, preserve originals a
     expect(ft.getType()).toBe("FreeText");
     expect(ft.getContents()).toBe("Verschobenes Textfeld");
     expect(ft.getObject().get("AP", "N").isStream()).toBe(true);
-    const rect = ft.getObject().get("Rect");
-    expect(rect.get(0).asNumber()).toBeCloseTo(200, 0);
-    expect(rect.get(1).asNumber()).toBeCloseTo(150, 0);
+    // Auto-sized dimensions change with text; the visual placement still moves
+    // by the requested display-space offset on the rotated CropBox page.
+    const rect = ft.getRect(),
+      origin = p1.getBounds();
+    expect(rect[0] - origin[0]).toBeCloseTo(120, 0);
+    expect(rect[1] - origin[1]).toBeCloseTo(180, 0);
   } finally {
     p0.destroy();
     p1.destroy();

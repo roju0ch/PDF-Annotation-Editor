@@ -1,3 +1,7 @@
+import {
+  FREE_TEXT_PREFERENCES_KEY,
+  readFreeTextStyle,
+} from "../core/annotations/textPreferences";
 import { readClipboardImage } from "../adapters/platform/clipboard";
 import {
   imageInfo,
@@ -58,6 +62,12 @@ export type AnnotationContext = {
   page: number;
   point: Point;
 };
+type FreeTextDraft = {
+  page: number;
+  point: Point;
+  contents: string;
+  error: string;
+};
 type Layout = {
   box: Point;
   view: View;
@@ -84,9 +94,36 @@ export function useAnnotations(
   const [color, setColor] = useState("#d22f32"),
     [width, setWidth] = useState(3),
     [fontSize, setFontSize] = useState(14),
-    [text, setText] = useState("Notiz"),
+    [text, setText] = useState(""),
     [radius, setRadius] = useState(12),
     [formDirty, setFormDirty] = useState(false);
+  const [freeTextStyle, setFreeTextStyle] = useState(readFreeTextStyle);
+  const [freeTextDraft, setFreeTextDraft] = useState<FreeTextDraft | null>(
+    null,
+  );
+  const freeTextRef = useRef<FreeTextDraft | null>(null);
+  const editError = useRef<string | null>(null);
+  useEffect(() => {
+    // Do not persist invalid intermediate numeric input or any document text.
+    if (
+      !Number.isFinite(freeTextStyle.fontSize) ||
+      freeTextStyle.fontSize < 6 ||
+      freeTextStyle.fontSize > 96
+    )
+      return;
+    try {
+      localStorage.setItem(
+        FREE_TEXT_PREFERENCES_KEY,
+        JSON.stringify(freeTextStyle),
+      );
+    } catch {
+      // Preferences still work for this session when storage is unavailable.
+    }
+  }, [freeTextStyle]);
+  const showFreeText = useCallback((value: FreeTextDraft | null) => {
+    freeTextRef.current = value;
+    setFreeTextDraft(value);
+  }, []);
   const [contextMenu, setContextMenu] = useState<AnnotationContext | null>(
     null,
   );
@@ -188,6 +225,9 @@ export function useAnnotations(
     imageDestination.current = null;
     lastPointer.current = null;
     setContextMenu(null);
+    freeTextRef.current = null;
+    setFreeTextDraft(null);
+    editError.current = null;
     setState(next);
     setItems([]);
     setSelection([]);
@@ -223,15 +263,17 @@ export function useAnnotations(
     };
   }, [client, layout.page, layout.pages, state.revision, onError]);
   const edit = useCallback(
-    async (command: AnnotationCommand) => {
+    async (command: AnnotationCommand, allowFreeTextDialog = false) => {
       const c = client.current;
       if (
         !c ||
         lock.current ||
+        (freeTextRef.current !== null && !allowFreeTextDialog) ||
         (current.current.formDirty && command.action !== "update")
       )
         return;
       const token = epoch.current;
+      editError.current = null;
       if (!["create", "create-image", "paste"].includes(command.action))
         setPendingInk([]);
       lock.current = true;
@@ -249,7 +291,12 @@ export function useAnnotations(
           contextRef.current = null;
           setContextMenu(null);
           onPagesChange(r.pages, r.focusPage);
-        } else if (command.action === "move") setSelection(command.ids);
+        } else if (
+          command.action === "create" ||
+          command.action === "create-image"
+        )
+          setSelection([]);
+        else if (command.action === "move") setSelection(command.ids);
         else if (command.action !== "undo" && command.action !== "redo")
           setSelection(
             Array.isArray(r.selected)
@@ -262,10 +309,11 @@ export function useAnnotations(
         invalidate(!!r.pages);
         return r;
       } catch (e) {
-        if (token === epoch.current)
-          onError(
-            e instanceof Error ? e.message : "Bearbeitung fehlgeschlagen.",
-          );
+        if (token === epoch.current) {
+          editError.current =
+            e instanceof Error ? e.message : "Bearbeitung fehlgeschlagen.";
+          onError(editError.current);
+        }
       } finally {
         if (token === epoch.current) {
           lock.current = false;
@@ -319,6 +367,10 @@ export function useAnnotations(
   const save = useCallback(async () => {
     const c = client.current;
     if (!c || lock.current || current.current.state.readOnly) return;
+    if (freeTextRef.current) {
+      onError("Bitte den Textkommentar zuerst bestätigen oder abbrechen.");
+      return;
+    }
     if (current.current.formDirty) {
       onError("Bitte die Eigenschaften zuerst übernehmen oder verwerfen.");
       return;
@@ -360,6 +412,94 @@ export function useAnnotations(
     contextRef.current = null;
     setContextMenu(null);
   }, []);
+  const cancelFreeText = useCallback(() => {
+    if (lock.current || !freeTextRef.current) return;
+    showFreeText(null);
+    showDraft(null);
+    setTool("select");
+  }, [showDraft, showFreeText]);
+  const escape = useCallback(
+    (event?: KeyboardEvent) => {
+      if (freeTextRef.current) {
+        // A submitted native operation cannot be cancelled mid-transaction.
+        // Consume Escape during that brief interval without losing its text.
+        cancelFreeText();
+        return true;
+      }
+      if (contextRef.current) {
+        closeContext();
+        return true;
+      }
+      const target = event?.target;
+      if (
+        current.current.formDirty ||
+        (target instanceof HTMLElement &&
+          target.closest(
+            "input,textarea,select,[contenteditable]:not([contenteditable=false])",
+          ))
+      )
+        return false;
+      showDraft(null);
+      if (current.current.tool === "select") setSelection([]);
+      setTool("select");
+      return true;
+    },
+    [cancelFreeText, closeContext, showDraft],
+  );
+  const setFreeTextContents = useCallback(
+    (contents: string) => {
+      const value = freeTextRef.current;
+      if (!value || lock.current) return;
+      showFreeText({ ...value, contents: contents.slice(0, 10000), error: "" });
+    },
+    [showFreeText],
+  );
+  async function confirmFreeText() {
+    const value = freeTextRef.current;
+    if (!value || lock.current) return;
+    if (
+      !value.contents.trim() ||
+      value.contents.length > 10000 ||
+      !Number.isFinite(freeTextStyle.fontSize) ||
+      freeTextStyle.fontSize < 6 ||
+      freeTextStyle.fontSize > 96
+    )
+      return;
+    const token = epoch.current;
+    showFreeText({ ...value, error: "" });
+    const result = await edit(
+      {
+        action: "create",
+        page: value.page,
+        kind: "FreeText",
+        anchor: value.point,
+        rect: [
+          value.point.x,
+          value.point.y,
+          value.point.x + 0.01,
+          value.point.y + 0.01,
+        ],
+        contents: value.contents,
+        color: freeTextStyle.color,
+        backgroundColor: freeTextStyle.transparent
+          ? null
+          : freeTextStyle.backgroundColor,
+        fontSize: freeTextStyle.fontSize,
+        width: 1,
+        autoSize: true,
+      },
+      true,
+    );
+    if (token !== epoch.current) return;
+    if (result) showFreeText(null);
+    else
+      showFreeText({
+        ...value,
+        error:
+          editError.current ??
+          "Der Textkommentar konnte nicht erstellt werden. Bitte erneut versuchen.",
+      });
+  }
   const copySelection = useCallback(
     async (cut = false) => {
       const cur = current.current,
@@ -540,7 +680,7 @@ export function useAnnotations(
       });
       if (result)
         setNotice(
-          "Bild eingefügt. An den Eckgriffen proportional vergrößern oder verkleinern.",
+          "Bild eingefügt. Zum Skalieren zuerst auswählen und an den Eckgriffen ziehen.",
         );
     } catch (error) {
       if (token === epoch.current)
@@ -687,6 +827,7 @@ export function useAnnotations(
   const unsaved =
     state.dirty ||
     formDirty ||
+    (freeTextDraft !== null && freeTextDraft.contents.length > 0) ||
     (draft !== null && draft.kind !== "marquee" && draft.kind !== "select");
   useEffect(() => {
     if (!unsaved && !busy) return;
@@ -705,7 +846,13 @@ export function useAnnotations(
         "input:not([type=file]),textarea,select,[contenteditable]:not([contenteditable=false])",
       );
     const nativePaste = (e: ClipboardEvent) => {
-      if (e.defaultPrevented || typing(e.target) || !client.current) return;
+      if (
+        e.defaultPrevented ||
+        typing(e.target) ||
+        freeTextRef.current ||
+        !client.current
+      )
+        return;
       pendingPaste = false;
       e.preventDefault();
       const file = [...(e.clipboardData?.files ?? [])].find((f) =>
@@ -725,26 +872,17 @@ export function useAnnotations(
     const keyup = (e: KeyboardEvent) => {
       if (e.key.toLowerCase() === "v" && pendingPaste) {
         pendingPaste = false;
-        if (!typing(e.target)) clipboardActions.current.paste();
+        if (!typing(e.target) && !freeTextRef.current)
+          clipboardActions.current.paste();
       }
     };
     const key = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return;
-      if (
-        e.key === "Escape" &&
-        !(
-          e.target instanceof HTMLElement &&
-          e.target.closest("input,textarea,select")
-        )
-      ) {
-        if (contextRef.current) {
-          clipboardActions.current.closeContext();
-          return;
-        }
-        if (draftRef.current) {
-          draftRef.current = null;
-          setDraft(null);
-        } else if (!current.current.formDirty) setSelection([]);
+      if (freeTextRef.current) {
+        // Keep native textarea editing/clipboard/undo intact; never export the
+        // underlying PDF or run annotation shortcuts from inside this dialog.
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s")
+          e.preventDefault();
         return;
       }
       if (!(e.ctrlKey || e.metaKey) || !client.current) return;
@@ -836,7 +974,13 @@ export function useAnnotations(
   }
   function begin(p: Point) {
     const cur = current.current;
-    if (lock.current || cur.state.readOnly || cur.formDirty) return false;
+    if (
+      lock.current ||
+      cur.state.readOnly ||
+      cur.formDirty ||
+      freeTextRef.current
+    )
+      return false;
     const at =
       locate(p) ??
       (cur.tool === "select" ? locate(p, cur.layout.page, false) : null);
@@ -979,11 +1123,16 @@ export function useAnnotations(
       return;
     }
     if (d.kind === "Ink" && d.points.length < 2) return;
+    if (d.kind === "FreeText") {
+      closeContext();
+      showFreeText({ page: d.page, point: start, contents: "", error: "" });
+      return;
+    }
     const info = cur.layout.pages[d.page];
     // Text placement uses display-space extents, then returns to canonical PDF space.
     const display = transform(start, info.pdfToPage);
-    const w = d.kind === "Text" ? 24 : 180,
-      h = d.kind === "Text" ? 24 : 60;
+    const w = 24,
+      h = 24;
     const corners =
       d.kind === "Ink"
         ? d.points
@@ -1042,6 +1191,13 @@ export function useAnnotations(
     });
   }
   return {
+    freeTextDraft,
+    freeTextStyle,
+    setFreeTextStyle,
+    setFreeTextContents,
+    confirmFreeText,
+    cancelFreeText,
+    escape,
     pendingInk,
     displayed,
     contextMenu,
@@ -1076,7 +1232,7 @@ export function useAnnotations(
     setText,
     radius,
     setRadius,
-    formDirty,
+    formDirty: formDirty || freeTextDraft !== null,
     setFormDirty,
     unsaved,
     reset,
