@@ -37,10 +37,10 @@ export function AnnotationContextMenu({
       window.removeEventListener("blur", blur);
     };
   }, [closeContext]);
-  const activate = (action: () => void) => {
+  const activate = (action: () => void, focusStage = true) => {
     action();
     closeContext();
-    stage.current?.focus({ preventScroll: true });
+    if (focusStage) stage.current?.focus({ preventScroll: true });
   };
   return (
     <div
@@ -77,6 +77,14 @@ export function AnnotationContextMenu({
     >
       {context.mode === "selection" ? (
         <>
+          {editor.canEditContext && (
+            <button
+              role="menuitem"
+              onClick={() => activate(editor.editContext, false)}
+            >
+              Bearbeiten
+            </button>
+          )}
           <button
             role="menuitem"
             disabled={editor.busy || editor.selection.length === 0}

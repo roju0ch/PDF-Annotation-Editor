@@ -1,8 +1,14 @@
-import { useId, useLayoutEffect, useRef } from "react";
+import { useId, useLayoutEffect, useRef, type RefObject } from "react";
 import type { AnnotationControls } from "./useAnnotations";
 
 /** Draft text is held in memory; the native PDF transaction starts only on OK. */
-export function FreeTextDialog({ editor: e }: { editor: AnnotationControls }) {
+export function FreeTextDialog({
+  editor: e,
+  returnFocus,
+}: {
+  editor: AnnotationControls;
+  returnFocus: RefObject<HTMLDivElement | null>;
+}) {
   const dialog = useRef<HTMLDialogElement>(null);
   const textarea = useRef<HTMLTextAreaElement>(null);
   const title = useId();
@@ -10,6 +16,7 @@ export function FreeTextDialog({ editor: e }: { editor: AnnotationControls }) {
   useLayoutEffect(() => {
     if (!open) return;
     const element = dialog.current!;
+    const focusTarget = returnFocus.current;
     const viewport = window.visualViewport;
     const position = () => {
       element.style.setProperty(
@@ -32,17 +39,27 @@ export function FreeTextDialog({ editor: e }: { editor: AnnotationControls }) {
       viewport?.removeEventListener("scroll", position);
       window.removeEventListener("resize", position);
       if (element.open) element.close();
+      if (focusTarget?.isConnected) focusTarget.focus({ preventScroll: true });
     };
-  }, [open]);
+  }, [open, returnFocus]);
   const draft = e.freeTextDraft;
   if (!draft) return null;
-  const style = e.freeTextStyle;
+  const style = e.freeTextDialogStyle;
+  const original = draft.annotation;
+  const note = original?.type === "Text";
+  const heading = original
+    ? note
+      ? "Notiz bearbeiten"
+      : "Textkommentar bearbeiten"
+    : "Textkommentar erstellen";
   const valid =
-    !!draft.contents.trim() &&
+    ((!!original && (note || !original.autoSize)) || !!draft.contents.trim()) &&
     draft.contents.length <= 10000 &&
-    Number.isFinite(style.fontSize) &&
-    style.fontSize >= 6 &&
-    style.fontSize <= 96;
+    (note ||
+      (original && style.fontSize === original.fontSize) ||
+      (Number.isFinite(style.fontSize) &&
+        style.fontSize >= 6 &&
+        style.fontSize <= 96));
   return (
     <dialog
       ref={dialog}
@@ -92,12 +109,13 @@ export function FreeTextDialog({ editor: e }: { editor: AnnotationControls }) {
     >
       <form
         className="free-text-form"
+        noValidate
         onSubmit={(event) => {
           event.preventDefault();
           if (valid && !e.busy) void e.confirmFreeText();
         }}
       >
-        <h2 id={title}>Textkommentar erstellen</h2>
+        <h2 id={title}>{heading}</h2>
         <label>
           Text
           <textarea
@@ -111,72 +129,78 @@ export function FreeTextDialog({ editor: e }: { editor: AnnotationControls }) {
           />
         </label>
         <div className="free-text-style">
+          {!note && (
+            <label>
+              Schriftgröße
+              <span>
+                <input
+                  type="number"
+                  aria-label="Schriftgröße"
+                  min={6}
+                  max={96}
+                  step={1}
+                  value={style.fontSize}
+                  disabled={e.busy}
+                  onChange={(event) =>
+                    e.setFreeTextDialogStyle((previous) => ({
+                      ...previous,
+                      fontSize: Number(event.target.value),
+                    }))
+                  }
+                />{" "}
+                pt
+              </span>
+            </label>
+          )}
           <label>
-            Schriftgröße
-            <span>
-              <input
-                type="number"
-                aria-label="Schriftgröße"
-                min={6}
-                max={96}
-                step={1}
-                value={style.fontSize}
-                disabled={e.busy}
-                onChange={(event) =>
-                  e.setFreeTextStyle((previous) => ({
-                    ...previous,
-                    fontSize: Number(event.target.value),
-                  }))
-                }
-              />{" "}
-              pt
-            </span>
-          </label>
-          <label>
-            Textfarbe
+            {note ? "Notizfarbe" : "Textfarbe"}
             <input
               type="color"
-              aria-label="Textfarbe"
+              aria-label={note ? "Notizfarbe" : "Textfarbe"}
               value={style.color}
               disabled={e.busy}
               onChange={(event) =>
-                e.setFreeTextStyle((previous) => ({
+                e.setFreeTextDialogStyle((previous) => ({
                   ...previous,
                   color: event.target.value,
                 }))
               }
             />
           </label>
-          <label>
-            Hintergrundfarbe
+          {!note && (
+            <label>
+              Hintergrundfarbe
+              <input
+                type="color"
+                aria-label="Hintergrundfarbe"
+                value={style.backgroundColor}
+                disabled={e.busy || style.transparent}
+                onChange={(event) =>
+                  e.setFreeTextDialogStyle((previous) => ({
+                    ...previous,
+                    backgroundColor: event.target.value,
+                  }))
+                }
+              />
+            </label>
+          )}
+        </div>
+        {!note && (
+          <label className="free-text-transparent">
             <input
-              type="color"
-              aria-label="Hintergrundfarbe"
-              value={style.backgroundColor}
-              disabled={e.busy || style.transparent}
+              type="checkbox"
+              checked={style.transparent}
+              disabled={e.busy}
               onChange={(event) =>
-                e.setFreeTextStyle((previous) => ({
+                e.setFreeTextDialogStyle((previous) => ({
                   ...previous,
-                  backgroundColor: event.target.value,
+                  transparent: event.target.checked,
                 }))
               }
             />
+            Transparenter Hintergrund
           </label>
-        </div>
-        <label className="free-text-transparent">
-          <input
-            type="checkbox"
-            checked={style.transparent}
-            disabled={e.busy}
-            onChange={(event) =>
-              e.setFreeTextStyle((previous) => ({
-                ...previous,
-                transparent: event.target.checked,
-              }))
-            }
-          />
-          Transparenter Hintergrund
-        </label>
+        )}
         {draft.error && (
           <p className="free-text-error" role="alert">
             {draft.error}
@@ -187,7 +211,13 @@ export function FreeTextDialog({ editor: e }: { editor: AnnotationControls }) {
             Abbrechen
           </button>
           <button type="submit" disabled={!valid || e.busy}>
-            {e.busy ? "Erstellen …" : "OK"}
+            {e.busy
+              ? original
+                ? "Speichern …"
+                : "Erstellen …"
+              : original
+                ? "Übernehmen"
+                : "OK"}
           </button>
         </div>
       </form>

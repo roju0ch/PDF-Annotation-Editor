@@ -12,6 +12,10 @@ Das Textfeldwerkzeug öffnet nach Klick oder Touch auf der aktiven Seite den Dia
 
 Mit synthetischer PDF im Chromium-Test aufgenommen: [Dialog bei 390 × 844](images/text-comment-dialog-mobile.png), [Dialog bei reduziertem Platz von 390 × 450](images/text-comment-dialog-keyboard.png). Der reduzierte Viewport prüft den verfügbaren Platz bei eingeblendeter Tastatur; eine echte Android-Bildschirmtastatur wird damit nicht emuliert. Tab und Shift+Tab bleiben bei den aktivierten Dialogfeldern.
 
+## Bestehende Textfelder und Haftnotizen
+
+Im Auswahlwerkzeug öffnet **Rechtsklick / Langdruck → Bearbeiten** denselben Dialog mit dem bisherigen Text. Er unterstützt native `FreeText`- und einfache `Text`-Annotationen, jeweils nur als einzelne bearbeitbare Auswahl. **Übernehmen** aktualisiert das vorhandene Objekt und erhält dessen ID; es entsteht keine Kopie. Unverändertes Bestätigen und Abbrechen schreiben keine PDF- oder Undo-Operation. Leerer Haftnotiztext bleibt wie im bisherigen Eigenschaften-Editor erlaubt. Der Editierstil ist ein eigener Entwurf und verändert die gespeicherten Erstellungsvorgaben nicht. [Kontextmenü, Auswahlregeln und Prüfung](CONTEXT_CLIPBOARD.md#texte-direkt-bearbeiten-issue-18).
+
 ## PDF-Geometrie und Speicherung
 
 Die Schriftmetriken und die automatische Textfeldgröße werden im PDF-Adapter berechnet, unabhängig von CSS-Zoom und Pixeldichte. Explizite Leerzeilen sowie automatische Umbrüche werden bei Höhe und Breite berücksichtigt. Der Klickanker wird über die vorhandene Seitentransformation in kanonischen PDF-Koordinaten gespeichert; das Layout berücksichtigt gedrehte und beschnittene Seiten. Nahe Seitenrändern wird die Box innerhalb der nutzbaren Seite angeordnet.

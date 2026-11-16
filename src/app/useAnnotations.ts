@@ -1,6 +1,7 @@
 import {
   FREE_TEXT_PREFERENCES_KEY,
   readFreeTextStyle,
+  type FreeTextStyle,
 } from "../core/annotations/textPreferences";
 import { readClipboardImage } from "../adapters/platform/clipboard";
 import {
@@ -22,6 +23,7 @@ import {
   useRef,
   useState,
   type RefObject,
+  type SetStateAction,
 } from "react";
 import type { PdfClient } from "../adapters/pdf/client";
 import type { PageInfo } from "../adapters/pdf/types";
@@ -37,6 +39,7 @@ import type {
   AnnotationCommand,
   AnnotationClipboard,
   AnnotationKind,
+  AnnotationPatch,
   EditorState,
   PdfRect,
 } from "../core/annotations/model";
@@ -67,7 +70,28 @@ type FreeTextDraft = {
   point: Point;
   contents: string;
   error: string;
+  annotation?: Annotation;
+  style?: FreeTextStyle;
 };
+function textEditPatch(
+  value: FreeTextDraft,
+  style: FreeTextStyle,
+): AnnotationPatch {
+  const item = value.annotation;
+  if (!item) return {};
+  const background = style.transparent ? null : style.backgroundColor;
+  return {
+    ...(value.contents !== item.contents ? { contents: value.contents } : {}),
+    ...(style.color !== item.color ? { color: style.color } : {}),
+    ...(item.type === "FreeText" && style.fontSize !== item.fontSize
+      ? { fontSize: style.fontSize }
+      : {}),
+    ...(item.type === "FreeText" &&
+    background !== (item.backgroundColor ?? null)
+      ? { backgroundColor: background }
+      : {}),
+  };
+}
 type Layout = {
   box: Point;
   view: View;
@@ -412,6 +436,44 @@ export function useAnnotations(
     contextRef.current = null;
     setContextMenu(null);
   }, []);
+  const editContext = useCallback(() => {
+    const cur = current.current;
+    const context = contextRef.current;
+    if (
+      !context ||
+      context.mode !== "selection" ||
+      cur.tool !== "select" ||
+      lock.current ||
+      cur.formDirty ||
+      cur.state.readOnly ||
+      freeTextRef.current ||
+      cur.selection.length !== 1
+    )
+      return;
+    const item = cur.items.find(
+      (a) =>
+        a.id === cur.selection[0] &&
+        a.page === context.page &&
+        a.editable &&
+        (a.type === "FreeText" || a.type === "Text"),
+    );
+    if (!item || item.page !== cur.layout.page) return;
+    showDraft(null);
+    closeContext();
+    showFreeText({
+      page: item.page,
+      point: context.point,
+      contents: item.contents,
+      error: "",
+      annotation: item,
+      style: {
+        color: item.color,
+        backgroundColor: item.backgroundColor ?? "#fff6a5",
+        transparent: item.backgroundColor == null,
+        fontSize: item.fontSize,
+      },
+    });
+  }, [closeContext, showDraft, showFreeText]);
   const cancelFreeText = useCallback(() => {
     if (lock.current || !freeTextRef.current) return;
     showFreeText(null);
@@ -454,40 +516,72 @@ export function useAnnotations(
     },
     [showFreeText],
   );
+  function setFreeTextDialogStyle(update: SetStateAction<FreeTextStyle>) {
+    const value = freeTextRef.current;
+    if (!value || lock.current) return;
+    if (value.annotation) {
+      const style = value.style!;
+      showFreeText({
+        ...value,
+        style: typeof update === "function" ? update(style) : update,
+        error: "",
+      });
+    } else {
+      setFreeTextStyle(update);
+      if (value.error) showFreeText({ ...value, error: "" });
+    }
+  }
   async function confirmFreeText() {
     const value = freeTextRef.current;
     if (!value || lock.current) return;
+    const style = value.style ?? freeTextStyle;
+    const original = value.annotation;
+    const validFont =
+      original?.type === "Text" ||
+      (original && style.fontSize === original.fontSize) ||
+      (Number.isFinite(style.fontSize) &&
+        style.fontSize >= 6 &&
+        style.fontSize <= 96);
     if (
-      !value.contents.trim() ||
+      ((!original || (original.type === "FreeText" && original.autoSize)) &&
+        !value.contents.trim()) ||
       value.contents.length > 10000 ||
-      !Number.isFinite(freeTextStyle.fontSize) ||
-      freeTextStyle.fontSize < 6 ||
-      freeTextStyle.fontSize > 96
+      !validFont
     )
       return;
+    const patch = original ? textEditPatch(value, style) : null;
+    if (patch && !Object.keys(patch).length) {
+      showFreeText(null);
+      return;
+    }
     const token = epoch.current;
     showFreeText({ ...value, error: "" });
     const result = await edit(
-      {
-        action: "create",
-        page: value.page,
-        kind: "FreeText",
-        anchor: value.point,
-        rect: [
-          value.point.x,
-          value.point.y,
-          value.point.x + 0.01,
-          value.point.y + 0.01,
-        ],
-        contents: value.contents,
-        color: freeTextStyle.color,
-        backgroundColor: freeTextStyle.transparent
-          ? null
-          : freeTextStyle.backgroundColor,
-        fontSize: freeTextStyle.fontSize,
-        width: 1,
-        autoSize: true,
-      },
+      original
+        ? {
+            action: "update",
+            page: value.page,
+            id: original.id,
+            patch: patch!,
+          }
+        : {
+            action: "create",
+            page: value.page,
+            kind: "FreeText",
+            anchor: value.point,
+            rect: [
+              value.point.x,
+              value.point.y,
+              value.point.x + 0.01,
+              value.point.y + 0.01,
+            ],
+            contents: value.contents,
+            color: style.color,
+            backgroundColor: style.transparent ? null : style.backgroundColor,
+            fontSize: style.fontSize,
+            width: 1,
+            autoSize: true,
+          },
       true,
     );
     if (token !== epoch.current) return;
@@ -497,7 +591,9 @@ export function useAnnotations(
         ...value,
         error:
           editError.current ??
-          "Der Textkommentar konnte nicht erstellt werden. Bitte erneut versuchen.",
+          (original
+            ? "Die Annotation konnte nicht geändert werden. Bitte erneut versuchen."
+            : "Der Textkommentar konnte nicht erstellt werden. Bitte erneut versuchen."),
       });
   }
   const copySelection = useCallback(
@@ -827,7 +923,11 @@ export function useAnnotations(
   const unsaved =
     state.dirty ||
     formDirty ||
-    (freeTextDraft !== null && freeTextDraft.contents.length > 0) ||
+    (freeTextDraft !== null &&
+      (freeTextDraft.annotation
+        ? Object.keys(textEditPatch(freeTextDraft, freeTextDraft.style!))
+            .length > 0
+        : freeTextDraft.contents.length > 0)) ||
     (draft !== null && draft.kind !== "marquee" && draft.kind !== "select");
   useEffect(() => {
     if (!unsaved && !busy) return;
@@ -1191,7 +1291,23 @@ export function useAnnotations(
     });
   }
   return {
+    editContext,
+    canEditContext:
+      contextMenu?.mode === "selection" &&
+      !busy &&
+      !formDirty &&
+      !state.readOnly &&
+      selection.length === 1 &&
+      items.some(
+        (a) =>
+          a.id === selection[0] &&
+          a.page === contextMenu.page &&
+          a.editable &&
+          (a.type === "FreeText" || a.type === "Text"),
+      ),
     freeTextDraft,
+    freeTextDialogStyle: freeTextDraft?.style ?? freeTextStyle,
+    setFreeTextDialogStyle,
     freeTextStyle,
     setFreeTextStyle,
     setFreeTextContents,
