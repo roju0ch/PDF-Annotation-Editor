@@ -26,7 +26,7 @@ child.on("close", (code) => {
     // eslint-disable-next-line no-control-regex -- Strip terminal ANSI colors.
     const lines = tail.replace(/\x1b\[[0-9;]*m/g, "").split("\n");
     const failures = lines.flatMap((line, index) =>
-      /^\s*(error(?:\[|:)|FAILURE:|\* What went wrong:)/i.test(line)
+      /^\s*(error(?:\[|:)|e: file:|FAILURE:|\* What went wrong:)/i.test(line)
         ? [
             lines
               .slice(index, index + 18)

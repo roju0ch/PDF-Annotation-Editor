@@ -6,9 +6,6 @@ import android.content.Context
 import android.view.View
 import android.webkit.WebView
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.graphics.Insets
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
 import app.tauri.annotation.Command
 import app.tauri.annotation.TauriPlugin
 import app.tauri.plugin.Invoke
@@ -23,28 +20,13 @@ class AndroidBridgePlugin(private val activity: Activity) : Plugin(activity) {
     private val reader = ClipboardImageReader(activity.contentResolver)
     private val executor = Executors.newSingleThreadExecutor()
     private val reading = AtomicBoolean(false)
+    private val systemBarInsets = SystemBarInsets()
 
     override fun load(webView: WebView) {
         // Android 15 enforces edge-to-edge: resize the actual WebView host rather
         // than guessing status-bar heights in CSS. Rotation and cutouts dispatch
         // new insets automatically, including landscape side navigation bars.
-        val content = activity.findViewById<View>(android.R.id.content)
-        val left = content.paddingLeft
-        val top = content.paddingTop
-        val right = content.paddingRight
-        val bottom = content.paddingBottom
-        val handled = WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
-        ViewCompat.setOnApplyWindowInsetsListener(content) { view, insets ->
-            val safe = insets.getInsets(handled)
-            view.setPadding(left + safe.left, top + safe.top, right + safe.right, bottom + safe.bottom)
-            // Prevent child WebView CSS safe areas from adding the same space a
-            // second time. Preserve unrelated insets, particularly the keyboard.
-            WindowInsetsCompat.Builder(insets)
-                .setInsets(handled, Insets.NONE)
-                .setInsetsIgnoringVisibility(handled, Insets.NONE)
-                .build()
-        }
-        ViewCompat.requestApplyInsets(content)
+        systemBarInsets.install(activity.findViewById<View>(android.R.id.content))
     }
 
     @Command
