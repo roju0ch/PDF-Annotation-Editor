@@ -135,6 +135,25 @@ export function AnnotationOverlay({
           strokeWidth={1 / scale}
         />
       )}
+      {e.pendingInk
+        .filter((item) => item.draft.page === page)
+        .map((item) => (
+          <polyline
+            key={item.id}
+            data-testid="pending-ink"
+            points={item.draft.points
+              .map((p) => {
+                const q = display(p);
+                return `${q.x},${q.y}`;
+              })
+              .join(" ")}
+            fill="none"
+            stroke={item.color}
+            strokeWidth={item.width}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        ))}
       {d?.kind === "Ink" && (
         <polyline
           points={d.points

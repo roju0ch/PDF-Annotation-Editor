@@ -672,3 +672,14 @@ header .tool-button[aria-pressed="true"] {
   position: absolute;
   pointer-events: none;
 }
+
+.annotation-overview-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.annotation-raster {
+  position: absolute;
+  pointer-events: none;
+}

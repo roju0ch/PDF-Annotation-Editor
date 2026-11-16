@@ -2,18 +2,23 @@ import { useEffect, useRef, type RefObject } from "react";
 import type { PdfClient } from "../adapters/pdf/client";
 import type { PageInfo, Payload, Reply } from "../adapters/pdf/types";
 import { RasterCache, type Tile } from "../core/render/tiles";
-
-type Detail = Tile & { canvas: HTMLCanvasElement; revision: number };
-const release = (canvas: HTMLCanvasElement) => {
-  canvas.remove();
-  canvas.width = canvas.height = 0;
-};
+import {
+  paintOpaque,
+  releaseCanvas,
+  releaseSurface,
+  replaceSurfaceOverlay,
+  type RasterSurface,
+  type SurfaceMap,
+} from "./rasterSurfaces";
 
 /** One outstanding raster request; superseded views never build a worker queue. */
 export function usePdfRaster({
   client,
   canvases,
   layers,
+  overviewLayers,
+  surfaces,
+  onSurfaceChange,
   pages,
   tiles,
   visible,
@@ -24,6 +29,9 @@ export function usePdfRaster({
   client: RefObject<PdfClient | null>;
   canvases: RefObject<Map<number, HTMLCanvasElement>>;
   layers: RefObject<Map<number, HTMLDivElement>>;
+  overviewLayers: RefObject<Map<number, HTMLDivElement>>;
+  surfaces: RefObject<SurfaceMap>;
+  onSurfaceChange: () => void;
   pages: PageInfo[];
   tiles: Tile[];
   visible: number[];
@@ -32,7 +40,7 @@ export function usePdfRaster({
   onError: (message: string) => void;
 }) {
   const cache = useRef(new RasterCache<ImageData>());
-  const details = useRef(new Map<string, Detail>());
+  const details = useRef(new Map<string, RasterSurface>());
   const owner = useRef<PdfClient | null>(null);
   const version = useRef(-1);
   const previews = useRef(new WeakMap<HTMLCanvasElement, string>());
@@ -45,8 +53,10 @@ export function usePdfRaster({
     if (owner.current !== c || version.current !== revision) {
       cache.current.clear();
       previews.current = new WeakMap();
-      for (const item of details.current.values()) release(item.canvas);
+      for (const surface of surfaces.current.values()) releaseSurface(surface);
+      surfaces.current.clear();
       details.current.clear();
+      onSurfaceChange();
       owner.current = c;
       version.current = revision;
     }
@@ -95,8 +105,17 @@ export function usePdfRaster({
         outside ||
         (old && (oldBytes += item.width * item.height * 4) > 16 * 1024 * 1024)
       ) {
-        release(item.canvas);
+        releaseSurface(item);
         details.current.delete(key);
+        surfaces.current.delete(item.key);
+        onSurfaceChange();
+      }
+    }
+    for (const [key, surface] of surfaces.current) {
+      if (surface.overview && !surface.canvas.isConnected) {
+        releaseSurface(surface);
+        surfaces.current.delete(key);
+        onSurfaceChange();
       }
     }
     onRendering(false);
@@ -114,14 +133,34 @@ export function usePdfRaster({
       return task;
     };
     const raster = async (key: string, payload: Payload) => {
-      let image = cache.current.get(key);
-      if (!image) {
-        const result = await request(payload);
-        if (!result || stale()) return;
-        image = new ImageData(result.pixels!, result.width!, result.height!);
-        cache.current.set(key, image);
-      }
-      return image;
+      const cached = cache.current.get(key);
+      if (cached)
+        return {
+          image: cached,
+          nativeRevision: -1,
+          overlay: undefined,
+          overlayBox: undefined,
+        };
+      const result = await request(payload);
+      if (!result || stale()) return;
+      const image = new ImageData(
+        result.pixels!,
+        result.width!,
+        result.height!,
+      );
+      cache.current.set(key, image);
+      return {
+        image,
+        nativeRevision: result.rasterRevision ?? -1,
+        overlay: result.overlayPixels
+          ? new ImageData(
+              result.overlayPixels,
+              result.overlayBox?.width ?? result.width!,
+              result.overlayBox?.height ?? result.height!,
+            )
+          : undefined,
+        overlayBox: result.overlayBox,
+      };
     };
     const timer = setTimeout(() => {
       void (async () => {
@@ -142,26 +181,74 @@ export function usePdfRaster({
             const key = `overview:${revision}:${page}:${scale}`;
             if (previews.current.get(canvas) === key) continue;
             delete canvas.dataset.rendered;
-            const image = await raster(key, { type: "render", page, scale });
-            if (!image || stale()) return;
-            canvas.width = image.width;
-            canvas.height = image.height;
-            canvas.getContext("2d")!.putImageData(image, 0, 0);
+            const result = await raster(key, {
+              type: "render",
+              page,
+              scale,
+              split: true,
+            });
+            if (!result || stale()) return;
+            const host = overviewLayers.current.get(page);
+            if (!host) continue;
+            if (
+              !(await paintOpaque(canvas, result.image, stale, true)) ||
+              stale()
+            )
+              return;
+            const surface: RasterSurface = {
+              key,
+              page,
+              info,
+              owner: c,
+              contentRevision: revision,
+              scale,
+              x: 0,
+              y: 0,
+              width: result.image.width,
+              height: result.image.height,
+              cssLeft: 0,
+              cssTop: 0,
+              cssWidth: info.width,
+              cssHeight: info.height,
+              canvas,
+              host,
+              overview: true,
+              overlay: null,
+              nativeRevision: -1,
+            };
+            const previous = surfaces.current.get(key);
+            if (previous?.overlay) releaseCanvas(previous.overlay);
+            if (
+              !(await replaceSurfaceOverlay(
+                surface,
+                result.overlay,
+                result.overlayBox ?? surface,
+                result.nativeRevision,
+                stale,
+              )) ||
+              stale()
+            )
+              return;
+            surfaces.current.set(key, surface);
             canvas.dataset.rendered = "true";
             previews.current.set(canvas, key);
+            onSurfaceChange();
           }
           for (const tile of plan.tiles) {
             if (stale()) return;
             const existing = details.current.get(tile.key);
             if (existing?.canvas.isConnected) {
               existing.canvas.parentElement?.appendChild(existing.canvas);
+              if (existing.overlay) existing.canvas.after(existing.overlay);
               continue;
             }
-            const image = await raster(`tile:${tile.key}`, {
+            const result = await raster(`tile:${tile.key}`, {
               type: "render-tile",
               ...tile,
+              split: true,
             });
-            if (!image || stale()) return;
+            if (!result || stale()) return;
+            const image = result.image;
             const layer = layers.current.get(tile.page);
             if (!layer) continue;
             const canvas = document.createElement("canvas");
@@ -181,30 +268,55 @@ export function usePdfRaster({
               x: String(tile.x),
               y: String(tile.y),
             });
-            // Opaque pixels prevent CSS background blending at fractional tile
-            // edges; the overlap also keeps the compositor's filter inside data.
-            const bitmap = await createImageBitmap(image);
-            try {
-              if (stale()) {
-                release(canvas);
-                return;
-              }
-              const context = canvas.getContext("2d", { alpha: false })!;
-              context.fillStyle = "white";
-              context.fillRect(0, 0, canvas.width, canvas.height);
-              context.drawImage(bitmap, 0, 0);
-            } finally {
-              bitmap.close();
+            if (!(await paintOpaque(canvas, image, stale, true)) || stale()) {
+              releaseCanvas(canvas);
+              return;
             }
+            const surface: RasterSurface = {
+              ...tile,
+              info: pages[tile.page],
+              owner: c,
+              contentRevision: revision,
+              cssLeft: tile.x / tile.scale,
+              cssTop: tile.y / tile.scale,
+              cssWidth: tile.width / tile.scale,
+              cssHeight: tile.height / tile.scale,
+              canvas,
+              host: layer,
+              overview: false,
+              overlay: null,
+              nativeRevision: -1,
+            };
+            if (
+              !(await replaceSurfaceOverlay(
+                surface,
+                result.overlay,
+                result.overlayBox ?? surface,
+                result.nativeRevision,
+                stale,
+              )) ||
+              stale()
+            ) {
+              releaseSurface(surface);
+              return;
+            }
+            // Expose the clean tile and its initial native appearance together.
+            const pair = document.createDocumentFragment();
+            pair.appendChild(canvas);
+            if (surface.overlay) pair.appendChild(surface.overlay);
+            layer.appendChild(pair);
             canvas.dataset.rendered = "true";
-            layer.appendChild(canvas);
-            details.current.set(tile.key, { ...tile, canvas, revision });
+            details.current.set(tile.key, surface);
+            surfaces.current.set(surface.key, surface);
+            onSurfaceChange();
           }
           if (!stale())
             for (const [key, item] of details.current) {
               if (!keys.has(key)) {
-                release(item.canvas);
+                releaseSurface(item);
                 details.current.delete(key);
+                surfaces.current.delete(item.key);
+                onSurfaceChange();
               }
             }
         } catch (error) {
@@ -227,13 +339,26 @@ export function usePdfRaster({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [spec, pages, revision, client, canvases, layers, onRendering, onError]);
+  }, [
+    spec,
+    pages,
+    revision,
+    client,
+    canvases,
+    layers,
+    overviewLayers,
+    surfaces,
+    onSurfaceChange,
+    onRendering,
+    onError,
+  ]);
   useEffect(
     () => () => {
       cache.current.clear();
-      for (const item of details.current.values()) release(item.canvas);
+      for (const surface of surfaces.current.values()) releaseSurface(surface);
+      surfaces.current.clear();
       details.current.clear();
     },
-    [],
+    [surfaces],
   );
 }

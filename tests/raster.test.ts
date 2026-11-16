@@ -234,3 +234,59 @@ it("resolves closely spaced fine vector lines at zoom scale instead of enlarging
     doc.destroy();
   }
 });
+
+it("keeps page-content display lists and pixels across native annotation edits", () => {
+  const { doc, pages, raster } = setup();
+  const request = { page: 0, scale: 1, x: 0, y: 0, width: 300, height: 400 };
+  const displayList = vi.spyOn(mupdf.PDFPage.prototype, "toDisplayList");
+  const editor = new AnnotationEditor(doc, input());
+  try {
+    const initial = raster.render(pages[0], request, { split: true });
+    expect(initial.overlayPixels).toBeDefined(); // Existing third-party note.
+    const builds = () =>
+      displayList.mock.calls.filter(([extras]) => extras === false).length;
+    expect(builds()).toBe(1);
+    const before = raster.composite(pages[0], request, initial.pixels).pixels;
+    const id = editor.apply({
+      action: "create",
+      page: 0,
+      kind: "Ink",
+      rect: [40, 80, 200, 160],
+      contents: "Fast native annotation",
+      color: "#ff0000",
+      width: 5,
+      fontSize: 14,
+      ink: [
+        [
+          { x: 40, y: 80 },
+          { x: 200, y: 160 },
+        ],
+      ],
+    })!;
+    const created = new Uint8ClampedArray(
+      raster.composite(pages[0], request, initial.pixels).pixels,
+    );
+    expect(created).not.toEqual(before);
+    for (const command of [
+      { action: "move", page: 0, ids: [id], offset: { x: 7, y: 9 } },
+      { action: "delete-many", page: 0, ids: [id] },
+      { action: "undo" },
+      { action: "redo" },
+    ] satisfies import("../src/core/annotations/model").AnnotationCommand[]) {
+      editor.apply(command);
+      raster.invalidateAnnotations();
+      const patch = raster.composite(pages[0], request, initial.pixels);
+      expect(patch.pixels.byteLength).toBe(initial.pixels.byteLength);
+      const next = raster.render(pages[0], request, { split: true });
+      expect(next.pixels).toEqual(initial.pixels);
+      expect(builds()).toBe(1);
+    }
+    raster.clear();
+    raster.render(pages[0], request, { split: true });
+    expect(builds()).toBe(2); // Document/structure invalidation may rebuild.
+  } finally {
+    displayList.mockRestore();
+    raster.clear();
+    doc.destroy();
+  }
+});

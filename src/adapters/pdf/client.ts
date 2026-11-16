@@ -49,7 +49,11 @@ export class PdfClient {
         if (this.pending.has(id))
           this.worker.postMessage(
             { ...payload, id },
-            payload.type === "open" ? [payload.data] : [],
+            payload.type === "open"
+              ? [payload.data]
+              : payload.type === "render-annotation-patch"
+                ? [payload.background.buffer]
+                : [],
           );
       });
     });
