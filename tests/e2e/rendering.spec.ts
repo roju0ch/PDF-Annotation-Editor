@@ -239,12 +239,12 @@ test("large vector plan gains true detail at DPR3 zoom and refreshes only visibl
     );
     await page.getByTestId("viewport").focus();
     await page.mouse.down({ button: "middle" });
-    await page.mouse.move(stage.x + anchor.x - 220, stage.y + anchor.y - 80, {
+    await page.mouse.move(stage.x + anchor.x - 180, stage.y + anchor.y - 80, {
       steps: 4,
     });
     await page.mouse.up({ button: "middle" });
     await expect
-      .poll(async () => Math.abs((await geometry(page)).x - (zoomed.x - 220)))
+      .poll(async () => Math.abs((await geometry(page)).x - (zoomed.x - 180)))
       .toBeLessThan(0.05);
     await expect
       .poll(async () => Math.abs((await geometry(page)).y - (zoomed.y - 80)))
