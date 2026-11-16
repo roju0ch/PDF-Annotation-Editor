@@ -745,7 +745,7 @@ export default function App() {
         }}
       />
       <AnnotationToolbar editor={annotation} ready={ready} />
-      <FreeTextDialog editor={annotation} />
+      <FreeTextDialog editor={annotation} returnFocus={stage} />
       <PageOrganizer
         key={generation.current}
         pages={pages}

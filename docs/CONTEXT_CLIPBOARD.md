@@ -8,6 +8,16 @@ Im Werkzeug **Auswählen / Verschieben**:
 - Bewegung von mehr als 8 CSS-Pixeln, Loslassen, Abbruch, Escape, Zoom oder ein zweiter Finger stoppen die Langdruck-Erkennung. Das Öffnen des Menüs verwirft nur die laufende Geste, ohne Annotationen zu verschieben.
 - Strg+A/C/X/V (auch Cmd) wählen aus, kopieren, schneiden aus und fügen ein. Eingaben in Text-/Eigenschaftsfeldern sind davon ausgenommen. Die vorhandenen Kürzel für Undo/Redo/Download bleiben erhalten.
 
+## Texte direkt bearbeiten (Issue #18)
+
+Bei genau einem bearbeitbaren Textfeld (`FreeText`) oder einer unterstützten Haftnotiz (`Text`) steht **Bearbeiten** vor Kopieren/Ausschneiden/Löschen. Rechtsklick beziehungsweise derselbe 600-ms-Langdruck funktioniert auf dem Objekt oder innerhalb seines vorhandenen Auswahlrahmens. Ein bisher nicht ausgewähltes Objekt wird zuerst ausgewählt. Innerhalb einer Mehrfachauswahl hat der Gruppenrahmen weiterhin Vorrang; dort erscheint kein mehrdeutiges Einzelobjekt-Bearbeiten. Freihand, Bilder, gesperrte Objekte und geschützte RichText-/Callout-Textfelder erhalten keinen Bearbeiten-Eintrag.
+
+Der vorhandene Textdialog öffnet sich unmittelbar vorausgefüllt, ohne die Annotationsliste einzublenden. Textfelder bieten Schriftgröße, Textfarbe und Hintergrundfarbe/Transparenz; Haftnotizen ihren Text und ihre Notizfarbe. Der Text erhält den Fokus, Tab/Shift+Tab bleiben im Dialog, nach dem Schließen erhält die PDF-Arbeitsfläche den Fokus zurück. **Übernehmen** sendet nur geänderte Eigenschaften an die bestehende native Objekt-ID. Unverändertes Bestätigen, **Abbrechen** und Escape schreiben keinen Undo-Eintrag. Fehler lassen Eingabe und Dialog bestehen. Editierentwürfe verändern keine Voreinstellungen für neue Textfelder.
+
+[Bearbeitungsdialog im Chromium-Touchtest bei 390 × 450 Pixeln](images/context-edit-touch.png), ausschließlich mit synthetischer PDF aufgenommen. Der reduzierte Viewport prüft begrenzten Platz, ohne eine echte Android-Bildschirmtastatur zu emulieren.
+
+Automatische Größenänderung bleibt auf entsprechend markierte eigene Textfelder beschränkt; fremde Textfelder behalten ihre Abmessungen. Der native Update-/Undo-/Exportpfad wird wiederverwendet. Die bestehenden Schutzmechanismen gegen Fingerbewegung, Zweitfinger, Escape und Zoom/Pan bleiben erhalten. `tests/e2e/context-edit.spec.ts` prüft Desktop-Zugriff, Auswahlrahmen, native IDs, Undo/Redo/Export/Reopen, Gruppen und geschützte Objekte sowie Chromium-Touch. Touch-Ereignisse sind emuliert; reale Android-Tastatur, System-WebViews und macOS-Zwei-Finger-Sekundärklick bleiben am Gerät zu prüfen.
+
 ## Einfügeposition und Lebensdauer
 
 Die linke obere Ecke des Gruppenrahmens wird an die Kontextmenü-Position gesetzt. Strg+V verwendet die letzte Mausposition auf der aktiven PDF-Seite, ansonsten die Mitte des sichtbaren Bereichs, auf das Blatt begrenzt. Abstände und Größen der Gruppe bleiben in Seitenansichtskoordinaten erhalten. Kopierte Textfelder behalten auch ihre individuelle Drehung relativ zur Seite.
@@ -48,8 +58,8 @@ Codex Cloud:
 - Touch bei 390 × 844 mit echten Chromium-CDP-Ereignissen: lang drücken auf eine Auswahl und auf freie Fläche, kein versehentliches Verschieben, Menü innerhalb des Bildschirms, Abbruch bei Bewegung/zweitem Finger.
 - CI prüft zusätzlich in Firefox Layout, Gruppenauswahl und Zwischenablage. Die beiden CDP-Touchtests werden dort ausdrücklich übersprungen. Abschließende CI-Links/Ergebnisse im PR.
 
-| Auf einer Auswahl | Auf freier Blattfläche |
-| --- | --- |
+| Auf einer Auswahl                                                | Auf freier Blattfläche                                          |
+| ---------------------------------------------------------------- | --------------------------------------------------------------- |
 | ![Kopieren und Ausschneiden](images/context-touch-selection.png) | ![Einfügen und alle Kommentare](images/context-touch-blank.png) |
 
 Nur synthetische Test-PDFs. Touch-Emulation ersetzt keine Prüfung auf einem physischen Android-/iOS-Gerät. Keine neue Acrobat- oder native Desktop-Bedienprüfung. Die öffentliche [Browser-Vorschau](https://roju0ch.github.io/PDF-Annotation-Editor/) wird erst nach Review/Merge und erfolgreichem Pages-Workflow aktualisiert.
