@@ -1,3 +1,4 @@
+import { compositedRaster } from "./compositedRaster";
 import { test, expect, type Page } from "@playwright/test";
 import { readFile, writeFile } from "node:fs/promises";
 import * as mupdf from "mupdf";
@@ -116,24 +117,15 @@ test("right-click menus copy and cut the full selection with native paste and at
     ];
     await expect
       .poll(() =>
-        page
-          .getByLabel("PDF-Seite 1")
-          .evaluate((canvas: HTMLCanvasElement, p: number[]) => {
-            const pixel = canvas
-              .getContext("2d")!
-              .getImageData(
-                Math.floor((p[0] * canvas.width) / 300),
-                Math.floor((p[1] * canvas.height) / 400),
-                1,
-                1,
-              ).data;
-            return (
-              pixel[0] > 150 &&
-              pixel[1] < 100 &&
-              pixel[2] < 100 &&
-              pixel[3] > 200
-            );
-          }, pixelPoint),
+        compositedRaster(page, 0, {
+          points: [{ x: pixelPoint[0], y: pixelPoint[1] }],
+        }).then(
+          ({ colors: [pixel] }) =>
+            pixel[0] > 150 &&
+            pixel[1] < 100 &&
+            pixel[2] < 100 &&
+            pixel[3] > 200,
+        ),
       )
       .toBe(true);
     const rect = (a: mupdf.PDFAnnotation) =>

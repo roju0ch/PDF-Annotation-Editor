@@ -59,7 +59,7 @@ npm test
 npm run poc
 npx playwright install --with-deps chromium firefox
 npm run test:e2e
-PLAYWRIGHT_BROWSER=firefox PLAYWRIGHT_HTML_OUTPUT_DIR=playwright-report-firefox npm run test:e2e -- tests/e2e/layout.spec.ts tests/e2e/selection.spec.ts tests/e2e/clipboard.spec.ts tests/e2e/images.spec.ts tests/e2e/pages.spec.ts tests/e2e/offline.spec.ts tests/e2e/rendering.spec.ts
+PLAYWRIGHT_BROWSER=firefox PLAYWRIGHT_HTML_OUTPUT_DIR=playwright-report-firefox npm run test:e2e -- tests/e2e/layout.spec.ts tests/e2e/selection.spec.ts tests/e2e/clipboard.spec.ts tests/e2e/images.spec.ts tests/e2e/pages.spec.ts tests/e2e/offline.spec.ts tests/e2e/rendering.spec.ts tests/e2e/annotation-rendering.spec.ts
 npm run build
 ```
 
@@ -69,7 +69,7 @@ Die installierten Pakete enthalten Frontend, PDF-Worker und MuPDF-WASM lokal; ke
 
 Tauri 2 liegt in `src-tauri/`. Nach Installation der [offiziellen Plattformvoraussetzungen](https://v2.tauri.app/start/prerequisites/) startet `npm run tauri -- dev` die Desktop-Hülle. Sie nutzt dieselbe lokale File-API und hat keine eigenen Dateisystem-/Shell-Kommandos oder zusätzlichen Plugin-Berechtigungen. Windows/macOS werden auf ihren GitHub-Runnern gebaut.
 
-Große Pläne werden mit einer Ganzseitenvorschau und scharf nachgeladenen, sichtbaren Detailkacheln dargestellt. [Rendering, Speicherbudgets und Tests](docs/RENDERING.md).
+Große Pläne werden mit einer Ganzseitenvorschau und scharf nachgeladenen, sichtbaren Detailkacheln dargestellt. Beim Zeichnen und Kommentieren bleibt der Hintergrund erhalten; nur die betroffenen nativen Annotationsbereiche werden aktualisiert. [Rendering, Speicherbudgets und Tests](docs/RENDERING.md).
 
 ## Architektur und Grenzen
 

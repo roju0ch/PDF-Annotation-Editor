@@ -70,7 +70,7 @@ export function useAnnotations(
   client: RefObject<PdfClient | null>,
   layout: Layout,
   name: string,
-  invalidate: () => void,
+  invalidate: (structural?: boolean) => void,
   onError: (s: string) => void,
   onPagesChange: (pages: PageInfo[], focusPage?: number) => void,
 ) {
@@ -90,6 +90,30 @@ export function useAnnotations(
   const [contextMenu, setContextMenu] = useState<AnnotationContext | null>(
     null,
   );
+  const [pendingInk, setPendingInk] = useState<
+    {
+      id: number;
+      draft: Draft;
+      color: string;
+      width: number;
+      revision: number | null;
+    }[]
+  >([]);
+  const nextPendingInk = useRef(0);
+  const displayedRevision = useRef<number | null>(null);
+  const displayed = useCallback((revision: number) => {
+    // New edit sequence IDs increase even after undo; old raster replies must
+    // not remove feedback for a later stroke that has already committed.
+    displayedRevision.current = Math.max(
+      displayedRevision.current ?? -1,
+      revision,
+    );
+    setPendingInk((items) =>
+      items.filter(
+        (item) => item.revision === null || item.revision > revision,
+      ),
+    );
+  }, []);
   const [hasClipboard, setHasClipboard] = useState(false);
   const clipboard = useRef<AnnotationClipboard | null>(null);
   const imageInput = useRef<HTMLInputElement>(null);
@@ -168,6 +192,8 @@ export function useAnnotations(
     setItems([]);
     setSelection([]);
     setDraft(null);
+    setPendingInk([]);
+    displayedRevision.current = null;
     draftRef.current = null;
     setNotice("");
     setTool("select");
@@ -206,6 +232,8 @@ export function useAnnotations(
       )
         return;
       const token = epoch.current;
+      if (!["create", "create-image", "paste"].includes(command.action))
+        setPendingInk([]);
       lock.current = true;
       setBusy(true);
       setNotice("");
@@ -214,6 +242,7 @@ export function useAnnotations(
         if (token !== epoch.current) return;
         setState(r.editor!);
         if (r.pages) {
+          setPendingInk([]);
           setItems([]);
           setSelection([]);
           showDraft(null);
@@ -230,7 +259,7 @@ export function useAnnotations(
                 : [r.selected],
           );
         setFormDirty(false);
-        invalidate();
+        invalidate(!!r.pages);
         return r;
       } catch (e) {
         if (token === epoch.current)
@@ -385,6 +414,7 @@ export function useAnnotations(
         setHasClipboard(true);
         setState(r.editor!);
         if (cut) {
+          setPendingInk([]);
           setSelection([]);
           invalidate();
         }
@@ -972,6 +1002,19 @@ export function useAnnotations(
     ];
     if (rect[2] === rect[0]) rect[2] += 0.01;
     if (rect[3] === rect[1]) rect[3] += 0.01;
+    const pendingId = d.kind === "Ink" ? ++nextPendingInk.current : null;
+    const token = epoch.current;
+    if (pendingId !== null)
+      setPendingInk((items) => [
+        ...items,
+        {
+          id: pendingId,
+          draft: d,
+          color: cur.color,
+          width: cur.width,
+          revision: null,
+        },
+      ]);
     void edit({
       action: "create",
       page: d.page,
@@ -982,9 +1025,25 @@ export function useAnnotations(
       color: cur.color,
       width: cur.width,
       fontSize: cur.fontSize,
+    }).then((result) => {
+      if (pendingId === null || token !== epoch.current) return;
+      const revision = result?.editor?.revision;
+      setPendingInk((items) =>
+        items.flatMap((item) => {
+          if (item.id !== pendingId) return [item];
+          if (
+            revision === undefined ||
+            (displayedRevision.current ?? -1) >= revision
+          )
+            return [];
+          return [{ ...item, revision }];
+        }),
+      );
     });
   }
   return {
+    pendingInk,
+    displayed,
     contextMenu,
     insertPdf,
     closeContext,

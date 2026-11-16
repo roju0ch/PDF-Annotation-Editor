@@ -1,3 +1,4 @@
+import { compositedRaster } from "./compositedRaster";
 import { test, expect, type Page } from "@playwright/test";
 import { readFile, writeFile } from "node:fs/promises";
 import * as m from "mupdf";
@@ -381,21 +382,8 @@ for (const mobile of [false, true]) {
     await expect.poll(dimensions).toEqual(["400px", "300px"]);
     // Actual pixels must rotate, including after a second turn that keeps width/height.
     const redAt = async (x: number, y: number) =>
-      page.getByLabel("PDF-Seite 1", { exact: true }).evaluate(
-        (el, [x, y]) => {
-          const c = el as HTMLCanvasElement;
-          return Array.from(
-            c
-              .getContext("2d")!
-              .getImageData(
-                Math.floor(c.width * x),
-                Math.floor(c.height * y),
-                1,
-                1,
-              ).data,
-          ).slice(0, 3);
-        },
-        [x, y],
+      compositedRaster(page, 0, { space: "fraction", points: [{ x, y }] }).then(
+        ({ colors: [pixel] }) => pixel.slice(0, 3),
       );
     await expect.poll(() => redAt(0.15, 0.5)).toEqual([255, 0, 0]);
     await expect

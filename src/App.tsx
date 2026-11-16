@@ -1,3 +1,5 @@
+import { useAnnotationRaster } from "./app/useAnnotationRaster";
+import type { SurfaceMap } from "./app/rasterSurfaces";
 import { usePdfRaster } from "./app/usePdfRaster";
 import { visibleTilePlan } from "./core/render/tiles";
 import { PageOrganizer } from "./app/PageOrganizer";
@@ -39,6 +41,13 @@ export default function App() {
     generation = useRef(0);
   const canvases = useRef(new Map<number, HTMLCanvasElement>());
   const detailLayers = useRef(new Map<number, HTMLDivElement>());
+  const overviewLayers = useRef(new Map<number, HTMLDivElement>());
+  const surfaces = useRef<SurfaceMap>(new Map());
+  const [surfaceVersion, setSurfaceVersion] = useState(0);
+  const onSurfaceChange = useCallback(
+    () => setSurfaceVersion((v) => v + 1),
+    [],
+  );
   const [pages, setPages] = useState<PageInfo[]>([]),
     [name, setName] = useState(""),
     [error, setError] = useState(""),
@@ -69,9 +78,9 @@ export default function App() {
     () => pages.map((_, i) => (continuous ? offsets[i] : 0)),
     [pages, continuous, offsets],
   );
-  const [renderRevision, setRenderRevision] = useState(0);
-  const invalidate = useCallback(() => {
-    setRenderRevision((v) => v + 1);
+  const [contentRevision, setContentRevision] = useState(0);
+  const invalidate = useCallback((structural = false) => {
+    if (structural) setContentRevision((v) => v + 1);
   }, []);
   const pageContext = useRef({ pages, page, continuous, box });
   useEffect(() => {
@@ -418,12 +427,23 @@ export default function App() {
     client,
     canvases,
     layers: detailLayers,
+    overviewLayers,
+    surfaces,
+    onSurfaceChange,
     pages,
     tiles,
     visible: visible.map(({ i }) => i),
-    revision: renderRevision,
+    revision: contentRevision,
     onRendering: setRendering,
     onError: setError,
+  });
+  useAnnotationRaster({
+    client,
+    surfaces,
+    surfaceVersion,
+    revision: annotation.state.revision,
+    onError: setError,
+    onRendered: annotation.displayed,
   });
   useEffect(() => {
     if (!continuous || !pages.length || annotation.formDirty) return;
@@ -791,6 +811,16 @@ export default function App() {
                         else canvases.current.delete(i);
                       }}
                       style={{ width: p.width, height: p.height }}
+                    />
+                  )}
+                  {visible.some((v) => v.i === i) && (
+                    <div
+                      className="annotation-overview-layer"
+                      aria-hidden="true"
+                      ref={(el) => {
+                        if (el) overviewLayers.current.set(i, el);
+                        else overviewLayers.current.delete(i);
+                      }}
                     />
                   )}
                   {visible.some((v) => v.i === i) && (

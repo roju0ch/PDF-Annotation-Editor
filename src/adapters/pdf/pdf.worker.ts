@@ -50,7 +50,7 @@ self.onmessage = ({ data: r }: MessageEvent<Request>) => {
       if (!editor) throw new Error("Keine PDF geöffnet.");
       const clipboard = editor.copy(r.page, r.ids);
       if (r.cut) {
-        rasterizer?.clear();
+        rasterizer?.invalidateAnnotations();
         editor.apply({ action: "delete-many", page: r.page, ids: r.ids });
       }
       self.postMessage({
@@ -60,7 +60,7 @@ self.onmessage = ({ data: r }: MessageEvent<Request>) => {
       } satisfies Reply);
     } else if (r.type === "edit") {
       if (!editor) throw new Error("Keine PDF geöffnet.");
-      rasterizer?.clear();
+      rasterizer?.invalidateAnnotations();
       const before = pages.map((p) => `${p.id}:${p.rotation}`);
       const selected = editor.apply(r.command);
       const structural = [
@@ -79,7 +79,10 @@ self.onmessage = ({ data: r }: MessageEvent<Request>) => {
       const changed =
         before.length !== after.length ||
         after.some((id, i) => id !== before[i]);
-      if (changed) pages = pageInfos(doc!);
+      if (changed) {
+        rasterizer?.clear();
+        pages = pageInfos(doc!);
+      }
       self.postMessage({
         ...(changed
           ? {
@@ -103,12 +106,53 @@ self.onmessage = ({ data: r }: MessageEvent<Request>) => {
       if (!editor) throw new Error("Keine PDF geöffnet.");
       editor.acknowledgeExport(r.revision);
       self.postMessage({ id: r.id, editor: editor.state() } satisfies Reply);
+    } else if (
+      r.type === "annotation-bounds" ||
+      r.type === "render-annotation-patch"
+    ) {
+      if (!rasterizer || !editor) throw new Error("Keine PDF geöffnet.");
+      const rasterRevision = editor.state().revision;
+      if (r.revision !== rasterRevision) {
+        self.postMessage({
+          id: r.id,
+          stale: true,
+          rasterRevision,
+        } satisfies Reply);
+      } else if (r.type === "annotation-bounds") {
+        if (!Array.isArray(r.pages) || r.pages.length > 32)
+          throw new Error("Zu viele PDF-Seiten angefordert.");
+        const annotationBounds = [...new Set(r.pages)].map((page) => ({
+          page,
+          bounds: rasterizer!.annotationBounds(pages[page], page),
+        }));
+        self.postMessage({
+          id: r.id,
+          rasterRevision,
+          annotationBounds,
+        } satisfies Reply);
+      } else {
+        const result = rasterizer.composite(pages[r.page], r, r.background);
+        self.postMessage(
+          { id: r.id, ...result, rasterRevision } satisfies Reply,
+          { transfer: [result.pixels.buffer] },
+        );
+      }
     } else if (r.type === "render-tile") {
-      if (!rasterizer) throw new Error("Keine PDF geöffnet.");
-      const result = rasterizer.render(pages[r.page], r);
-      self.postMessage({ id: r.id, ...result } satisfies Reply, {
-        transfer: [result.pixels.buffer],
-      });
+      if (!rasterizer || !editor) throw new Error("Keine PDF geöffnet.");
+      const result = rasterizer.render(pages[r.page], r, { split: r.split });
+      self.postMessage(
+        {
+          id: r.id,
+          ...result,
+          rasterRevision: editor.state().revision,
+        } satisfies Reply,
+        {
+          transfer: [
+            result.pixels.buffer,
+            ...(result.overlayPixels ? [result.overlayPixels.buffer] : []),
+          ],
+        },
+      );
     } else {
       if (!doc) throw new Error("Keine PDF geöffnet.");
       const info = pages[r.page];
@@ -118,6 +162,35 @@ self.onmessage = ({ data: r }: MessageEvent<Request>) => {
         Math.sqrt(4_000_000 / (info.width * info.height)),
         4096 / Math.max(info.width, info.height),
       );
+      if (r.split) {
+        if (!rasterizer || !editor) throw new Error("Keine PDF geöffnet.");
+        const result = rasterizer.render(
+          info,
+          {
+            page: r.page,
+            scale,
+            x: 0,
+            y: 0,
+            width: Math.ceil(info.width * scale),
+            height: Math.ceil(info.height * scale),
+          },
+          { split: true, overview: true },
+        );
+        self.postMessage(
+          {
+            id: r.id,
+            ...result,
+            rasterRevision: editor.state().revision,
+          } satisfies Reply,
+          {
+            transfer: [
+              result.pixels.buffer,
+              ...(result.overlayPixels ? [result.overlayPixels.buffer] : []),
+            ],
+          },
+        );
+        return;
+      }
       const p = doc.loadPage(r.page);
       try {
         const pix = p.toPixmap(

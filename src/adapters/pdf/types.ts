@@ -4,7 +4,7 @@ import type {
   AnnotationClipboard,
   EditorState,
 } from "../../core/annotations/model";
-import type { TileRequest } from "./raster";
+import type { RasterBox, TileRequest } from "./raster";
 import type { Matrix } from "../../core/viewport";
 export type PageInfo = {
   id: number;
@@ -16,8 +16,14 @@ export type PageInfo = {
 };
 export type Payload =
   | { type: "open"; data: ArrayBuffer }
-  | { type: "render"; page: number; scale: number }
-  | ({ type: "render-tile" } & TileRequest)
+  | { type: "render"; page: number; scale: number; split?: boolean }
+  | ({ type: "render-tile"; split?: boolean } & TileRequest)
+  | { type: "annotation-bounds"; pages: number[]; revision: number }
+  | ({
+      type: "render-annotation-patch";
+      background: Uint8ClampedArray<ArrayBuffer>;
+      revision: number;
+    } & TileRequest)
   | { type: "list"; page: number }
   | { type: "copy"; page: number; ids: number[]; cut: boolean }
   | { type: "edit"; command: AnnotationCommand }
@@ -35,6 +41,14 @@ export type Reply = {
   pages?: PageInfo[];
   focusPage?: number;
   pixels?: Uint8ClampedArray<ArrayBuffer>;
+  overlayPixels?: Uint8ClampedArray<ArrayBuffer>;
+  overlayBox?: RasterBox;
+  rasterRevision?: number;
+  stale?: boolean;
+  annotationBounds?: {
+    page: number;
+    bounds: [number, number, number, number][];
+  }[];
   width?: number;
   height?: number;
 };

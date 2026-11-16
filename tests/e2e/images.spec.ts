@@ -1,3 +1,4 @@
+import { compositedRaster } from "./compositedRaster";
 import { test, expect, type Page } from "@playwright/test";
 import { readFile, writeFile } from "node:fs/promises";
 import * as mupdf from "mupdf";
@@ -88,23 +89,13 @@ test("PNG on rotated page: rendered orientation, resize, move, comments and nati
   expect(box.width / box.height).toBeCloseTo(2, 1);
   await expect
     .poll(() =>
-      page
-        .getByLabel("PDF-Seite 2")
-        .evaluate((canvas: HTMLCanvasElement, b) => {
-          const r = canvas.getBoundingClientRect(),
-            ctx = canvas.getContext("2d")!;
-          return [0.25, 0.75].map((u) => {
-            const p = ctx.getImageData(
-              Math.floor(((b.x + b.width * u - r.x) * canvas.width) / r.width),
-              Math.floor(
-                ((b.y + b.height * 0.25 - r.y) * canvas.height) / r.height,
-              ),
-              1,
-              1,
-            ).data;
-            return [...p.slice(0, 3)];
-          });
-        }, box),
+      compositedRaster(page, 1, {
+        space: "screen",
+        points: [0.25, 0.75].map((u) => ({
+          x: box.x + box.width * u,
+          y: box.y + box.height * 0.25,
+        })),
+      }).then((result) => result.colors.map((color) => color.slice(0, 3))),
     )
     .toEqual([
       [255, 0, 0],
@@ -314,26 +305,20 @@ test("mobile JPEG picker, touch resize and clipboard-denied fallback", async ({
   const resized = (await page.getByTestId("selection-outline").boundingBox())!;
   await expect
     .poll(() =>
-      page
-        .getByLabel("PDF-Seite 1")
-        .evaluate((canvas: HTMLCanvasElement, b) => {
-          const r = canvas.getBoundingClientRect();
-          const pixel = canvas
-            .getContext("2d")!
-            .getImageData(
-              Math.floor(((b.x + b.width / 2 - r.x) * canvas.width) / r.width),
-              Math.floor(
-                ((b.y + b.height / 2 - r.y) * canvas.height) / r.height,
-              ),
-              1,
-              1,
-            ).data;
-          return (
-            Math.abs(pixel[0] - 18) < 4 &&
-            Math.abs(pixel[1] - 109) < 4 &&
-            Math.abs(pixel[2] - 204) < 4
-          );
-        }, resized),
+      compositedRaster(page, 0, {
+        space: "screen",
+        points: [
+          {
+            x: resized.x + resized.width / 2,
+            y: resized.y + resized.height / 2,
+          },
+        ],
+      }).then(
+        ({ colors: [pixel] }) =>
+          Math.abs(pixel[0] - 18) < 4 &&
+          Math.abs(pixel[1] - 109) < 4 &&
+          Math.abs(pixel[2] - 204) < 4,
+      ),
     )
     .toBe(true);
   await page.screenshot({ path: "artifacts/image-mobile.png" });

@@ -1,3 +1,4 @@
+import { compositedRaster } from "./compositedRaster";
 import { menu, closeMenu, tool, viewAction } from "./menus";
 import { test, expect, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
@@ -23,39 +24,9 @@ async function clickAt(page: Page, x: number, y: number, index = 0) {
   await page.mouse.click(p.x, p.y);
 }
 async function redPixels(page: Page, index: number, rect: number[]) {
-  return page
-    .getByLabel(`PDF-Seite ${index + 1}`)
-    .evaluate((canvas: HTMLCanvasElement, r: number[]) => {
-      const w = indexWidth(canvas),
-        sx = canvas.width / w,
-        sy = canvas.height / (w === 300 ? 400 : 500);
-      function indexWidth(c: HTMLCanvasElement) {
-        return parseFloat(c.style.width);
-      }
-      const x = Math.floor(r[0] * sx),
-        y = Math.floor(r[1] * sy),
-        width = Math.max(1, Math.floor(r[2] * sx)),
-        height = Math.max(1, Math.floor(r[3] * sy));
-      const pixels = canvas
-        .getContext("2d")!
-        .getImageData(x, y, width, height).data;
-      let red = 0,
-        clear = 0;
-      for (let i = 0; i < pixels.length; i += 4) {
-        if (
-          pixels[i] > pixels[i + 1] * 1.6 &&
-          pixels[i] > 80 &&
-          pixels[i + 3] > 128
-        )
-          red++;
-        if (
-          pixels[i + 3] < 20 ||
-          (pixels[i] > 230 && pixels[i + 1] > 230 && pixels[i + 2] > 230)
-        )
-          clear++;
-      }
-      return { red, clear, total: width * height };
-    }, rect);
+  return compositedRaster(page, index, {
+    region: rect as [number, number, number, number],
+  });
 }
 async function download(page: Page, file: string) {
   const waiting = page.waitForEvent("download");
