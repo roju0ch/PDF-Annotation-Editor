@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   MAX_VISIBLE_TILES,
+  MAX_LIVE_RASTER_PIXELS,
   RasterCache,
   TILE_SIZE,
   rasterScale,
@@ -57,6 +58,41 @@ describe("viewport tile plan", () => {
           ),
         ).toBe(true);
       }
+  });
+
+  it("caps live canvas pixels as well as the LRU on large HiDPI displays", () => {
+    const view = { x: -23000, y: -5000, scale: 4 };
+    const tiles = visibleTilePlan(
+      large,
+      [0],
+      [0],
+      view,
+      { x: 3840, y: 2160 },
+      4,
+    );
+    expect(
+      tiles.reduce((sum, tile) => sum + tile.width * tile.height, 0),
+    ).toBeLessThanOrEqual(MAX_LIVE_RASTER_PIXELS);
+    expect(tiles[0].scale).toBeLessThan(16);
+    expect(tiles[0].scale).toBeGreaterThanOrEqual(view.scale);
+    for (const [x, y] of [
+      [0, 0],
+      [3839, 0],
+      [0, 2159],
+      [3839, 2159],
+    ]) {
+      const px = ((x - view.x) / view.scale) * tiles[0].scale;
+      const py = ((y - view.y) / view.scale) * tiles[0].scale;
+      expect(
+        tiles.some(
+          (tile) =>
+            px >= tile.x &&
+            px < tile.x + tile.width &&
+            py >= tile.y &&
+            py < tile.y + tile.height,
+        ),
+      ).toBe(true);
+    }
   });
 
   it("does not request extra neighboring tiles outside the viewport", () => {
@@ -174,16 +210,18 @@ describe("viewport tile plan", () => {
         3,
       ),
     ).toEqual([]);
+    const huge = visibleTilePlan(
+      large,
+      [0],
+      [0],
+      { x: 0, y: 0, scale: 1 },
+      { x: 20000, y: 20000 },
+      4,
+    );
+    expect(huge.length).toBeLessThanOrEqual(MAX_VISIBLE_TILES);
     expect(
-      visibleTilePlan(
-        large,
-        [0],
-        [0],
-        { x: 0, y: 0, scale: 1 },
-        { x: 20000, y: 20000 },
-        4,
-      ),
-    ).toHaveLength(MAX_VISIBLE_TILES);
+      huge.reduce((sum, tile) => sum + tile.width * tile.height, 0),
+    ).toBeLessThanOrEqual(MAX_LIVE_RASTER_PIXELS);
     // This view intersects millions of possible page cells; planning itself
     // must stay bounded before retaining the nearest 256 tiles.
     const extreme = visibleTilePlan(
@@ -194,12 +232,15 @@ describe("viewport tile plan", () => {
       { x: 1e9, y: 1e9 },
       4,
     );
-    expect(extreme).toHaveLength(MAX_VISIBLE_TILES);
+    expect(extreme.length).toBeLessThanOrEqual(MAX_VISIBLE_TILES);
+    expect(
+      extreme.reduce((sum, tile) => sum + tile.width * tile.height, 0),
+    ).toBeLessThanOrEqual(MAX_LIVE_RASTER_PIXELS);
     expect(
       extreme.every(
         (tile) =>
-          tile.x + tile.width <= 20000 * tile.scale &&
-          tile.y + tile.height <= 20000 * tile.scale,
+          tile.x + tile.width <= Math.ceil(20000 * tile.scale) &&
+          tile.y + tile.height <= Math.ceil(20000 * tile.scale),
       ),
     ).toBe(true);
     expect(rasterScale(1, Infinity)).toBe(1);

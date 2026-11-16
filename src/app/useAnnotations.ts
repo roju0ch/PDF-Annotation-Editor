@@ -675,7 +675,7 @@ export function useAnnotations(
         "input:not([type=file]),textarea,select,[contenteditable]:not([contenteditable=false])",
       );
     const nativePaste = (e: ClipboardEvent) => {
-      if (typing(e.target) || !client.current) return;
+      if (e.defaultPrevented || typing(e.target) || !client.current) return;
       pendingPaste = false;
       e.preventDefault();
       const file = [...(e.clipboardData?.files ?? [])].find((f) =>

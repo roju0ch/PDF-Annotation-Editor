@@ -165,6 +165,7 @@ export default function App() {
     };
     const points = new Map<number, Point>();
     let drag: Point | null = null;
+    let middlePasteBlocked = false;
     const local = (e: { clientX: number; clientY: number }): Point => {
       const b = el.getBoundingClientRect();
       return { x: e.clientX - b.left, y: e.clientY - b.top };
@@ -189,6 +190,7 @@ export default function App() {
         );
     };
     const down = (e: PointerEvent) => {
+      middlePasteBlocked = e.button === 1;
       // A click outside a menu dismisses it; it must not also draw on the PDF.
       if (
         document.querySelector(
@@ -300,6 +302,7 @@ export default function App() {
       el.classList.remove("panning");
     };
     const keydown = (e: KeyboardEvent) => {
+      middlePasteBlocked = false;
       if (e.key === "Escape") clearHold();
       if (e.code === "Space" && !inputTarget(e.target)) {
         space = true;
@@ -310,6 +313,7 @@ export default function App() {
       if (e.code === "Space") space = false;
     };
     const reset = () => {
+      middlePasteBlocked = false;
       clearHold();
       consumed.clear();
       annotationInput.current.cancel();
@@ -335,15 +339,26 @@ export default function App() {
     const aux = (e: MouseEvent) => {
       if (e.button === 1) e.preventDefault();
     };
+    const preventMiddlePaste = (e: ClipboardEvent) => {
+      // Some Linux browsers dispatch primary-selection paste asynchronously,
+      // even when the compatibility mouse events were cancelled. The next
+      // pointer/keyboard action (including Ctrl+V) restores normal paste.
+      if (middlePasteBlocked && !inputTarget(e.target)) e.preventDefault();
+    };
     el.addEventListener("wheel", wheel, { passive: false });
     el.addEventListener("pointerdown", down);
     el.addEventListener("pointermove", move);
     el.addEventListener("pointerup", up);
     el.addEventListener("pointercancel", up);
     el.addEventListener("lostpointercapture", up);
+    // Linux middle-click can paste the primary selection on mouseup before
+    // auxclick. Reserve both compatibility mouse events for PDF panning.
+    el.addEventListener("mousedown", aux);
+    el.addEventListener("mouseup", aux);
     el.addEventListener("auxclick", aux);
     el.addEventListener("contextmenu", context);
     el.addEventListener("pointerleave", leave);
+    window.addEventListener("paste", preventMiddlePaste, true);
     window.addEventListener("keydown", keydown);
     window.addEventListener("keyup", keyup);
     window.addEventListener("blur", reset);
@@ -357,7 +372,10 @@ export default function App() {
       el.removeEventListener("pointerup", up);
       el.removeEventListener("pointercancel", up);
       el.removeEventListener("lostpointercapture", up);
+      el.removeEventListener("mousedown", aux);
+      el.removeEventListener("mouseup", aux);
       el.removeEventListener("auxclick", aux);
+      window.removeEventListener("paste", preventMiddlePaste, true);
       window.removeEventListener("keydown", keydown);
       window.removeEventListener("keyup", keyup);
       window.removeEventListener("blur", reset);

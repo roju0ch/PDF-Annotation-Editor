@@ -107,7 +107,10 @@ export function usePdfRaster({
         if (stale() || !c) return;
         return c.request(payload);
       })();
-      running.current = task;
+      running.current = task.then(
+        () => undefined,
+        () => undefined,
+      );
       return task;
     };
     const raster = async (key: string, payload: Payload) => {
@@ -182,7 +185,10 @@ export function usePdfRaster({
             // edges; the overlap also keeps the compositor's filter inside data.
             const bitmap = await createImageBitmap(image);
             try {
-              if (stale()) return;
+              if (stale()) {
+                release(canvas);
+                return;
+              }
               const context = canvas.getContext("2d", { alpha: false })!;
               context.fillStyle = "white";
               context.fillRect(0, 0, canvas.width, canvas.height);

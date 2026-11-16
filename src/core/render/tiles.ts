@@ -4,6 +4,7 @@ export const TILE_SIZE = 1024;
 const TILE_STEP = TILE_SIZE - 4; // Two raster pixels of bleed on each edge.
 export const MAX_VISIBLE_TILES = 256;
 export const RASTER_CACHE_BYTES = 32 * 1024 * 1024;
+export const MAX_LIVE_RASTER_PIXELS = 24 * 1024 * 1024;
 export type Tile = {
   page: number;
   scale: number;
@@ -39,7 +40,36 @@ export function visibleTilePlan(
     box.y <= 0
   )
     return [];
-  const scale = rasterScale(view.scale, devicePixelRatio);
+  let scale = rasterScale(view.scale, devicePixelRatio);
+  let level = Math.round(Math.log2(scale) * 2);
+  for (;;) {
+    const tiles = tilesAtScale(
+      pages,
+      tops,
+      visiblePageIndices,
+      view,
+      box,
+      scale,
+    );
+    const pixels = tiles.reduce(
+      (sum, tile) => sum + tile.width * tile.height,
+      0,
+    );
+    if (pixels <= MAX_LIVE_RASTER_PIXELS || scale < 1 / 1024) return tiles;
+    // Limit live canvas memory too, independently of the bitmap LRU. On very
+    // large HiDPI viewports prefer complete coverage at a lower pixel density.
+    scale = 2 ** (--level / 2);
+  }
+}
+
+function tilesAtScale(
+  pages: readonly { width: number; height: number }[],
+  tops: readonly number[],
+  visiblePageIndices: readonly number[],
+  view: View,
+  box: Point,
+  scale: number,
+): Tile[] {
   const candidates: { tile: Tile; distance: number }[] = [];
   for (const page of new Set(visiblePageIndices)) {
     const info = pages[page];

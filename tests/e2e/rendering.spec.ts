@@ -221,6 +221,21 @@ test("large vector plan gains true detail at DPR3 zoom and refreshes only visibl
       (WIDTH * HEIGHT * Math.min(...detail.scales) ** 2) / 20,
     );
 
+    expect(await page.getByRole("alert").allTextContents()).toEqual([]);
+    // Middle-button pan must not also paste an OS primary text selection.
+    await page.evaluate(() => {
+      const input = document.createElement("textarea");
+      input.id = "pan-clipboard-source";
+      input.value = "Synthetic clipboard text before middle-button pan";
+      document.body.appendChild(input);
+      input.focus();
+      input.select();
+    });
+    await page.keyboard.press("Control+c");
+    await page.evaluate(() =>
+      document.getElementById("pan-clipboard-source")?.remove(),
+    );
+    await page.getByTestId("viewport").focus();
     await page.mouse.down({ button: "middle" });
     await page.mouse.move(stage.x + anchor.x - 220, stage.y + anchor.y - 80, {
       steps: 4,
@@ -233,7 +248,7 @@ test("large vector plan gains true detail at DPR3 zoom and refreshes only visibl
     const after = await profile(page);
     expect(after.keys.some((key) => !detail.keys.includes(key))).toBe(true);
     expect(after.pixels).toBeLessThan(20_000_000);
-    await expect(page.getByRole("alert")).toHaveCount(0);
+    expect(await page.getByRole("alert").allTextContents()).toEqual([]);
     const screenshot = await page.screenshot({
       path: `artifacts/large-plan-detail-${browserName}.png`,
     });
