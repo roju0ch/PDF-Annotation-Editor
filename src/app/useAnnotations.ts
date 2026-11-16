@@ -4,6 +4,7 @@ import {
   type FreeTextStyle,
 } from "../core/annotations/textPreferences";
 import { readClipboardImage } from "../adapters/platform/clipboard";
+import { usesNativeSave, savePdf } from "../adapters/platform/savePdf";
 import {
   imageInfo,
   imagePlacement,
@@ -402,17 +403,26 @@ export function useAnnotations(
     const token = epoch.current;
     lock.current = true;
     setBusy(true);
+    setNotice(usesNativeSave() ? "PDF speichern …" : "");
+    onError("");
+    let savedFileName: string | null = null;
     try {
       const r = await c.request({ type: "export" });
       if (token !== epoch.current) return;
-      const url = URL.createObjectURL(
-        new Blob([r.bytes!], { type: "application/pdf" }),
+      const result = await savePdf(
+        r.bytes!,
+        name.replace(/\.pdf$/i, "") + "-annotiert.pdf",
       );
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = name.replace(/\.pdf$/i, "") + "-annotiert.pdf";
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      if (token !== epoch.current) return;
+      if (result.status === "cancelled") {
+        setNotice(
+          r.editor!.dirty
+            ? "Speichern abgebrochen. Änderungen bleiben ungesichert."
+            : "Speichern abgebrochen.",
+        );
+        return;
+      }
+      if (result.status === "saved") savedFileName = result.fileName;
       const ack = await c.request({
         type: "ack-export",
         revision: r.editor!.revision,
@@ -420,11 +430,22 @@ export function useAnnotations(
       if (token !== epoch.current) return;
       setState(ack.editor!);
       setNotice(
-        "PDF-Download gestartet. Bitte die heruntergeladene Datei prüfen.",
+        result.status === "saved"
+          ? `PDF gespeichert: ${result.fileName}`
+          : "PDF-Download gestartet. Bitte die heruntergeladene Datei prüfen.",
       );
     } catch (e) {
-      if (token === epoch.current)
-        onError(e instanceof Error ? e.message : "Export fehlgeschlagen.");
+      if (token === epoch.current) {
+        if (savedFileName) {
+          setNotice(`PDF gespeichert: ${savedFileName}`);
+          onError(
+            "Die PDF wurde gespeichert, aber die App konnte den Bearbeitungsstatus nicht aktualisieren. Bitte die gespeicherte Datei öffnen und prüfen.",
+          );
+        } else {
+          setNotice("");
+          onError(e instanceof Error ? e.message : "Export fehlgeschlagen.");
+        }
+      }
     } finally {
       if (token === epoch.current) {
         lock.current = false;

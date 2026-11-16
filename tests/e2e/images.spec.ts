@@ -366,20 +366,47 @@ test("Android native image bridge bypasses denied WebView clipboard and exports 
       value: "Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36",
     });
     Object.defineProperty(globalThis, "isTauri", { value: true });
-    const state = { calls: [] as string[], denied: false };
+    const state = {
+      calls: [] as string[],
+      denied: false,
+      chunks: [] as string[],
+      received: 0,
+      expected: 0,
+    };
     Object.defineProperty(globalThis, "nativeClipboardTest", { value: state });
     Object.defineProperty(globalThis, "__TAURI_INTERNALS__", {
       value: {
-        invoke: async (command: string) => {
+        invoke: async (command: string, args: Record<string, unknown> = {}) => {
           state.calls.push(command);
-          if (command !== "plugin:android-bridge|read_clipboard_image")
-            throw Error("Unexpected IPC command");
-          if (state.denied)
-            throw {
-              message:
-                "Zugriff auf das kopierte Bild abgelaufen. Bitte erneut kopieren.",
-            };
-          return { mimeType: "image/png", base64 };
+          if (command === "plugin:android-bridge|read_clipboard_image") {
+            if (state.denied)
+              throw {
+                message:
+                  "Zugriff auf das kopierte Bild abgelaufen. Bitte erneut kopieren.",
+              };
+            return { mimeType: "image/png", base64 };
+          }
+          if (command === "plugin:android-bridge|begin_pdf_save") {
+            state.chunks = [];
+            state.received = 0;
+            state.expected = Number(args.byteLength);
+            return { token: "00000000-0000-4000-8000-000000000001" };
+          }
+          if (command === "plugin:android-bridge|append_pdf_save") {
+            if (Number(args.offset) !== state.received)
+              throw Error("Unexpected native PDF upload offset");
+            const chunk = String(args.base64);
+            state.chunks.push(chunk);
+            state.received += atob(chunk).length;
+            return { received: state.received };
+          }
+          if (command === "plugin:android-bridge|finish_pdf_save") {
+            if (state.received !== state.expected)
+              throw Error("Incomplete native PDF transfer");
+            return { status: "saved", fileName: "image-annotations.pdf" };
+          }
+          if (command === "plugin:android-bridge|abort_pdf_save") return {};
+          throw Error("Unexpected IPC command");
         },
       },
     });
@@ -391,11 +418,31 @@ test("Android native image bridge bypasses denied WebView clipboard and exports 
   }, base64);
   await open(page);
   const state = () =>
-    page.evaluate(
-      () =>
-        (globalThis as unknown as { nativeClipboardTest: { calls: string[] } })
-          .nativeClipboardTest.calls,
+    page.evaluate(() =>
+      (
+        globalThis as unknown as { nativeClipboardTest: { calls: string[] } }
+      ).nativeClipboardTest.calls.filter((command) =>
+        command.endsWith("|read_clipboard_image"),
+      ),
     );
+  const nativeSave = async (path: string) => {
+    await page
+      .getByRole("button", { name: "PDF speichern unter …", exact: true })
+      .click();
+    await expect(
+      page.getByRole("status").filter({ hasText: "PDF gespeichert:" }),
+    ).toContainText("image-annotations.pdf");
+    const chunks = await page.evaluate(
+      () =>
+        (globalThis as unknown as { nativeClipboardTest: { chunks: string[] } })
+          .nativeClipboardTest.chunks,
+    );
+    const bytes = Buffer.concat(
+      chunks.map((chunk) => Buffer.from(chunk, "base64")),
+    );
+    await writeFile(path, bytes);
+    return new mupdf.PDFDocument(new Uint8Array(bytes));
+  };
   expect(await state()).toEqual([]);
   const sheet = (await page.getByTestId("page-0").boundingBox())!;
   await page.mouse.click(sheet.x + 20, sheet.y + 20, { button: "right" });
@@ -404,7 +451,7 @@ test("Android native image bridge bypasses denied WebView clipboard and exports 
     .click();
   await selectNewestImage(page);
   expect(await state()).toEqual(["plugin:android-bridge|read_clipboard_image"]);
-  const doc = await save(page, "artifacts/images-android-bridge.pdf");
+  const doc = await nativeSave("artifacts/images-android-bridge.pdf");
   const p = doc.loadPage(0);
   try {
     const stamp = p.getAnnotations().filter((a) => a.getType() === "Stamp");
@@ -431,7 +478,7 @@ test("Android native image bridge bypasses denied WebView clipboard and exports 
     .getByRole("menuitem", { name: "Bild aus Zwischenablage", exact: true })
     .click();
   await expect(page.getByRole("alert")).toContainText("Bitte erneut kopieren");
-  const unchanged = await save(page, "artifacts/images-android-denied.pdf");
+  const unchanged = await nativeSave("artifacts/images-android-denied.pdf");
   const unchangedPage = unchanged.loadPage(0);
   try {
     expect(

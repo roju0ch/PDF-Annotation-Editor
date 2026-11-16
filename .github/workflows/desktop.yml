@@ -110,6 +110,8 @@ jobs:
           node scripts/release/apple-env.mjs
       - name: Build installation packages
         run: node scripts/release/run.mjs node node_modules/@tauri-apps/cli/tauri.js build --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} --config "$RUNNER_TEMP/tauri-signing.json" -- --locked
+      - name: Test native PDF storage and process locks
+        run: node scripts/release/test-desktop-storage.mjs ${{ matrix.target }}
       - name: Verify Windows signature
         if: runner.os == 'Windows' && inputs.sign_windows
         shell: pwsh

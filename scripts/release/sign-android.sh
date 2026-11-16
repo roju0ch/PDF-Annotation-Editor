@@ -19,5 +19,6 @@ mkdir -p "$RUNNER_TEMP/signed-apk"
 "$buildtools/apksigner" sign --ks "$key" --ks-pass env:ANDROID_KEYSTORE_PASSWORD --key-pass env:ANDROID_KEY_PASSWORD --ks-key-alias "$ANDROID_KEY_ALIAS" --out "$RUNNER_TEMP/signed-apk/editor.apk" "$RUNNER_TEMP/aligned.apk"
 "$buildtools/apksigner" verify --verbose --print-certs "$RUNNER_TEMP/signed-apk/editor.apk"
 "$buildtools/zipalign" -c -P 16 4 "$RUNNER_TEMP/signed-apk/editor.apk"
-"$buildtools/aapt" dump badging "$RUNNER_TEMP/signed-apk/editor.apk"
+"$buildtools/aapt" dump badging "$RUNNER_TEMP/signed-apk/editor.apk" > "$RUNNER_TEMP/android-package.txt"
+node scripts/release/android-config.mjs verify "$RUNNER_TEMP/android-package.txt"
 PACKAGE_SIGNING="$signing" node scripts/release/collect.mjs "$RUNNER_TEMP/signed-apk" android-arm64-test apk

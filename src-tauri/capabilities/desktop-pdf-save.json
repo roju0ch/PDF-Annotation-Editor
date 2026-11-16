@@ -1,0 +1,13 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "desktop-pdf-save",
+  "description": "Save a PDF only through a native user-selected destination in the local main desktop window.",
+  "windows": ["main"],
+  "platforms": ["windows", "macOS", "linux"],
+  "permissions": [
+    "desktop-save:allow-begin-pdf-save",
+    "desktop-save:allow-append-pdf-save",
+    "desktop-save:allow-finish-pdf-save",
+    "desktop-save:allow-abort-pdf-save"
+  ]
+}

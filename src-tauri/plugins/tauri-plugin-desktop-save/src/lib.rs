@@ -1,0 +1,230 @@
+#![cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+
+mod cache;
+mod storage;
+
+use base64::{engine::general_purpose::STANDARD, Engine};
+use serde::Serialize;
+use std::{
+    path::PathBuf,
+    sync::{mpsc, Arc, Mutex},
+};
+use tauri::{
+    plugin::{Builder, TauriPlugin},
+    AppHandle, Manager, Runtime, WebviewWindow,
+};
+
+#[derive(Serialize)]
+struct CommandError {
+    code: &'static str,
+    message: &'static str,
+}
+impl From<storage::SaveError> for CommandError {
+    fn from(error: storage::SaveError) -> Self {
+        Self {
+            code: error.code,
+            message: error.message,
+        }
+    }
+}
+fn unavailable() -> CommandError {
+    storage::unavailable().into()
+}
+fn invalid() -> CommandError {
+    storage::invalid().into()
+}
+type Result<T> = std::result::Result<T, CommandError>;
+
+struct Backend {
+    // Declaration order releases staging handles before removing the cache folder.
+    sessions: storage::Sessions,
+    _cache: cache::CacheInstance,
+}
+#[derive(Default)]
+struct DesktopSave(Arc<Mutex<Option<Backend>>>);
+
+#[derive(Serialize)]
+struct Session {
+    token: String,
+}
+#[derive(Serialize)]
+struct Progress {
+    received: usize,
+}
+#[derive(Serialize)]
+#[serde(tag = "status", rename_all = "camelCase")]
+enum SaveResult {
+    Saved {
+        #[serde(rename = "fileName")]
+        file_name: String,
+    },
+    Cancelled,
+}
+
+fn with_backend<T>(
+    state: &Arc<Mutex<Option<Backend>>>,
+    task: impl FnOnce(&mut storage::Sessions) -> std::result::Result<T, storage::SaveError>,
+) -> Result<T> {
+    let mut guard = state.lock().map_err(|_| unavailable())?;
+    let backend = guard.as_mut().ok_or_else(invalid)?;
+    task(&mut backend.sessions).map_err(Into::into)
+}
+
+async fn io<T: Send + 'static>(task: impl FnOnce() -> Result<T> + Send + 'static) -> Result<T> {
+    tauri::async_runtime::spawn_blocking(task)
+        .await
+        .map_err(|_| unavailable())?
+}
+
+fn state<R: Runtime>(app: &AppHandle<R>) -> Arc<Mutex<Option<Backend>>> {
+    app.state::<DesktopSave>().0.clone()
+}
+
+#[tauri::command(rename_all = "camelCase")]
+async fn begin_pdf_save<R: Runtime>(
+    app: AppHandle<R>,
+    file_name: String,
+    byte_length: usize,
+) -> Result<Session> {
+    let state = state(&app);
+    let directory = app
+        .path()
+        .app_cache_dir()
+        .map_err(|_| unavailable())?
+        .join("desktop-pdf-exports");
+    io(move || {
+        let mut guard = state.lock().map_err(|_| unavailable())?;
+        if guard.is_none() {
+            let cache = cache::CacheInstance::new(&directory).map_err(|_| unavailable())?;
+            let sessions = storage::Sessions::new(cache.directory().join("uploads"))?;
+            *guard = Some(Backend {
+                sessions,
+                _cache: cache,
+            });
+        }
+        let token = uuid::Uuid::new_v4().to_string();
+        guard.as_mut().ok_or_else(invalid)?.sessions.begin(
+            token.clone(),
+            file_name,
+            byte_length,
+        )?;
+        Ok(Session { token })
+    })
+    .await
+}
+
+#[tauri::command]
+async fn append_pdf_save<R: Runtime>(
+    app: AppHandle<R>,
+    token: String,
+    offset: usize,
+    base64: String,
+) -> Result<Progress> {
+    if !storage::valid_token(&token)
+        || base64.is_empty()
+        || base64.len() > 4 * storage::MAX_CHUNK_BYTES.div_ceil(3)
+    {
+        return Err(invalid());
+    }
+    let bytes = STANDARD.decode(base64.as_bytes()).map_err(|_| invalid())?;
+    if bytes.len() > storage::MAX_CHUNK_BYTES || STANDARD.encode(&bytes) != base64 {
+        return Err(invalid());
+    }
+    let state = state(&app);
+    io(move || {
+        with_backend(&state, |session| session.append(&token, offset, &bytes))
+            .map(|received| Progress { received })
+    })
+    .await
+}
+
+/// Construct native dialog futures on the UI thread, as rfd's GTK/Cocoa APIs require.
+/// Waiting and all filesystem work happen away from the WebView/main event loop.
+async fn choose_target<R: Runtime>(
+    app: &AppHandle<R>,
+    window: WebviewWindow<R>,
+    name: String,
+) -> Result<Option<PathBuf>> {
+    let (tx, rx) = mpsc::sync_channel(1);
+    app.run_on_main_thread(move || {
+        let picker = rfd::AsyncFileDialog::new()
+            .set_parent(&window)
+            .set_title("PDF speichern unter")
+            .add_filter("PDF-Dokument", &["pdf"])
+            .set_file_name(name)
+            .save_file();
+        std::thread::spawn(move || {
+            let selected =
+                tauri::async_runtime::block_on(picker).map(|file| file.path().to_owned());
+            let _ = tx.send(selected);
+        });
+    })
+    .map_err(|_| unavailable())?;
+    io(move || rx.recv().map_err(|_| unavailable())).await
+}
+
+#[tauri::command]
+async fn finish_pdf_save<R: Runtime>(
+    app: AppHandle<R>,
+    window: WebviewWindow<R>,
+    token: String,
+) -> Result<SaveResult> {
+    if !storage::valid_token(&token) {
+        return Err(invalid());
+    }
+    let backend = state(&app);
+    let preparing = backend.clone();
+    let preparing_token = token.clone();
+    let name =
+        io(move || with_backend(&preparing, |session| session.prepare(&preparing_token))).await?;
+    let target = choose_target(&app, window, name).await;
+    // Even a failed dialog clears this transaction without acknowledging a file.
+    let dialog_error = target.is_err();
+    let path = target.ok().flatten();
+    let completion =
+        io(move || with_backend(&backend, |session| session.finish(&token, path.as_deref())))
+            .await?;
+    if dialog_error {
+        return Err(unavailable());
+    }
+    Ok(match completion {
+        Some(file_name) => SaveResult::Saved { file_name },
+        None => SaveResult::Cancelled,
+    })
+}
+
+#[tauri::command]
+async fn abort_pdf_save<R: Runtime>(app: AppHandle<R>, token: String) -> Result<()> {
+    if !storage::valid_token(&token) {
+        return Err(invalid());
+    }
+    let state = state(&app);
+    io(move || with_backend(&state, |session| session.abort(&token))).await
+}
+
+pub fn init<R: Runtime>() -> TauriPlugin<R> {
+    Builder::new("desktop-save")
+        .invoke_handler(tauri::generate_handler![
+            begin_pdf_save,
+            append_pdf_save,
+            finish_pdf_save,
+            abort_pdf_save
+        ])
+        .setup(|app, _| {
+            app.manage(DesktopSave::default());
+            let handle = app.clone();
+            // Cleanup is best effort on startup; an unavailable cache must not
+            // prevent viewing PDFs. A save attempt reports its own I/O error.
+            tauri::async_runtime::spawn_blocking(move || {
+                if let Ok(path) = handle.path().app_cache_dir() {
+                    if let Ok(instance) =
+                        cache::CacheInstance::new(&path.join("desktop-pdf-exports"))
+                    {
+                        drop(instance);
+                    }
+                }
+            });
+            Ok(())
+        })
+        .build()
+}

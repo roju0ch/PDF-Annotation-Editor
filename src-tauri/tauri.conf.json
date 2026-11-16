@@ -48,7 +48,8 @@
     },
     "licenseFile": "../LICENSE",
     "resources": {
-      "../LICENSE": "licenses/LICENSE"
+      "../LICENSE": "licenses/LICENSE",
+      "../THIRD_PARTY_NOTICES.md": "licenses/THIRD_PARTY_NOTICES.md"
     }
   }
 }

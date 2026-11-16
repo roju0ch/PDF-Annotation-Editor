@@ -4,6 +4,49 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve, join } from "node:path";
 import { spawnSync } from "node:child_process";
+import { androidBuildConfig, verifyAndroidPackage } from "./android-config.mjs";
+
+test("temporary Android test keys use a separate identity; persistent builds retain the production app", () => {
+  const base = { identifier: "io.example.pdf", productName: "PDF Viewer" };
+  assert.deepEqual(androidBuildConfig(base, false), {
+    identifier: "io.example.pdf.test",
+    productName: "PDF Viewer Test",
+  });
+  assert.deepEqual(androidBuildConfig(base, true), {});
+  assert.equal(
+    verifyAndroidPackage(
+      "package: name='io.example.pdf.test' versionCode='1'",
+      base,
+      false,
+    ),
+    "io.example.pdf.test",
+  );
+  assert.equal(
+    verifyAndroidPackage(
+      "package: name='io.example.pdf' versionCode='1'",
+      base,
+      true,
+    ),
+    "io.example.pdf",
+  );
+});
+
+test("Android packaging rejects the production identity under an ephemeral test key", () => {
+  const base = { identifier: "io.example.pdf", productName: "PDF Viewer" };
+  assert.throws(
+    () => verifyAndroidPackage("package: name='io.example.pdf'", base, false),
+    /identity mismatch/,
+  );
+  assert.throws(
+    () => verifyAndroidPackage("", base, false),
+    /identity mismatch/,
+  );
+  assert.throws(
+    () =>
+      verifyAndroidPackage("package: name='io.example.pdf.test'", base, true),
+    /identity mismatch/,
+  );
+});
 const validate = resolve("scripts/release/validate.mjs"),
   publish = resolve("scripts/release/publish.mjs");
 function fixture(version) {

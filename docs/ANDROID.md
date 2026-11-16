@@ -1,10 +1,18 @@
-# Android: Systemleisten und kopierte Bilder
+# Android: Speichern, Systemleisten und kopierte Bilder
 
 Die erste Android-Test-APK ließ die obere Werkzeugleiste unter die Statusleiste laufen. Außerdem verwendet der Android-WebView die Browser-Zwischenablage nicht zuverlässig für Bilder. Die App berücksichtigt deshalb die tatsächlichen Android-WindowInsets am nativen Content-Host und liest kopierte Bilder über den lokalen Plugin `tauri-plugin-android-bridge`.
 
 ## Am Gerät prüfen
 
-Die neue APK aus dem zugehörigen PR-Lauf herunterladen: **Actions → Test release pipeline → Artifacts → installer-android-arm64-test**. ZIP entpacken und APK installieren. Bei einem neuen temporären CI-Testschlüssel zuerst wichtige PDF-Änderungen exportieren und die alte Test-App deinstallieren; ein normales Update ist damit nicht möglich. Für dauerhaft aktualisierbare APKs einen eigenen Signierungsschlüssel gemäß [Release-Anleitung](RELEASES.md) einrichten.
+Die neue APK aus dem zugehörigen PR-Lauf herunterladen: **Actions → Test release pipeline → Artifacts → installer-android-arm64-test**. ZIP entpacken und APK installieren. Temporär signierte Builds heißen jetzt **PDF Viewer Test** und verwenden die separate Kennung `io.github.roju0ch.pdfannotationeditor.test`. Die bisherige Haupt-App kann installiert bleiben. Bei weiteren Testläufen wechselt der Testschlüssel; vor einer nötigen Deinstallation ausschließlich der Test-App deren wichtige PDFs sichern. Die Test-App übernimmt keine ungesicherten Inhalte aus der Haupt-App. Für dauerhaft aktualisierbare APKs einen eigenen Signierungsschlüssel gemäß [Release-Anleitung](RELEASES.md) einrichten.
+
+## Speichern unter
+
+**PDF speichern unter …** öffnet nach dem PDF-Export die Android-Dateiauswahl. Dort Ordner und Namen wählen und bestätigen. Die App prüft anschließend die geschriebene Datei und zeigt erst dann **PDF gespeichert: …**. Der Speicherort ist der selbst gewählte Ordner, kein verstecktes App-Verzeichnis. Abbrechen, verweigerte Rechte, fehlender Platz und fehlerhafte Dokumentanbieter dürfen keine Bestätigung erzeugen; die Änderungen bleiben ungesichert. [Speicherwege, Browserunterschiede und Grenzen](SAVING.md).
+
+Am Gerät eine synthetische PDF kommentieren, lokal in einen gewählten Ordner speichern, die Datei in einer anderen PDF-App öffnen und wieder in den Editor laden. Zusätzlich Abbrechen und einen nicht beschreibbaren Speicherort prüfen. Ein erfolgreicher Cloud-Build oder eine simulierte IPC-Antwort ersetzt diese Geräteprüfung nicht.
+
+## Systemleisten und Zwischenablage prüfen
 
 1. PDF öffnen. Die Werkzeugleiste muss unterhalb von Uhr/Akku beginnen; die untere Leiste darf nicht unter der Gesten-/Navigationsleiste liegen. Hoch- und Querformat testen, einschließlich Displayausschnitt.
 2. Einen Screenshot oder ein PNG/JPEG aus einer anderen App tatsächlich **kopieren**. Ein gespeicherter Screenshot liegt je nach Android-App noch nicht automatisch in der Zwischenablage.
