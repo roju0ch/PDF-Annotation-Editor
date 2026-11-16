@@ -195,3 +195,89 @@ test("direct icons switch tools with keyboard hints and preserve pending propert
   await select.click();
   await expect(select).toHaveAttribute("aria-pressed", "true");
 });
+
+test("safe areas protect actions, PDF and popups through portrait/landscape changes", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("");
+  await page
+    .getByLabel("PDF öffnen", { exact: true })
+    .setInputFiles("artifacts/fixture.pdf");
+  await expect(page.getByLabel("PDF-Seite 1")).toHaveAttribute(
+    "data-rendered",
+    "true",
+  );
+  // Browser automation cannot manufacture OS cutouts. Override the same CSS
+  // values used by env(safe-area-inset-*) and exercise live inset/size changes.
+  // Android additionally handles real WindowInsets in its native content host.
+  for (const layout of [
+    { width: 390, height: 844, top: 28, right: 0, bottom: 24, left: 0 },
+    { width: 844, height: 390, top: 0, right: 16, bottom: 24, left: 32 },
+    { width: 390, height: 844, top: 28, right: 0, bottom: 24, left: 0 },
+  ]) {
+    await page.setViewportSize(layout);
+    await page.evaluate((safe) => {
+      for (const side of ["top", "right", "bottom", "left"] as const)
+        document.documentElement.style.setProperty(
+          `--app-safe-area-${side}`,
+          `${safe[side]}px`,
+        );
+    }, layout);
+    const header = (await page.locator("header").boundingBox())!;
+    const footer = (await page.locator("footer").boundingBox())!;
+    const stage = (await page.getByTestId("viewport").boundingBox())!;
+    expect(header.y).toBe(layout.top);
+    expect(header.x).toBe(layout.left);
+    expect(header.width).toBe(layout.width - layout.left - layout.right);
+    expect(footer.y + footer.height).toBe(layout.height - layout.bottom);
+    expect(stage.y).toBe(header.y + header.height);
+    expect(stage.height + header.height + footer.height).toBe(
+      layout.height - layout.top - layout.bottom,
+    );
+    expect(
+      await page.evaluate(() => document.documentElement.scrollHeight),
+    ).toBe(layout.height);
+
+    await menu(page, "view");
+    const panel = (await page.locator("#view-menu").boundingBox())!;
+    expect(panel.x).toBeGreaterThanOrEqual(layout.left + 8);
+    expect(panel.y).toBeGreaterThanOrEqual(header.y + header.height);
+    expect(panel.x + panel.width).toBeLessThanOrEqual(
+      layout.width - layout.right - 8,
+    );
+    expect(panel.y + panel.height).toBeLessThanOrEqual(
+      layout.height - layout.bottom,
+    );
+    await page
+      .getByRole("button", { name: "Seite einpassen", exact: true })
+      .click();
+    await closeMenu(page);
+    await expect(page.getByLabel("PDF-Seite 1")).toHaveAttribute(
+      "data-rendered",
+      "true",
+    );
+
+    const sheet = (await page.getByTestId("page-0").boundingBox())!;
+    await page.mouse.click(
+      sheet.x + sheet.width * 0.8,
+      sheet.y + sheet.height * 0.8,
+      { button: "right" },
+    );
+    const context = page.getByRole("menu", { name: "Annotationsaktionen" });
+    await expect(context).toBeVisible();
+    const bounds = (await context.boundingBox())!;
+    expect(bounds.x).toBeGreaterThanOrEqual(layout.left + 8);
+    expect(bounds.y).toBeGreaterThanOrEqual(layout.top + 8);
+    expect(bounds.x + bounds.width).toBeLessThanOrEqual(
+      layout.width - layout.right - 8,
+    );
+    expect(bounds.y + bounds.height).toBeLessThanOrEqual(
+      layout.height - layout.bottom - 8,
+    );
+    await page.keyboard.press("Escape");
+    await page.screenshot({
+      path: `artifacts/safe-area-${layout.width}x${layout.height}${browserSuffix}.png`,
+    });
+  }
+});

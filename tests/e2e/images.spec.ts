@@ -355,3 +355,91 @@ test("mobile JPEG picker, touch resize and clipboard-denied fallback", async ({
     )
     .toBeCloseTo(box.width, 0);
 });
+
+test("Android native image bridge bypasses denied WebView clipboard and exports a native Stamp", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const base64 = (await readFile(png)).toString("base64");
+  await page.addInitScript((base64) => {
+    Object.defineProperty(navigator, "userAgent", {
+      value: "Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36",
+    });
+    Object.defineProperty(globalThis, "isTauri", { value: true });
+    const state = { calls: [] as string[], denied: false };
+    Object.defineProperty(globalThis, "nativeClipboardTest", { value: state });
+    Object.defineProperty(globalThis, "__TAURI_INTERNALS__", {
+      value: {
+        invoke: async (command: string) => {
+          state.calls.push(command);
+          if (command !== "plugin:android-bridge|read_clipboard_image")
+            throw Error("Unexpected IPC command");
+          if (state.denied)
+            throw {
+              message:
+                "Zugriff auf das kopierte Bild abgelaufen. Bitte erneut kopieren.",
+            };
+          return { mimeType: "image/png", base64 };
+        },
+      },
+    });
+    Object.defineProperty(navigator.clipboard, "read", {
+      value: async () => {
+        throw Error("Browser clipboard must not be used in Android app");
+      },
+    });
+  }, base64);
+  await open(page);
+  const state = () =>
+    page.evaluate(
+      () =>
+        (globalThis as unknown as { nativeClipboardTest: { calls: string[] } })
+          .nativeClipboardTest.calls,
+    );
+  expect(await state()).toEqual([]);
+  const sheet = (await page.getByTestId("page-0").boundingBox())!;
+  await page.mouse.click(sheet.x + 20, sheet.y + 20, { button: "right" });
+  await page
+    .getByRole("menuitem", { name: "Bild aus Zwischenablage", exact: true })
+    .click();
+  await expect(page.getByTestId("image-resize-0")).toBeVisible();
+  expect(await state()).toEqual(["plugin:android-bridge|read_clipboard_image"]);
+  const doc = await save(page, "artifacts/images-android-bridge.pdf");
+  const p = doc.loadPage(0);
+  try {
+    const stamp = p.getAnnotations().filter((a) => a.getType() === "Stamp");
+    expect(stamp).toHaveLength(1);
+    expect(stamp[0].getObject().get("AP", "N").isStream()).toBe(true);
+    expect(
+      stamp[0]
+        .getObject()
+        .get("AP", "N", "Resources", "XObject", "I")
+        .isStream(),
+    ).toBe(true);
+    expect(doc.wasRepaired()).toBe(false);
+  } finally {
+    p.destroy();
+    doc.destroy();
+  }
+  await page.evaluate(() => {
+    (
+      globalThis as unknown as { nativeClipboardTest: { denied: boolean } }
+    ).nativeClipboardTest.denied = true;
+  });
+  await page.mouse.click(sheet.x + 10, sheet.y + 10, { button: "right" });
+  await page
+    .getByRole("menuitem", { name: "Bild aus Zwischenablage", exact: true })
+    .click();
+  await expect(page.getByRole("alert")).toContainText("Bitte erneut kopieren");
+  const unchanged = await save(page, "artifacts/images-android-denied.pdf");
+  const unchangedPage = unchanged.loadPage(0);
+  try {
+    expect(
+      unchangedPage.getAnnotations().filter((a) => a.getType() === "Stamp"),
+    ).toHaveLength(1);
+  } finally {
+    unchangedPage.destroy();
+    unchanged.destroy();
+  }
+  expect(await state()).toHaveLength(2);
+});

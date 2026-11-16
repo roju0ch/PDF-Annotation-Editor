@@ -7,6 +7,8 @@ import {
   type ReactNode,
 } from "react";
 
+import { safeViewport } from "../adapters/platform/safeArea";
+
 function dismissMenu(target: string) {
   document.getElementById(target)?.hidePopover();
   document
@@ -112,8 +114,9 @@ export function ToolButton({
       const anchor = button.current!.getBoundingClientRect(),
         el = tip.current!;
       const bounds = el.getBoundingClientRect();
-      el.style.left = `${Math.max(8, Math.min(anchor.x + anchor.width / 2 - bounds.width / 2, window.innerWidth - bounds.width - 8))}px`;
-      el.style.top = `${Math.min(anchor.bottom + 6, window.innerHeight - bounds.height - 8)}px`;
+      const safe = safeViewport();
+      el.style.left = `${Math.max(safe.left + 8, Math.min(anchor.x + anchor.width / 2 - bounds.width / 2, safe.right - bounds.width - 8))}px`;
+      el.style.top = `${Math.max(safe.top + 8, Math.min(anchor.bottom + 6, safe.bottom - bounds.height - 8))}px`;
     };
     position();
     window.addEventListener("resize", position);

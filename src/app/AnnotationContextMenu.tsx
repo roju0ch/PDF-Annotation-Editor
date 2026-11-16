@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, type RefObject } from "react";
+import { safeViewport } from "../adapters/platform/safeArea";
 import type { AnnotationContext, AnnotationControls } from "./useAnnotations";
 
 export function AnnotationContextMenu({
@@ -15,8 +16,9 @@ export function AnnotationContextMenu({
   useLayoutEffect(() => {
     const el = menu.current!;
     const bounds = el.getBoundingClientRect();
-    el.style.left = `${Math.max(8, Math.min(context.screen.x, window.innerWidth - bounds.width - 8))}px`;
-    el.style.top = `${Math.max(8, Math.min(context.screen.y, window.innerHeight - bounds.height - 8))}px`;
+    const safe = safeViewport();
+    el.style.left = `${Math.max(safe.left + 8, Math.min(context.screen.x, safe.right - bounds.width - 8))}px`;
+    el.style.top = `${Math.max(safe.top + 8, Math.min(context.screen.y, safe.bottom - bounds.height - 8))}px`;
     el.querySelector<HTMLButtonElement>(
       '[role="menuitem"]:not(:disabled)',
     )?.focus({ preventScroll: true });

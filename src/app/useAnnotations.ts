@@ -1,3 +1,4 @@
+import { readClipboardImage } from "../adapters/platform/clipboard";
 import {
   imageInfo,
   imagePlacement,
@@ -547,29 +548,7 @@ export function useAnnotations(
     if (at) void insertImage(() => Promise.resolve(file), at, at.epoch);
   }
   function pasteImage() {
-    void insertImage(async () => {
-      if (!navigator.clipboard?.read)
-        throw new Error(
-          "Dieser Browser erlaubt keinen direkten Bildzugriff. Bitte ‚Bild einfügen …‘ verwenden.",
-        );
-      let entries: ClipboardItems;
-      try {
-        entries = await navigator.clipboard.read();
-      } catch {
-        throw new Error(
-          "Kein Zugriff auf die Zwischenablage. Bitte den Zugriff erlauben oder ‚Bild einfügen …‘ verwenden.",
-        );
-      }
-      for (const item of entries) {
-        const type = item.types.find((t) =>
-          ["image/png", "image/jpeg"].includes(t),
-        );
-        if (type) return item.getType(type);
-      }
-      throw new Error(
-        "Kein PNG-/JPEG-Bild in der Zwischenablage. Bitte einen Screenshot kopieren oder ‚Bild einfügen …‘ verwenden.",
-      );
-    });
+    void insertImage(readClipboardImage);
   }
   async function paste() {
     const cur = current.current,
