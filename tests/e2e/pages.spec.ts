@@ -49,6 +49,8 @@ async function overview(page: Page) {
     await page
       .getByRole("button", { name: "Seitenübersicht", exact: true })
       .click();
+  // The popover's toggle event mounts virtual rows asynchronously.
+  await expect(page.locator("#pages-menu .page-card").first()).toBeVisible();
 }
 async function ids(page: Page) {
   return page

@@ -40,7 +40,7 @@ Touch unterstützt Auswahlbox und Gruppenbewegung mit einem Finger sowie Pan und
 Unter [GitHub Actions](https://github.com/roju0ch/PDF-Annotation-Editor/actions) einen Lauf öffnen und unten das Artefakt herunterladen:
 
 - **Browser checks**: `browser-preview-and-test-evidence` enthält den statischen Build, Playwright-Bericht, Screenshot und ausschließlich synthetische POC-PDFs.
-- **Desktop test builds (unsigned)**: separate Linux-, Windows- und macOS-Jobs liefern `.deb`, NSIS-Installer bzw. ein ZIP der `.app`. Erfolgreiche Paketerstellung ist noch kein Test der Desktop-Bedienung. Die Pakete sind unsignierte Testversionen; Gatekeeper/SmartScreen können sie beanstanden.
+- **Test release pipeline**: erzeugt Windows-NSIS (`.exe` mit WebView2-Offline-Installer), separate Intel-/Apple-Silicon-`.dmg`, Linux-`.AppImage`/`.deb` und eine signierte Android-ARM64-Test-`.apk`. Die Artefakte heißen `installer-…`. Freigegebene `v0.x.y`-Tags veröffentlichen nach erfolgreichen Prüfungen eine **GitHub-Vorabversion**, niemals automatisch 1.0 oder Latest. PRs und manuelle Probeläufe veröffentlichen nichts. [Installation, Cloud-Ablauf, Signierung und Grenzen](docs/RELEASES.md). Ohne eigene Zertifikate sind Desktop-Pakete unsigniert/ad-hoc-signiert; Android verwendet einen kurzlebigen Testschlüssel, weshalb Updates zwischen Testläufen eine Deinstallation benötigen. Erfolgreiche Paketerstellung ersetzt keine Geräteprüfung.
 - **Browser preview**: testet den Produktionsbuild und veröffentlicht ausschließlich `dist/`. Pages muss unter **Settings → Pages → GitHub Actions** aktiviert sein. Ein Fehler im separaten Desktop-Workflow blockiert den Browser-Workflow nicht.
 
 CI verwendet `npm ci`, strikten Typecheck, ESLint, Vitest, den nativen Annotations-POC und Playwright/Chromium sowie zusätzliche Firefox-Tests für Layout, Gruppenauswahl und Zwischenablage. Aktionen sind auf Commit-SHAs festgelegt. PR-Workflows besitzen nur Leserechte; nur der Pages-Deploy-Job erhält Pages-Schreibrechte und ein OIDC-Token.
@@ -54,15 +54,18 @@ npm ci
 npm run dev
 npm run typecheck
 npm run lint
+npm run test:release
 npm test
 npm run poc
 npx playwright install --with-deps chromium firefox
 npm run test:e2e
-PLAYWRIGHT_BROWSER=firefox PLAYWRIGHT_HTML_OUTPUT_DIR=playwright-report-firefox npm run test:e2e -- tests/e2e/layout.spec.ts tests/e2e/selection.spec.ts tests/e2e/clipboard.spec.ts tests/e2e/images.spec.ts tests/e2e/pages.spec.ts
+PLAYWRIGHT_BROWSER=firefox PLAYWRIGHT_HTML_OUTPUT_DIR=playwright-report-firefox npm run test:e2e -- tests/e2e/layout.spec.ts tests/e2e/selection.spec.ts tests/e2e/clipboard.spec.ts tests/e2e/images.spec.ts tests/e2e/pages.spec.ts tests/e2e/offline.spec.ts
 npm run build
 ```
 
 In der bereitgestellten Cloud kann `CHROMIUM_PATH=/usr/bin/chromium npm run test:e2e` den installierten Browser verwenden. Die E2E-Konfiguration startet den gebauten Viewer unter `/PDF-Annotation-Editor/` und prüft damit auch Worker-/WASM-Pfade für GitHub Pages. Falls das Standard-npm-Cacheverzeichnis schreibgeschützt ist, `npm --cache /workspace/.npm-cache ci` verwenden. Der POC erzeugt die Testdateien; ihn vor E2E ausführen.
+
+Die installierten Pakete enthalten Frontend, PDF-Worker und MuPDF-WASM lokal; kein Entwicklungsserver und keine Verbindung zu GitHub Pages sind für die PDF-Bearbeitung nötig. Der neue Offline-Test prüft Kaltstart und nativen Export mit abgeschaltetem Netzwerk. System-WebViews und Linux-Systemabhängigkeiten bleiben Voraussetzungen; Android-Dateiauswahl und Export sind noch auf echten Geräten zu prüfen.
 
 Tauri 2 liegt in `src-tauri/`. Nach Installation der [offiziellen Plattformvoraussetzungen](https://v2.tauri.app/start/prerequisites/) startet `npm run tauri -- dev` die Desktop-Hülle. Sie nutzt dieselbe lokale File-API und hat keine eigenen Dateisystem-/Shell-Kommandos oder zusätzlichen Plugin-Berechtigungen. Windows/macOS werden auf ihren GitHub-Runnern gebaut.
 

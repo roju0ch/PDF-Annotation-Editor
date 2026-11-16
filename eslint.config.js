@@ -23,7 +23,7 @@ export default ts.config(
     },
   },
   {
-    files: ["scripts/*.mjs"],
+    files: ["scripts/**/*.mjs"],
     languageOptions: {
       globals: { console: "readonly", process: "readonly", Buffer: "readonly" },
     },

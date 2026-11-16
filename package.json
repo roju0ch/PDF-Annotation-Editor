@@ -16,7 +16,8 @@
     "test": "node scripts/fixtures.mjs && vitest run",
     "test:e2e": "playwright test",
     "poc": "node scripts/annotation-poc.mjs",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "test:release": "node --test scripts/release/guards.test.mjs"
   },
   "dependencies": {
     "mupdf": "1.28.6",

@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "PDF Viewer · Prototyp",
+        "title": "PDF Viewer \u00b7 Prototyp",
         "width": 1280,
         "height": 850,
         "minWidth": 400,
@@ -25,12 +25,30 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["deb", "nsis", "app"],
+    "targets": [
+      "deb",
+      "appimage",
+      "nsis",
+      "dmg"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "windows": {
+      "webviewInstallMode": {
+        "type": "offlineInstaller",
+        "silent": true
+      }
+    },
+    "android": {
+      "minSdkVersion": 24
+    },
+    "licenseFile": "../LICENSE",
+    "resources": {
+      "../LICENSE": "licenses/LICENSE"
+    }
   }
 }

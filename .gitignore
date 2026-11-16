@@ -6,3 +6,10 @@ playwright-report/
 *.tsbuildinfo
 src-tauri/target/
 playwright-report-firefox/
+
+release-assets/
+src-tauri/gen/
+*.jks
+*.keystore
+*.p12
+*.pfx

@@ -1,0 +1,63 @@
+name: Android test APK
+on:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      sign_android:
+        type: boolean
+        default: false
+    secrets:
+      ANDROID_KEYSTORE_BASE64:
+        required: false
+      ANDROID_KEYSTORE_PASSWORD:
+        required: false
+      ANDROID_KEY_ALIAS:
+        required: false
+      ANDROID_KEY_PASSWORD:
+        required: false
+permissions:
+  contents: read
+jobs:
+  apk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install Android toolchain
+        run: node scripts/release/run.mjs bash scripts/release/android-toolchain.sh
+      - run: npm ci
+      - name: Generate launcher icons from the project SVG
+        run: |
+          node scripts/release/run.mjs node node_modules/@tauri-apps/cli/tauri.js icon src-tauri/icon.svg --output "$RUNNER_TEMP/app-icons"
+          mkdir -p src-tauri/icons/android
+          cp -R "$RUNNER_TEMP/app-icons/android/." src-tauri/icons/android/
+      # npm supplies a stable CLI callback for Gradle, even from src-tauri/.
+      - name: Generate Android project from pinned Tauri CLI
+        run: node scripts/release/run.mjs npm run tauri -- android init --ci --skip-targets-install
+      - name: Build ARM64 release APK
+        run: node scripts/release/run.mjs npm run tauri -- android build --apk --target aarch64 --ci
+      - name: Require unchanged Rust lockfile
+        run: git diff --exit-code -- src-tauri/Cargo.lock
+      - name: Sign and verify installable test APK
+        env:
+          SIGN_ANDROID: ${{ inputs.sign_android && 'true' || 'false' }}
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: node scripts/release/run.mjs bash scripts/release/sign-android.sh
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: installer-android-arm64-test
+          path: release-assets/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
