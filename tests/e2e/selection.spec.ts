@@ -112,6 +112,13 @@ for (const index of [0, 1]) {
     await expect(
       page.getByRole("button", { name: "Rückgängig", exact: true }),
     ).toBeDisabled();
+    await expect(page.getByTestId("selection-outline")).toHaveCount(0);
+    // Escape cancels the draft and clears selection in the selection tool.
+    // Re-select the same group explicitly before committing a real move.
+    const selectA = await point(page, 90, 130, index),
+      selectB = await point(page, 220, 215, index);
+    await drag(page, selectA, selectB);
+    await page.mouse.up();
     await expect(page.getByTestId("selection-outline")).toHaveCount(3);
     await drag(page, start, end);
     await expect(page.getByTestId("selection-outline")).toHaveCount(3);

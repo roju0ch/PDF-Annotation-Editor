@@ -137,15 +137,10 @@ export function PageOrganizer({
       gesture.current = null;
       setDrag(null);
     };
-    const key = (e: KeyboardEvent) => {
-      if (e.key === "Escape") stop();
-    };
     window.addEventListener("blur", stop);
-    window.addEventListener("keydown", key);
     return () => {
       if (gesture.current) clearTimeout(gesture.current.timer);
       window.removeEventListener("blur", stop);
-      window.removeEventListener("keydown", key);
     };
   }, []);
   const slotAt = (y: number) => {

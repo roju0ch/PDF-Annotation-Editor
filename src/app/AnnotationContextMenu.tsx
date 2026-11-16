@@ -27,25 +27,16 @@ export function AnnotationContextMenu({
     const outside = (event: PointerEvent) => {
       if (!menu.current?.contains(event.target as Node)) closeContext();
     };
-    const escape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        closeContext();
-        stage.current?.focus({ preventScroll: true });
-      }
-    };
     const blur = () => closeContext();
     document.addEventListener("pointerdown", outside);
-    document.addEventListener("keydown", escape);
     window.addEventListener("resize", blur);
     window.addEventListener("blur", blur);
     return () => {
       document.removeEventListener("pointerdown", outside);
-      document.removeEventListener("keydown", escape);
       window.removeEventListener("resize", blur);
       window.removeEventListener("blur", blur);
     };
-  }, [closeContext, stage]);
+  }, [closeContext]);
   const activate = (action: () => void) => {
     action();
     closeContext();

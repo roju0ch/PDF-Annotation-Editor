@@ -2,7 +2,7 @@ import { compositedRaster } from "./compositedRaster";
 import { test, expect, type Page } from "@playwright/test";
 import { readFile, writeFile } from "node:fs/promises";
 import * as mupdf from "mupdf";
-import { menu, closeMenu, viewAction } from "./menus";
+import { menu, closeMenu, tool, viewAction } from "./menus";
 const png = "artifacts/image-fixture.png";
 test.beforeAll(async () => {
   const pix = new mupdf.Pixmap(
@@ -35,6 +35,19 @@ async function open(page: Page) {
     "true",
   );
 }
+async function selectNewestImage(page: Page) {
+  // Creating an image is no longer an implicit selection gesture.
+  await expect(page.getByTestId("selection-outline")).toHaveCount(0);
+  await tool(page, "select");
+  await menu(page, "annotations");
+  await page
+    .locator(".annotation-list button")
+    .filter({ hasText: /^Bild/ })
+    .last()
+    .click();
+  await closeMenu(page);
+  await expect(page.getByTestId("image-resize-0")).toBeVisible();
+}
 async function insertFile(
   page: Page,
   file: Parameters<import("@playwright/test").FileChooser["setFiles"]>[0] = png,
@@ -44,7 +57,7 @@ async function insertFile(
     .getByRole("button", { name: "Bild einfügen …", exact: true })
     .click();
   await (await chooser).setFiles(file);
-  await expect(page.getByTestId("image-resize-0")).toBeVisible();
+  await selectNewestImage(page);
 }
 async function save(page: Page, name: string) {
   const pending = page.waitForEvent("download");
@@ -181,6 +194,7 @@ test("real PNG system clipboard via Ctrl+V and context menu, followed by annotat
   await page.getByTestId("viewport").focus();
   await page.keyboard.press("Control+v");
   await expect(page.locator(".annotation-list button")).toHaveCount(2);
+  await selectNewestImage(page);
   await resize(page, 0.6);
   await page.keyboard.press("Control+c");
   await expect(
@@ -213,6 +227,7 @@ test("real PNG system clipboard via Ctrl+V and context menu, followed by annotat
     .getByRole("menuitem", { name: "Bild aus Zwischenablage", exact: true })
     .click();
   await expect(page.locator(".annotation-list button")).toHaveCount(4);
+  await selectNewestImage(page);
   await page.evaluate(() => navigator.clipboard.writeText("Text im Kommentar"));
   await page.getByTestId("viewport").focus();
   await page.keyboard.press("Control+v");
@@ -278,7 +293,7 @@ test("mobile JPEG picker, touch resize and clipboard-denied fallback", async ({
     mimeType: "image/jpeg",
     buffer: Buffer.from(jpeg, "base64"),
   });
-  await expect(page.getByTestId("image-resize-0")).toBeVisible();
+  await selectNewestImage(page);
   const box = (await page.getByTestId("selection-outline").boundingBox())!;
   const handle = (await page.getByTestId("image-resize-1").boundingBox())!;
   const x = handle.x + handle.width / 2,
@@ -387,7 +402,7 @@ test("Android native image bridge bypasses denied WebView clipboard and exports 
   await page
     .getByRole("menuitem", { name: "Bild aus Zwischenablage", exact: true })
     .click();
-  await expect(page.getByTestId("image-resize-0")).toBeVisible();
+  await selectNewestImage(page);
   expect(await state()).toEqual(["plugin:android-bridge|read_clipboard_image"]);
   const doc = await save(page, "artifacts/images-android-bridge.pdf");
   const p = doc.loadPage(0);

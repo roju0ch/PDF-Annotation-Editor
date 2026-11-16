@@ -130,9 +130,16 @@ export function AnnotationToolbar({
           <input
             type="color"
             aria-label="Zeichenfarbe"
-            value={e.color}
+            value={e.tool === "FreeText" ? e.freeTextStyle.color : e.color}
             disabled={blocked}
-            onChange={(ev) => e.setColor(ev.target.value)}
+            onChange={(ev) =>
+              e.tool === "FreeText"
+                ? e.setFreeTextStyle((style) => ({
+                    ...style,
+                    color: ev.target.value,
+                  }))
+                : e.setColor(ev.target.value)
+            }
           />
         </label>
       )}
@@ -152,7 +159,7 @@ export function AnnotationToolbar({
           pt
         </label>
       )}
-      {(e.tool === "Text" || e.tool === "FreeText") && (
+      {e.tool === "Text" && (
         <label>
           Text{" "}
           <input
@@ -165,19 +172,59 @@ export function AnnotationToolbar({
         </label>
       )}
       {e.tool === "FreeText" && (
-        <label>
-          Schrift{" "}
-          <input
-            type="number"
-            aria-label="Neue Schriftgröße"
-            min="6"
-            max="96"
-            value={e.fontSize}
-            disabled={blocked}
-            onChange={(ev) => e.setFontSize(Number(ev.target.value))}
-          />{" "}
-          pt
-        </label>
+        <>
+          <label>
+            Schrift{" "}
+            <input
+              type="number"
+              aria-label="Neue Schriftgröße"
+              min="6"
+              max="96"
+              value={e.freeTextStyle.fontSize}
+              disabled={blocked}
+              onChange={(ev) =>
+                e.setFreeTextStyle((style) => ({
+                  ...style,
+                  fontSize: Number(ev.target.value),
+                }))
+              }
+            />{" "}
+            pt
+          </label>
+          <label>
+            Hintergrund{" "}
+            <input
+              type="color"
+              aria-label="Neue Textfeldhintergrundfarbe"
+              value={e.freeTextStyle.backgroundColor}
+              disabled={blocked || e.freeTextStyle.transparent}
+              onChange={(ev) =>
+                e.setFreeTextStyle((style) => ({
+                  ...style,
+                  backgroundColor: ev.target.value,
+                }))
+              }
+            />
+          </label>
+          <label>
+            Transparenter Hintergrund
+            <input
+              type="checkbox"
+              aria-label="Neuer Textfeldhintergrund transparent"
+              checked={e.freeTextStyle.transparent}
+              disabled={blocked}
+              onChange={(ev) =>
+                e.setFreeTextStyle((style) => ({
+                  ...style,
+                  transparent: ev.target.checked,
+                }))
+              }
+            />
+          </label>
+          <p className="small">
+            Auf der PDF platzieren, dann den Text im Dialog eingeben.
+          </p>
+        </>
       )}
       {e.tool === "erase" && (
         <label>
@@ -204,10 +251,15 @@ export function AnnotationToolbar({
   );
 }
 function Properties({ item, e }: { item: Annotation; e: AnnotationControls }) {
+  const originalBackground = item.backgroundColor ?? null;
   const [contents, setContents] = useState(item.contents),
     [color, setColor] = useState(item.color),
     [width, setWidth] = useState(item.width),
-    [fontSize, setFontSize] = useState(item.fontSize);
+    [fontSize, setFontSize] = useState(item.fontSize),
+    [backgroundColor, setBackgroundColor] = useState(
+      originalBackground ?? "#fff3a6",
+    ),
+    [transparent, setTransparent] = useState(originalBackground === null);
   return (
     <form
       className="properties"
@@ -219,6 +271,10 @@ function Properties({ item, e }: { item: Annotation; e: AnnotationControls }) {
           ...(item.type === "Ink" && width !== item.width ? { width } : {}),
           ...(item.type === "FreeText" && fontSize !== item.fontSize
             ? { fontSize }
+            : {}),
+          ...(item.type === "FreeText" &&
+          (transparent ? null : backgroundColor) !== originalBackground
+            ? { backgroundColor: transparent ? null : backgroundColor }
             : {}),
         };
         void e.edit({ action: "update", page: item.page, id: item.id, patch });
@@ -245,7 +301,7 @@ function Properties({ item, e }: { item: Annotation; e: AnnotationControls }) {
         <>
           {item.type !== "Stamp" && (
             <label>
-              Farbe
+              {item.type === "FreeText" ? "Textfarbe" : "Farbe"}
               <input
                 type="color"
                 aria-label="Annotationsfarbe"
@@ -283,21 +339,54 @@ function Properties({ item, e }: { item: Annotation; e: AnnotationControls }) {
             </label>
           )}
           {item.type === "FreeText" && (
-            <label>
-              Schriftgröße
-              <input
-                type="number"
-                aria-label="Annotationsschriftgröße"
-                disabled={e.busy}
-                min="6"
-                max="96"
-                value={fontSize}
-                onChange={(ev) => {
-                  setFontSize(Number(ev.target.value));
-                  e.setFormDirty(true);
-                }}
-              />
-            </label>
+            <>
+              <label>
+                Schriftgröße
+                <input
+                  type="number"
+                  aria-label="Annotationsschriftgröße"
+                  disabled={e.busy}
+                  min="6"
+                  max="96"
+                  value={fontSize}
+                  onChange={(ev) => {
+                    setFontSize(Number(ev.target.value));
+                    e.setFormDirty(true);
+                  }}
+                />
+              </label>
+              <label>
+                Hintergrundfarbe
+                <input
+                  type="color"
+                  aria-label="Annotationshintergrundfarbe"
+                  disabled={e.busy || transparent}
+                  value={backgroundColor}
+                  onChange={(ev) => {
+                    setBackgroundColor(ev.target.value);
+                    e.setFormDirty(true);
+                  }}
+                />
+              </label>
+              <label className="properties-transparent">
+                <input
+                  type="checkbox"
+                  aria-label="Annotationshintergrund transparent"
+                  disabled={e.busy}
+                  checked={transparent}
+                  onChange={(ev) => {
+                    setTransparent(ev.target.checked);
+                    e.setFormDirty(true);
+                  }}
+                />
+                Transparenter Hintergrund
+              </label>
+              {item.autoSize && (
+                <p className="small">
+                  Die Feldgröße folgt Text und Schriftgröße automatisch.
+                </p>
+              )}
+            </>
           )}
           <div>
             <button type="submit" disabled={e.busy || !e.formDirty}>
@@ -311,6 +400,8 @@ function Properties({ item, e }: { item: Annotation; e: AnnotationControls }) {
                 setColor(item.color);
                 setWidth(item.width);
                 setFontSize(item.fontSize);
+                setBackgroundColor(originalBackground ?? "#fff3a6");
+                setTransparent(originalBackground === null);
                 e.setFormDirty(false);
               }}
             >

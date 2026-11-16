@@ -9,6 +9,12 @@ import { imageInfo } from "../../core/annotations/image";
 import * as mupdf from "mupdf";
 import { inverse, transform, type Point } from "../../core/viewport";
 import { eraseInk } from "../../core/annotations/erase";
+import {
+  isAutoFreeText,
+  markAutoFreeText,
+  sizeFreeText,
+  updateAutoFreeText,
+} from "./freeText";
 import type {
   Annotation,
   AnnotationCommand,
@@ -94,7 +100,11 @@ function protectedReason(doc: mupdf.PDFDocument): string | null {
 }
 // MuPDF regenerates a Stamp appearance on update, resetting its Matrix. Reapply
 // the existing custom appearance to retain image orientation/alpha on later edits.
-function updateAnnotation(a: mupdf.PDFAnnotation) {
+function updateAnnotation(a: mupdf.PDFAnnotation, doc: mupdf.PDFDocument) {
+  if (isAutoFreeText(a)) {
+    updateAutoFreeText(doc, a);
+    return;
+  }
   if (a.getType() === "Stamp") {
     const ap = a.getObject().get("AP", "N");
     if (!ap.isStream()) throw new Error("Bilddarstellung fehlt.");
@@ -188,6 +198,12 @@ export class AnnotationEditor {
           ),
           width: type === "Ink" ? a.getBorderWidth() : 0,
           fontSize: type === "FreeText" ? a.getDefaultAppearance().size : 14,
+          ...(type === "FreeText"
+            ? {
+                backgroundColor: a.getColor().length ? hex(a.getColor()) : null,
+                autoSize: isAutoFreeText(a),
+              }
+            : {}),
           ink:
             type === "Ink"
               ? a
@@ -338,7 +354,7 @@ export class AnnotationEditor {
               { XObject: { I: this.doc.addImage(image) } },
               "/I Do",
             );
-            updateAnnotation(a);
+            updateAnnotation(a, this.doc);
           } finally {
             image.destroy();
           }
@@ -353,7 +369,13 @@ export class AnnotationEditor {
           const a = p.createAnnotation(c.kind);
           id = a.getObject().asIndirect();
           a.setContents(c.contents);
-          a.setColor(c.kind === "FreeText" ? [] : color);
+          a.setColor(
+            c.kind === "FreeText"
+              ? c.backgroundColor == null
+                ? []
+                : rgb(c.backgroundColor)
+              : color,
+          );
           a.setFlags(mupdf.PDFAnnotation.IS_PRINT);
           if (c.kind === "Ink") {
             if (
@@ -373,9 +395,18 @@ export class AnnotationEditor {
                 p.getObject().getInheritable("Rotate").asNumber(),
               );
               a.setDefaultAppearance("Helv", c.fontSize, color);
+              if (c.autoSize) {
+                const anchor = c.anchor
+                  ? toPage(c.anchor)
+                  : (() => {
+                      const r = mupdf.Rect.transform(c.rect, matrix);
+                      return [r[0], r[1]] as mupdf.Point;
+                    })();
+                sizeFreeText(this.doc, a, p, anchor);
+              }
             }
           }
-          updateAnnotation(a);
+          updateAnnotation(a, this.doc);
         } else if (c.action === "paste") {
           const clip = c.clipboard;
           if (!clip.items.length || clip.bytes.length > 20 * 1024 * 1024)
@@ -471,7 +502,7 @@ export class AnnotationEditor {
                   );
                 }
               }
-              updateAnnotation(a);
+              updateAnnotation(a, this.doc);
               return object.asIndirect();
             });
           } finally {
@@ -513,7 +544,7 @@ export class AnnotationEditor {
                 "Die Auswahl enthält eine nicht bearbeitbare Annotation.",
               );
             move(a, item, c.offset);
-            updateAnnotation(a);
+            updateAnnotation(a, this.doc);
           }
           id = null;
         } else {
@@ -539,7 +570,7 @@ export class AnnotationEditor {
             );
             if (paths.length) {
               a.setInkList(paths.map((path) => path.map(toPage)));
-              updateAnnotation(a);
+              updateAnnotation(a, this.doc);
             } else {
               p.deleteAnnotation(a);
               id = null;
@@ -588,8 +619,35 @@ export class AnnotationEditor {
                 da.color,
               );
             }
+            if (patch.backgroundColor !== undefined) {
+              if (item.type !== "FreeText")
+                throw new Error("Hintergrundfarbe gilt nur für Textfelder.");
+              a.setColor(
+                patch.backgroundColor === null
+                  ? []
+                  : rgb(patch.backgroundColor),
+              );
+            }
+            if (patch.autoSize !== undefined) {
+              if (item.type !== "FreeText")
+                throw new Error("Automatische Größe gilt nur für Textfelder.");
+              markAutoFreeText(a, patch.autoSize);
+            }
+            if (
+              isAutoFreeText(a) &&
+              (patch.contents !== undefined ||
+                patch.fontSize !== undefined ||
+                patch.autoSize === true)
+            ) {
+              const rect = a.getRect();
+              a.getObject().put(
+                "Rotate",
+                p.getObject().getInheritable("Rotate").asNumber(),
+              );
+              sizeFreeText(this.doc, a, p, [rect[0], rect[1]]);
+            }
             if (patch.offset) move(a, item, patch.offset);
-            updateAnnotation(a);
+            updateAnnotation(a, this.doc);
           }
         }
         this.doc.endOperation();
