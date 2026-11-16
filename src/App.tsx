@@ -15,6 +15,7 @@ import { MenuHeading, Icon, useMenuKeyboard } from "./app/CompactMenu";
 import { AnnotationOverlay } from "./app/AnnotationOverlay";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PdfClient } from "./adapters/pdf/client";
+import { usesNativeSave } from "./adapters/platform/savePdf";
 import type { PageInfo } from "./adapters/pdf/types";
 import {
   fit,
@@ -36,6 +37,9 @@ function inputTarget(target: EventTarget | null) {
   );
 }
 export default function App() {
+  const exportLabel = usesNativeSave()
+    ? "PDF speichern unter …"
+    : "PDF herunterladen";
   const stage = useRef<HTMLDivElement>(null),
     client = useRef<PdfClient | null>(null),
     generation = useRef(0);
@@ -606,8 +610,8 @@ export default function App() {
           </button>
           <button
             className="icon-button export"
-            aria-label="PDF herunterladen"
-            title="PDF herunterladen"
+            aria-label={exportLabel}
+            title={exportLabel}
             disabled={
               !ready ||
               annotation.busy ||

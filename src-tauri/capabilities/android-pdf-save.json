@@ -1,0 +1,13 @@
+{
+  "$schema": "../gen/schemas/mobile-schema.json",
+  "identifier": "android-pdf-save",
+  "description": "Save a PDF through Android's explicit document destination picker in the local editor window.",
+  "windows": ["main"],
+  "platforms": ["android"],
+  "permissions": [
+    "android-bridge:allow-begin-pdf-save",
+    "android-bridge:allow-append-pdf-save",
+    "android-bridge:allow-finish-pdf-save",
+    "android-bridge:allow-abort-pdf-save"
+  ]
+}

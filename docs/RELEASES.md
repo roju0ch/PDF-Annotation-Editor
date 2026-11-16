@@ -4,14 +4,14 @@ Eine lokale Entwicklungsumgebung beim Projektinhaber ist nicht erforderlich. Git
 
 ## Pakete und Bedienung ohne Compiler
 
-| Plattform | Paket | Installation / Voraussetzung |
-| --- | --- | --- |
-| Windows x64 | `.exe` (NSIS) | Installer starten. Enthält den WebView2-Offline-Installer; deshalb wesentlich größer als zuvor. Unterstütztes Windows mit aktuellem WebView2; kein Download der PDF-Bibliothek beim Start. |
-| macOS Intel | `.dmg` | DMG öffnen, PDF Viewer nach Programme ziehen. Separater x86_64-Build. |
-| macOS Apple Silicon | `.dmg` | DMG öffnen, App nach Programme ziehen. Nativer ARM64-Build. |
-| Linux x64 | `.AppImage` | Datei ausführbar machen und starten. Auf Ubuntu 22.04 gebaut; benötigt kompatibles Linux/glibc, Grafikstack und gegebenenfalls FUSE 2 bzw. AppImage-Extraktion. |
-| Debian/Ubuntu x64 | `.deb` | Über die Paketverwaltung installieren. Fehlende Systemabhängigkeiten, insbesondere WebKitGTK 4.1, müssen dort installiert werden; deren Erstinstallation kann Internet benötigen. |
-| Android ARM64 | `.apk` | Testinstallation aus erlaubter Quelle. Android API 24+ mit aktuellem System-WebView; keine Play-Store-Veröffentlichung. |
+| Plattform           | Paket         | Installation / Voraussetzung                                                                                                                                                               |
+| ------------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Windows x64         | `.exe` (NSIS) | Installer starten. Enthält den WebView2-Offline-Installer; deshalb wesentlich größer als zuvor. Unterstütztes Windows mit aktuellem WebView2; kein Download der PDF-Bibliothek beim Start. |
+| macOS Intel         | `.dmg`        | DMG öffnen, PDF Viewer nach Programme ziehen. Separater x86_64-Build.                                                                                                                      |
+| macOS Apple Silicon | `.dmg`        | DMG öffnen, App nach Programme ziehen. Nativer ARM64-Build.                                                                                                                                |
+| Linux x64           | `.AppImage`   | Datei ausführbar machen und starten. Auf Ubuntu 22.04 gebaut; benötigt kompatibles Linux/glibc, Grafikstack und gegebenenfalls FUSE 2 bzw. AppImage-Extraktion.                            |
+| Debian/Ubuntu x64   | `.deb`        | Über die Paketverwaltung installieren. Fehlende Systemabhängigkeiten, insbesondere WebKitGTK 4.1, müssen dort installiert werden; deren Erstinstallation kann Internet benötigen.          |
+| Android ARM64       | `.apk`        | Testinstallation aus erlaubter Quelle. Android API 24+ mit aktuellem System-WebView; keine Play-Store-Veröffentlichung.                                                                    |
 
 Nach einem PR-Build: **Actions → Test release pipeline → Lauf → Artifacts → installer-…**. Das heruntergeladene ZIP entpacken und den enthaltenen Installer verwenden. Die Plattform-Manifeste enthalten Version, Commit, Dateigröße, SHA-256 und Signierungsmodus. Artefakte bleiben 14 Tage erhalten. Die aktuellen tatsächlichen Build-Ergebnisse und Einschränkungen stehen im PR; ein vorgesehener Pakettyp allein ist kein Nachweis eines erfolgreichen Builds.
 
@@ -61,7 +61,9 @@ Tauri übernimmt Code-Signing und Notarisierung für beide Architekturen. Der Jo
 
 Tauri 2 verwendet den gemeinsamen Rust-Library-Einstieg mit `mobile_entry_point`. Der Android-Gradle-Unterbau und die Launcher-Icons aus dem eingecheckten SVG werden mit der im Lockfile fixierten Tauri-CLI in CI neu erzeugt; `src-tauri/gen/` und Build-Verzeichnisse bleiben aus Git ausgeschlossen. Compile-SDK 36, Build Tools 35, NDK 28 und Java 17 werden im Runner installiert. Zunächst wird nur `aarch64` gebaut; kein x86-Emulator- oder 32-Bit-APK.
 
-Jede installierbare APK braucht eine Signatur. Ohne eigene Secrets erzeugt CI einen **neuen 30 Tage gültigen Testschlüssel pro Lauf**, signiert die Release-APK, prüft `apksigner verify` und 16-KB-Zip-Ausrichtung und verwirft den privaten Schlüssel. Diese APKs sind ausschließlich Testversionen. **Updates zwischen verschiedenen Testläufen benötigen eine Deinstallation**, weil der Schlüssel wechselt; dabei können lokale App-Daten verloren gehen. Nicht als dauerhaft verteilte Android-Version verwenden.
+Jede installierbare APK braucht eine Signatur. Ohne eigene Secrets erzeugt CI einen **neuen 30 Tage gültigen Testschlüssel pro Lauf**, signiert die Release-APK, prüft `apksigner verify` und 16-KB-Zip-Ausrichtung und verwirft den privaten Schlüssel. Diese APKs heißen **PDF Viewer Test** und verwenden die Produktionskennung mit zusätzlichem `.test`. So können sie neben der bisherigen Haupt-App installiert werden. `android-config.mjs` liefert dieselbe Konfiguration an Init und Build; vor Artefaktfreigabe wird die tatsächliche Paketkennung aus `aapt dump badging` geprüft. Dauerhaft signierte Builds behalten die ursprüngliche Produktionskennung.
+
+**Updates zwischen temporären Testläufen benötigen weiterhin eine Deinstallation der Test-App**, weil deren Schlüssel wechselt; vorher deren PDFs speichern. Die Haupt-App muss dafür nicht entfernt werden. Ungesicherte Inhalte einer alten App werden nicht automatisch übernommen; ein privater temporärer Export-Cache ist kein Recovery-Journal. Nicht als dauerhaft verteilte Android-Version verwenden.
 
 Für dauerhaft aktualisierbare APKs einmal einen eigenen Schlüssel erzeugen (z. B. in einem vertrauenswürdigen Cloud-Terminal mit `keytool -genkeypair -keystore release.jks -alias pdf-editor -keyalg RSA -keysize 2048 -validity 10000 -storetype JKS`; Passwörter interaktiv eingeben). Den Schlüssel sicher herunterladen/sichern, aus dem Cloud-Arbeitsverzeichnis entfernen und über GitHub als Secrets hinterlegen. Niemals als Workflow-Artefakt veröffentlichen. Die Erzeugung und Sicherung eines langfristigen privaten Schlüssels erfolgt durch den Verantwortlichen; der Infrastruktur-PR erzeugt keinen solchen Schlüssel.
 

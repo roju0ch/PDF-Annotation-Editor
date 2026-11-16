@@ -34,6 +34,10 @@ jobs:
       - name: Install Android toolchain
         run: node scripts/release/run.mjs bash scripts/release/android-toolchain.sh
       - run: npm ci
+      - name: Keep temporary test APK separate from the installed app
+        env:
+          SIGN_ANDROID: ${{ inputs.sign_android && 'true' || 'false' }}
+        run: node scripts/release/android-config.mjs prepare "$RUNNER_TEMP/android-build-config.json"
       - name: Generate launcher icons from the project SVG
         run: |
           node scripts/release/run.mjs node node_modules/@tauri-apps/cli/tauri.js icon src-tauri/icon.svg --output "$RUNNER_TEMP/app-icons"
@@ -41,10 +45,10 @@ jobs:
           cp -R "$RUNNER_TEMP/app-icons/android/." src-tauri/icons/android/
       # npm supplies a stable CLI callback for Gradle, even from src-tauri/.
       - name: Generate Android project from pinned Tauri CLI
-        run: node scripts/release/run.mjs npm run tauri -- android init --ci --skip-targets-install
+        run: node scripts/release/run.mjs npm run tauri -- android init --ci --skip-targets-install --config "$RUNNER_TEMP/android-build-config.json"
       - name: Build ARM64 release APK
-        run: node scripts/release/run.mjs npm run tauri -- android build --apk --target aarch64 --ci
-      - name: Test native Android clipboard reader
+        run: node scripts/release/run.mjs npm run tauri -- android build --apk --target aarch64 --ci --config "$RUNNER_TEMP/android-build-config.json"
+      - name: Native Android bridge tests
         run: node scripts/release/run.mjs bash src-tauri/gen/android/gradlew -p src-tauri/gen/android :tauri-plugin-android-bridge:testDebugUnitTest --no-daemon --console=plain
       - name: Summarize native test results
         if: always()
