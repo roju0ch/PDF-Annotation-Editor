@@ -286,6 +286,17 @@ export default function App() {
       }
     };
     const up = (e: PointerEvent) => {
+      // Pointer moves can be coalesced; apply the final pan coordinate before
+      // releasing capture so the last movement is never lost on Firefox/touchpads.
+      if (e.type === "pointerup" && drag) {
+        const p = local(e),
+          from = drag;
+        updateView((v) => ({
+          ...v,
+          x: v.x + p.x - from.x,
+          y: v.y + p.y - from.y,
+        }));
+      }
       if (e.type === "pointerup" && deferredTouch && !consumed.has(e.pointerId))
         annotationInput.current.begin(deferredTouch);
       clearHold();

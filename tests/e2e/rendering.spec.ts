@@ -227,8 +227,10 @@ test("large vector plan gains true detail at DPR3 zoom and refreshes only visibl
       const input = document.createElement("textarea");
       input.id = "pan-clipboard-source";
       input.value = "Synthetic clipboard text before middle-button pan";
+      input.style.cssText =
+        "position:fixed;top:0;left:0;width:1px;height:1px;opacity:0";
       document.body.appendChild(input);
-      input.focus();
+      input.focus({ preventScroll: true });
       input.select();
     });
     await page.keyboard.press("Control+c");
@@ -241,9 +243,13 @@ test("large vector plan gains true detail at DPR3 zoom and refreshes only visibl
       steps: 4,
     });
     await page.mouse.up({ button: "middle" });
+    await expect
+      .poll(async () => Math.abs((await geometry(page)).x - (zoomed.x - 220)))
+      .toBeLessThan(0.05);
+    await expect
+      .poll(async () => Math.abs((await geometry(page)).y - (zoomed.y - 80)))
+      .toBeLessThan(0.05);
     const panned = await geometry(page);
-    expect(Math.abs(panned.x - (zoomed.x - 220))).toBeLessThan(0.05);
-    expect(Math.abs(panned.y - (zoomed.y - 80))).toBeLessThan(0.05);
     await finishedTiles(page, panned.scale * 3, detail.keys);
     const after = await profile(page);
     expect(after.keys.some((key) => !detail.keys.includes(key))).toBe(true);
