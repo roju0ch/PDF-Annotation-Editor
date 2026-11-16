@@ -20,6 +20,7 @@
     "test:release": "node --test scripts/release/guards.test.mjs"
   },
   "dependencies": {
+    "@tauri-apps/api": "2.12.4",
     "mupdf": "1.28.6",
     "react": "19.3.1",
     "react-dom": "19.3.1"

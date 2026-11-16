@@ -44,6 +44,40 @@ jobs:
         run: node scripts/release/run.mjs npm run tauri -- android init --ci --skip-targets-install
       - name: Build ARM64 release APK
         run: node scripts/release/run.mjs npm run tauri -- android build --apk --target aarch64 --ci
+      - name: Test native Android clipboard reader
+        run: node scripts/release/run.mjs bash src-tauri/gen/android/gradlew -p src-tauri/gen/android :tauri-plugin-android-bridge:testDebugUnitTest --no-daemon --console=plain
+      - name: Summarize native test results
+        if: always()
+        run: |
+          python3 - <<'PYTEST'
+          import pathlib
+          import xml.etree.ElementTree as ET
+          reports = list(pathlib.Path('src-tauri/plugins/tauri-plugin-android-bridge/android/build/test-results').glob('**/TEST-*.xml'))
+          def escape(value):
+              return str(value).replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+          if not reports:
+              print('::notice title=Android native tests::No JUnit XML produced; inspect earlier build steps.')
+          else:
+              tests = failures = errors = skipped = 0
+              for report in reports:
+                  suite = ET.parse(report).getroot()
+                  tests += int(suite.get('tests', '0'))
+                  failures += int(suite.get('failures', '0'))
+                  errors += int(suite.get('errors', '0'))
+                  skipped += int(suite.get('skipped', '0'))
+                  for case in suite.iter('testcase'):
+                      for detail in [*case.findall('failure'), *case.findall('error')]:
+                          message = case.get('name', '') + ': ' + detail.get('message', '') + '\n' + (detail.text or '')[:4000]
+                          print('::error title=Android native test failure::' + escape(message))
+              print(f'::notice title=Android native tests::{tests} tests, {failures} failures, {errors} errors, {skipped} skipped')
+          PYTEST
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: android-native-test-evidence
+          path: src-tauri/plugins/tauri-plugin-android-bridge/android/build/test-results/
+          if-no-files-found: warn
+          retention-days: 14
       - name: Require unchanged Rust lockfile
         run: git diff --exit-code -- src-tauri/Cargo.lock
       - name: Sign and verify installable test APK

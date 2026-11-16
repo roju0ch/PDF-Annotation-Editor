@@ -1,4 +1,9 @@
 :root {
+  /* Native Android consumes its host insets; browser cutouts use CSS env(). */
+  --app-safe-area-top: env(safe-area-inset-top, 0px);
+  --app-safe-area-right: env(safe-area-inset-right, 0px);
+  --app-safe-area-bottom: env(safe-area-inset-bottom, 0px);
+  --app-safe-area-left: env(safe-area-inset-left, 0px);
   font-family: Inter, ui-sans-serif, system-ui, sans-serif;
   color: #192b32;
   background: #e7ecec;
@@ -45,6 +50,8 @@ a:focus-visible,
 }
 main {
   height: 100dvh;
+  padding: var(--app-safe-area-top) var(--app-safe-area-right)
+    var(--app-safe-area-bottom) var(--app-safe-area-left);
   display: flex;
   flex-direction: column;
 }
@@ -244,10 +251,16 @@ footer .edit-status {
 }
 .compact-menu {
   position: fixed;
-  inset: 52px 8px auto auto;
+  inset: calc(52px + var(--app-safe-area-top))
+    calc(8px + var(--app-safe-area-right)) auto auto;
   margin: 0;
-  width: min(320px, calc(100vw - 16px));
-  max-height: calc(100dvh - 84px);
+  width: min(
+    320px,
+    calc(100vw - 16px - var(--app-safe-area-left) - var(--app-safe-area-right))
+  );
+  max-height: calc(
+    100dvh - 84px - var(--app-safe-area-top) - var(--app-safe-area-bottom)
+  );
   overflow: auto;
   overscroll-behavior: contain;
   border: 1px solid #bccdcc;
@@ -428,8 +441,10 @@ footer .edit-status {
     gap: 8px;
   }
   .compact-menu {
-    top: 49px;
-    max-height: calc(100dvh - 76px);
+    top: calc(49px + var(--app-safe-area-top));
+    max-height: calc(
+      100dvh - 76px - var(--app-safe-area-top) - var(--app-safe-area-bottom)
+    );
   }
   .empty h1 {
     font-size: 23px;
@@ -443,8 +458,12 @@ footer .edit-status {
   position: fixed;
   z-index: 10;
   width: max-content;
-  max-width: calc(100vw - 16px);
-  max-height: calc(100dvh - 16px);
+  max-width: calc(
+    100vw - 16px - var(--app-safe-area-left) - var(--app-safe-area-right)
+  );
+  max-height: calc(
+    100dvh - 16px - var(--app-safe-area-top) - var(--app-safe-area-bottom)
+  );
   overflow: auto;
   padding: 4px;
   border: 1px solid #bccdcc;
@@ -499,7 +518,9 @@ header .tool-button[aria-pressed="true"] {
 .tool-tooltip {
   position: fixed;
   z-index: 30;
-  max-width: calc(100vw - 16px);
+  max-width: calc(
+    100vw - 16px - var(--app-safe-area-left) - var(--app-safe-area-right)
+  );
   padding: 6px 9px;
   border-radius: 5px;
   background: #203d42;
@@ -543,13 +564,18 @@ header .tool-button[aria-pressed="true"] {
     display: none;
   }
   .compact-menu {
-    top: 89px;
-    max-height: calc(100dvh - 116px);
+    top: calc(89px + var(--app-safe-area-top));
+    max-height: calc(
+      100dvh - 116px - var(--app-safe-area-top) - var(--app-safe-area-bottom)
+    );
   }
 }
 
 .page-organizer {
-  width: min(350px, calc(100vw - 16px));
+  width: min(
+    350px,
+    calc(100vw - 16px - var(--app-safe-area-left) - var(--app-safe-area-right))
+  );
 }
 .page-organizer-actions,
 .page-import {

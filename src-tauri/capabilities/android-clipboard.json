@@ -1,0 +1,8 @@
+{
+  "$schema": "../gen/schemas/mobile-schema.json",
+  "identifier": "android-clipboard",
+  "description": "Read a clipboard image only in the local Android editor window.",
+  "windows": ["main"],
+  "platforms": ["android"],
+  "permissions": ["android-bridge:allow-read-clipboard-image"]
+}
