@@ -1,4 +1,4 @@
-import { readdirSync, rmSync } from "node:fs";
+import { rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve, join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -27,7 +27,9 @@ function runTests(source, name, extra = []) {
     if (compile.stdout) process.stdout.write(compile.stdout);
     if (compile.stderr) process.stderr.write(compile.stderr);
     if (compile.error || compile.status !== 0)
-      throw Error(`Native ${name} test compilation failed`);
+      throw Error(
+        `Native ${name} test compilation failed: ${compile.error?.message || compile.stderr || compile.stdout}`,
+      );
     const test = spawnSync(binary, [], {
       encoding: "utf8",
       maxBuffer: 2 * 1024 * 1024,
@@ -35,7 +37,9 @@ function runTests(source, name, extra = []) {
     if (test.stdout) process.stdout.write(test.stdout);
     if (test.stderr) process.stderr.write(test.stderr);
     if (test.error || test.status !== 0)
-      throw Error(`Native ${name} tests failed`);
+      throw Error(
+        `Native ${name} tests failed: ${test.error?.message || test.stdout || test.stderr}`,
+      );
     const count = /test result: ok\. (\d+) passed/.exec(test.stdout)?.[1];
     if (!count) throw Error("Missing native test summary");
     console.log(
@@ -45,28 +49,55 @@ function runTests(source, name, extra = []) {
     rmSync(binary, { force: true });
   }
 }
-runTests("storage.rs", "storage");
-if (target) {
-  // Use the exact dependency builds from the successfully compiled application.
-  const deps = resolve("src-tauri/target", target, "release/deps");
-  const library = (name) => {
-    const files = readdirSync(deps).filter(
-      (file) => file.startsWith(`lib${name}-`) && file.endsWith(".rlib"),
+try {
+  if (target) {
+    // Let Cargo resolve the application's locked dependencies and artifact
+    // locations. Cargo 1.100 no longer puts all rlibs in release/deps.
+    const test = spawnSync(
+      process.env.CARGO || "cargo",
+      [
+        "test",
+        "--locked",
+        "--release",
+        "--manifest-path",
+        "src-tauri/Cargo.toml",
+        "--target",
+        target,
+        "--package",
+        "tauri-plugin-desktop-save",
+        "--lib",
+      ],
+      { encoding: "utf8", maxBuffer: 8 * 1024 * 1024 },
     );
-    if (files.length !== 1)
+    if (test.stdout) process.stdout.write(test.stdout);
+    if (test.stderr) process.stderr.write(test.stderr);
+    if (test.error || test.status !== 0)
       throw Error(
-        `Expected one compiled ${name} dependency, found ${files.length}`,
+        `Native storage/process lock tests failed: ${test.error?.message || `${test.stderr}\n${test.stdout}`}`,
       );
-    return join(deps, files[0]);
-  };
-  runTests("cache.rs", "cache-locks", [
-    "--target",
-    target,
-    "-L",
-    `dependency=${deps}`,
-    "--extern",
-    `fs2=${library("fs2")}`,
-    "--extern",
-    `uuid=${library("uuid")}`,
-  ]);
+    const count = /test result: ok\. (\d+) passed/.exec(test.stdout)?.[1];
+    if (
+      !count ||
+      Number(count) < 13 ||
+      !test.stdout.includes(
+        "live_instances_survive_other_editor_startup_and_orphans_are_cleaned",
+      )
+    )
+      throw Error("Missing native storage/process lock test summary");
+    console.log(
+      `::notice title=Desktop native PDF tests::storage and process locks: ${count} tests passed on ${target}`,
+    );
+  } else {
+    runTests("storage.rs", "storage");
+  }
+} catch (error) {
+  // Make native diagnostics available in check annotations even when CI's log
+  // download endpoint is unavailable. Tests use synthetic files exclusively.
+  const message = String(error?.message || error)
+    .slice(0, 12000)
+    .replaceAll("%", "%25")
+    .replaceAll("\r", "%0D")
+    .replaceAll("\n", "%0A");
+  console.error(`::error title=Desktop native PDF tests::${message}`);
+  process.exitCode = 1;
 }
