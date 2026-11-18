@@ -206,22 +206,11 @@ jobs:
       - run: npm ci
       - name: Cross-build ordinary unsigned Apple Silicon DMG
         run: node scripts/release/run.mjs node node_modules/@tauri-apps/cli/tauri.js build --target aarch64-apple-darwin --bundles dmg -- --locked
-      - name: Verify actual Apple Silicon executable architecture
+      - name: Verify ARM executable and PDF handler inside actual DMG
         run: |
-          python3 - <<'PY'
-          import pathlib, plistlib, subprocess
-          app = pathlib.Path('src-tauri/target/aarch64-apple-darwin/release/bundle/macos/PDF Viewer.app')
-          metadata = plistlib.loads((app / 'Contents/Info.plist').read_bytes())
-          binary = app / 'Contents/MacOS' / metadata['CFBundleExecutable']
-          subprocess.run(['lipo', '-verify_arch', 'arm64', str(binary)], check=True)
-          architectures = subprocess.check_output(['lipo', '-archs', str(binary)], text=True).split()
-          if architectures != ['arm64']:
-              raise SystemExit(f'Expected one ARM64 executable, found {architectures}')
-          print('::notice title=Apple Silicon cross-build::Actual ARM64 executable verified with lipo. Built on Intel; ARM runtime, native ARM tests and ARM GUI have NOT been executed. No signing, notarization or publication.')
-          PY
-          git diff --exit-code -- src-tauri/Cargo.lock
-      - name: Verify PDF handler metadata in actual DMG
-        run: python3 scripts/release/verify-associations.py macos src-tauri/target/aarch64-apple-darwin/release/bundle
+          python3 scripts/release/verify-associations.py macos src-tauri/target/aarch64-apple-darwin/release/bundle arm64
+          node scripts/release/run.mjs git diff --exit-code -- src-tauri/Cargo.lock
+          echo '::notice title=Apple Silicon cross-build::Built on Intel; ARM runtime, native ARM tests and ARM GUI have NOT been executed. No signing, notarization or publication.'
       - name: Collect Apple Silicon DMG and checksums
         env:
           PACKAGE_SIGNING: unsigned-or-ad-hoc
