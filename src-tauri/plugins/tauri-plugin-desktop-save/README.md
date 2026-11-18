@@ -1,14 +1,22 @@
 # Desktop PDF saving
 
 The local `desktop-save` Tauri plugin supports Windows, macOS and Linux. Only the
-four PDF transaction commands are granted to the local main window. JavaScript
+four PDF transaction commands are granted to approved local editor windows. JavaScript
 cannot supply a filesystem path or access generic filesystem functions.
 
 `begin_pdf_save`, `append_pdf_save`, `finish_pdf_save` and `abort_pdf_save` use the
-same payload/result contract as the Android bridge: one UUID-owned transaction,
+same payload/result contract as the Android bridge: one UUID-owned transaction per window,
 150 MiB maximum, ordered Base64 chunks of at most 256 KiB, and a confirmed
 `{status:"saved",fileName}` or `{status:"cancelled"}` result. The shared frontend
 must not acknowledge the PDF revision until a native saved result arrives.
+
+The caller is taken from Tauri's injected `WebviewWindow`, never from a label in
+the JavaScript payload. Each actual window gets an independent session handle and
+locked private cache. Tokens cannot append, finish or abort another window's
+transaction. Closing a window immediately retires its handle; filesystem cleanup
+runs in the background. A late response from that window's save panel cannot
+commit, including after a native window label is reused. Another window's pending
+upload or save panel remains owned by that other window.
 
 `rfd` 0.17.2 supplies native save panels, initialized on the UI thread with the
 editor window as parent. Waiting and filesystem I/O happen on background threads.
@@ -40,3 +48,5 @@ replacement, cancellation, invalid transfers, collisions and cleanup without
 simulating an OS dialog. `cache.rs` additionally checks live-instance isolation and
 orphan cleanup with real filesystem locks. Building the Tauri packages checks
 native dialog integration; physical OS interaction still needs device testing.
+`windows.rs` adds real-file tests for independent simultaneous saves, foreign-token
+rejection, cancellation/retry, failed commits, window destruction and stale panels.

@@ -29,6 +29,15 @@ export type NativeSaveState = {
   finishedOpens: string[];
   workerOpens: number;
   workerExports: number;
+  windowCalls: { command: string; args: Record<string, unknown> }[];
+  windowReports: Record<string, unknown>[];
+  windowLabel: string;
+  createdWindows: number;
+  closedWindows: number;
+  cancelledCloses: number;
+  closeRequests: number;
+  closeListenerCount: () => number;
+  requestWindowClose: () => Promise<void>;
   enqueueOpen: (request: NativeOpenRequest) => void;
   wakeOpen: () => void;
   failAcknowledgement?: boolean;
@@ -46,6 +55,7 @@ export const errorText = "Kein Schreibzugriff auf das gewählte Dokument.";
  * This bridge does not claim to exercise real operating-system dialogs.
  */
 export type NativePlatform = "android" | "ios" | "windows" | "macos" | "linux";
+export type NativeWindowOptions = { label: string; savedFileName?: string };
 const agents: Record<NativePlatform, string> = {
   android: "Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36",
   ios: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15",
@@ -58,6 +68,7 @@ export async function nativeSaveBridge(
   mode: NativeSaveState["mode"],
   platform: NativePlatform = "android",
   initialOpens: NativeOpenRequest[] = [],
+  nativeWindow?: NativeWindowOptions,
 ) {
   await page.setViewportSize(
     platform === "android" || platform === "ios"
@@ -67,11 +78,25 @@ export async function nativeSaveBridge(
   const namespace = platform === "android" ? "android-bridge" : "desktop-save";
   const userAgent = agents[platform];
   await page.addInitScript(
-    ({ mode, savedName, errorText, namespace, userAgent, initialOpens }) => {
+    ({
+      mode,
+      savedName,
+      errorText,
+      namespace,
+      userAgent,
+      initialOpens,
+      nativeWindow,
+    }) => {
       Object.defineProperty(navigator, "userAgent", {
         value: userAgent,
       });
       Object.defineProperty(globalThis, "isTauri", { value: true });
+      if (nativeWindow)
+        Object.defineProperty(globalThis, "__PDF_MULTI_WINDOW__", {
+          value: true,
+          configurable: false,
+          writable: false,
+        });
       const state: NativeSaveState = {
         calls: [],
         transactions: [],
@@ -85,6 +110,33 @@ export async function nativeSaveBridge(
         finishedOpens: [],
         workerOpens: 0,
         workerExports: 0,
+        windowCalls: [],
+        windowReports: [],
+        windowLabel: nativeWindow?.label ?? "main",
+        createdWindows: 0,
+        closedWindows: 0,
+        cancelledCloses: 0,
+        closeRequests: 0,
+        closeListenerCount: () =>
+          [...listeners.values()].filter(
+            (listener) =>
+              listener.event === "tauri://close-requested" &&
+              listener.target?.label === state.windowLabel,
+          ).length,
+        requestWindowClose: async () => {
+          state.closeRequests++;
+          for (const [id, listener] of listeners) {
+            if (
+              listener.event === "tauri://close-requested" &&
+              listener.target?.label === state.windowLabel
+            )
+              await callbacks.get(listener.handler)?.({
+                event: "tauri://close-requested",
+                id,
+                payload: null,
+              });
+          }
+        },
         enqueueOpen: (request) => {
           if (!state.openQueue.some((item) => item.id === request.id))
             state.openQueue.push(request);
@@ -102,7 +154,14 @@ export async function nativeSaveBridge(
         },
       };
       const callbacks = new Map<number, (event: unknown) => void>();
-      const listeners = new Map<number, { event: string; handler: number }>();
+      const listeners = new Map<
+        number,
+        {
+          event: string;
+          handler: number;
+          target?: { kind?: string; label?: string };
+        }
+      >();
       let sequence = 1;
       Object.defineProperty(globalThis, "__TAURI_EVENT_PLUGIN_INTERNALS__", {
         value: {
@@ -178,6 +237,10 @@ export async function nativeSaveBridge(
       };
       Object.defineProperty(globalThis, "__TAURI_INTERNALS__", {
         value: {
+          metadata: {
+            currentWindow: { label: state.windowLabel },
+            currentWebview: { label: state.windowLabel },
+          },
           transformCallback: (callback: (event: unknown) => void) => {
             const id = sequence++;
             callbacks.set(id, callback);
@@ -192,6 +255,8 @@ export async function nativeSaveBridge(
               listeners.set(id, {
                 event: String(args.event),
                 handler: Number(args.handler),
+                target: args.target as
+                  { kind?: string; label?: string } | undefined,
               });
               return id;
             }
@@ -200,6 +265,30 @@ export async function nativeSaveBridge(
               return;
             }
             if (command.startsWith("plugin:pdf-open|")) {
+              if (
+                [
+                  "new_pdf_window",
+                  "report_window_state",
+                  "close_pdf_window",
+                  "cancel_window_close",
+                ].some((action) => command === `plugin:pdf-open|${action}`)
+              ) {
+                if (!nativeWindow)
+                  throw Error(
+                    "Unexpected multiwindow IPC without native capability",
+                  );
+                state.windowCalls.push({
+                  command,
+                  args: structuredClone(args),
+                });
+                if (command.endsWith("|new_pdf_window")) state.createdWindows++;
+                else if (command.endsWith("|report_window_state"))
+                  state.windowReports.push(structuredClone(args));
+                else if (command.endsWith("|close_pdf_window"))
+                  state.closedWindows++;
+                else state.cancelledCloses++;
+                return;
+              }
               state.openCalls.push({
                 command,
                 id: typeof args.id === "string" ? args.id : undefined,
@@ -273,7 +362,11 @@ export async function nativeSaveBridge(
                   if (outcome === "failure") reject({ message: errorText });
                   else if (outcome === "cancelled")
                     resolve({ status: "cancelled" });
-                  else resolve({ status: "saved", fileName: savedName });
+                  else
+                    resolve({
+                      status: "saved",
+                      fileName: nativeWindow?.savedFileName ?? savedName,
+                    });
                 };
                 if (state.mode !== "hold") state.release(state.mode);
               });
@@ -284,7 +377,15 @@ export async function nativeSaveBridge(
         },
       });
     },
-    { mode, savedName, errorText, namespace, userAgent, initialOpens },
+    {
+      mode,
+      savedName,
+      errorText,
+      namespace,
+      userAgent,
+      initialOpens,
+      nativeWindow,
+    },
   );
 }
 export async function state(page: Page) {

@@ -146,6 +146,19 @@ jobs:
         if: runner.os == 'macOS' && inputs.sign_macos
         run: |
           for file in src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg; do xcrun stapler validate "$file"; done
+      - name: Build separate macOS runtime probe app
+        if: runner.os == 'macOS' && !inputs.sign_macos
+        run: |
+          # The installer DMG above is already immutable and has no probe code.
+          # This loose test-only app is never collected or uploaded as an installer.
+          shasum -a 256 src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg > "$RUNNER_TEMP/installer-before-probe-${{ matrix.label }}.sha256"
+          node scripts/fixtures.mjs
+          node scripts/release/run.mjs node node_modules/@tauri-apps/cli/tauri.js build --target ${{ matrix.target }} --bundles app --features native-window-tests --config "$RUNNER_TEMP/tauri-signing.json" -- --locked
+      - name: Open two real PDFs through macOS LaunchServices
+        if: runner.os == 'macOS' && !inputs.sign_macos
+        run: |
+          python3 scripts/release/test-macos-windows.py "src-tauri/target/${{ matrix.target }}/release/bundle/macos/PDF Viewer.app"
+          shasum -a 256 -c "$RUNNER_TEMP/installer-before-probe-${{ matrix.label }}.sha256"
       - name: Collect packages and checksums
         env:
           PACKAGE_SIGNING: ${{ (runner.os == 'Windows' && inputs.sign_windows && 'authenticode') || (runner.os == 'macOS' && inputs.sign_macos && 'developer-id-notarized') || 'unsigned-or-ad-hoc' }}
