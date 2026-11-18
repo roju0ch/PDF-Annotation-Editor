@@ -146,7 +146,9 @@ def macos_package(root, expected_arch=None):
                 executable = metadata.get('CFBundleExecutable', '')
                 assert executable and pathlib.Path(executable).name == executable, 'Invalid bundle executable name'
                 binary = plists[0].parent / 'MacOS' / executable
-                subprocess.run(['lipo', '-verify_arch', expected_arch, str(binary)], check=True)
+                # -verify_arch consumes all remaining arguments as CPU names;
+                # the input file must precede that option, including on Apple lipo.
+                subprocess.run(['lipo', str(binary), '-verify_arch', expected_arch], check=True)
                 architectures = command('lipo', '-archs', str(binary)).split()
                 assert architectures == [expected_arch], f'Expected one {expected_arch} executable, found {architectures}'
                 print(f'::notice title=macOS package architecture::Actual executable inside DMG verified with lipo: {expected_arch}.')
