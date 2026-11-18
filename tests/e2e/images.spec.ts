@@ -374,9 +374,16 @@ test("Android native image bridge bypasses denied WebView clipboard and exports 
       expected: 0,
     };
     Object.defineProperty(globalThis, "nativeClipboardTest", { value: state });
+    Object.defineProperty(globalThis, "__TAURI_EVENT_PLUGIN_INTERNALS__", {
+      value: { unregisterListener: () => undefined },
+    });
     Object.defineProperty(globalThis, "__TAURI_INTERNALS__", {
       value: {
+        transformCallback: () => 1,
         invoke: async (command: string, args: Record<string, unknown> = {}) => {
+          if (command === "plugin:event|listen") return 1;
+          if (command === "plugin:event|unlisten") return;
+          if (command === "plugin:pdf-open|next_pdf_open") return null;
           state.calls.push(command);
           if (command === "plugin:android-bridge|read_clipboard_image") {
             if (state.denied)

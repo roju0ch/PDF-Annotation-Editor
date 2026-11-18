@@ -1,0 +1,60 @@
+name: iOS simulator PDF handler
+on:
+  workflow_dispatch:
+  workflow_call:
+permissions:
+  contents: read
+jobs:
+  simulator:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24"
+          cache: npm
+      - name: Install iOS simulator toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add aarch64-apple-ios-sim
+          command -v xcodegen >/dev/null || brew install xcodegen
+          xcodebuild -version
+      - run: npm ci
+      - name: Test secure iOS PDF staging with real files
+        run: node scripts/release/test-ios-staging.mjs
+      - name: Generate iOS launcher icons
+        run: |
+          node scripts/release/run.mjs npm run tauri -- icon src-tauri/icon.svg --output "$RUNNER_TEMP/ios-icons"
+          mkdir -p src-tauri/icons/ios
+          cp -R "$RUNNER_TEMP/ios-icons/ios/." src-tauri/icons/ios/
+      - name: Generate pinned Tauri iOS project
+        run: node scripts/release/run.mjs npm run tauri -- ios init --ci --skip-targets-install
+      - name: Build unsigned iOS simulator app
+        run: node scripts/release/run.mjs npm run tauri -- ios build --ci --target aarch64-sim --no-sign
+      - name: Verify simulator PDF document registration and preserve lockfile
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, pathlib, subprocess
+          apps = list(pathlib.Path('src-tauri/gen/apple').glob('build/arm64-sim/*.app'))
+          if len(apps) != 1:
+              # cargo-mobile can adjust the export directory; locate only built
+              # export apps, never the unarchived intermediate Products folder.
+              apps = list(pathlib.Path('src-tauri/gen/apple').glob('**/build/arm64-sim/*.app'))
+          if len(apps) != 1:
+              raise SystemExit(f'Expected one exported simulator app, found {len(apps)}')
+          subprocess.run(['python3', 'scripts/release/verify-associations.py', 'ios', str(apps[0])], check=True)
+          version = json.loads(pathlib.Path('package.json').read_text())['version']
+          archive = pathlib.Path(f'PDF-Annotation-Editor_{version}_ios-simulator.zip')
+          subprocess.run(['ditto', '-c', '-k', '--sequesterRsrc', '--keepParent', str(apps[0]), str(archive)], check=True)
+          print(f'::notice title=iOS simulator package::{archive.name} | {archive.stat().st_size} bytes | SHA256 {hashlib.sha256(archive.read_bytes()).hexdigest()}')
+          PY
+          git diff --exit-code -- src-tauri/Cargo.lock
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ios-simulator-app-and-test-evidence
+          path: PDF-Annotation-Editor_*_ios-simulator.zip
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14

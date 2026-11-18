@@ -10,6 +10,10 @@ Android nutzt das Storage Access Framework (`ACTION_CREATE_DOCUMENT`) und den vo
 
 Die Desktop-Apps verwenden einen nativen Dateidialog und einen eigenen begrenzten Speicherpfad. Die Ausgabe wird zunächst in einer temporären Datei neben dem gewählten Ziel geschrieben und überprüft, bevor sie an dessen Stelle tritt. JavaScript erhält keine allgemeinen Dateisystemrechte. Ein bewusst gewähltes bestehendes Ziel ist vom automatischen Überschreiben der Quelldatei zu unterscheiden; die Auswahl und die Überschreibentscheidung gehören zum Systemdialog.
 
+## iOS-Simulatorprototyp
+
+Der neue iOS-Build dient zunächst dem Öffnen externer PDFs und der Simulatorprüfung. Ein nativer iOS-Speicherweg ist noch nicht vorhanden. Der Speicherknopf ist dort ausdrücklich deaktiviert; auch das Tastaturkürzel behauptet keinen Export. Die Android-, Desktop- und Browser-Speicherwege bleiben erhalten. Dieser Prototyp eignet sich noch nicht zur produktiven Bearbeitung mit anschließender Speicherung auf iPhone/iPad. [Dateizuordnung und Signierungsgrenzen](FILE_ASSOCIATIONS.md).
+
 ## Browser
 
 Im normalen Browser bleibt **PDF herunterladen** verfügbar. Die neue PDF wird dem Downloadmanager des Browsers übergeben; Dateiname und Zielordner richten sich nach dessen Einstellungen. **PDF-Download gestartet** bestätigt diesen Start und ist keine Bestätigung des dauerhaften Dateischreibens. Die heruntergeladene Datei anschließend prüfen. Der Browser kann der App keinen verlässlichen endgültigen Speicherpfad nennen.

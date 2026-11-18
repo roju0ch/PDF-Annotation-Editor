@@ -4,7 +4,12 @@ import {
   type FreeTextStyle,
 } from "../core/annotations/textPreferences";
 import { readClipboardImage } from "../adapters/platform/clipboard";
-import { usesNativeSave, savePdf } from "../adapters/platform/savePdf";
+import {
+  usesNativeSave,
+  savePdf,
+  supportsPdfSave,
+  PDF_SAVE_UNAVAILABLE,
+} from "../adapters/platform/savePdf";
 import {
   imageInfo,
   imagePlacement,
@@ -266,6 +271,18 @@ export function useAnnotations(
     lock.current = false;
     setBusy(false);
   }, []);
+  // A replacement PDF is parsed in its own worker while the current document
+  // stays intact. Reuse the edit/save lock so no mutation can race that commit.
+  const beginDocumentChange = useCallback(() => {
+    if (lock.current) return false;
+    lock.current = true;
+    setBusy(true);
+    return true;
+  }, []);
+  const endDocumentChange = useCallback(() => {
+    lock.current = false;
+    setBusy(false);
+  }, []);
   useEffect(() => {
     const c = client.current;
     if (!c || !layout.pages.length) return;
@@ -392,6 +409,10 @@ export function useAnnotations(
   const save = useCallback(async () => {
     const c = client.current;
     if (!c || lock.current || current.current.state.readOnly) return;
+    if (!supportsPdfSave()) {
+      onError(PDF_SAVE_UNAVAILABLE);
+      return;
+    }
     if (freeTextRef.current) {
       onError("Bitte den Textkommentar zuerst bestätigen oder abbrechen.");
       return;
@@ -1372,6 +1393,8 @@ export function useAnnotations(
     formDirty: formDirty || freeTextDraft !== null,
     setFormDirty,
     unsaved,
+    beginDocumentChange,
+    endDocumentChange,
     reset,
     edit,
     save,

@@ -1,0 +1,3 @@
+[default]
+description = "External PDF reading is not granted by default."
+permissions = []

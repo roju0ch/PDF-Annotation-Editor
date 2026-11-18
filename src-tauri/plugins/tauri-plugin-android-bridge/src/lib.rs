@@ -12,6 +12,72 @@ const MAX_PDF_BYTES: usize = 150 * 1024 * 1024;
 const MAX_PDF_CHUNK_BYTES: usize = 256 * 1024;
 const MAX_PDF_CHUNK_BASE64: usize = 4 * MAX_PDF_CHUNK_BYTES.div_ceil(3);
 
+/// A private snapshot from an OS-granted content URI or readable local file URI.
+/// The PDF-open queue owns this file and deletes it after delivery or failure.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StagedPdf {
+    pub path: String,
+    pub file_name: String,
+    pub byte_length: usize,
+}
+
+#[derive(Debug)]
+pub struct PdfImportError {
+    pub code: String,
+    pub message: String,
+}
+
+impl PdfImportError {
+    fn unavailable() -> Self {
+        Self {
+            code: "unavailable".into(),
+            message: "Die übergebene PDF konnte nicht gelesen werden. Bitte die Datei erneut über ‚Öffnen mit‘ auswählen.".into(),
+        }
+    }
+}
+
+impl From<PluginInvokeError> for PdfImportError {
+    fn from(error: PluginInvokeError) -> Self {
+        match error {
+            PluginInvokeError::InvokeRejected(response) => Self {
+                code: response.code.unwrap_or_else(|| "unavailable".into()),
+                message: response
+                    .message
+                    .unwrap_or_else(|| Self::unavailable().message),
+            },
+            _ => Self::unavailable(),
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct StageIncomingPdf {
+    uri: String,
+}
+
+/// Internal native entry point only. It is intentionally not a tauri::command
+/// and is not listed in invoke_handler: JavaScript cannot select an arbitrary
+/// URI/path. Tauri's RunEvent::Opened supplies the URI while its temporary
+/// Activity read grant is valid; ContentResolver enforces the actual grant.
+/// Local file URIs use Android's existing file access without extra permissions.
+pub async fn stage_incoming_pdf<R: Runtime>(
+    app: &AppHandle<R>,
+    uri: String,
+) -> Result<StagedPdf, PdfImportError> {
+    if uri.len() > 64 * 1024 || (!uri.starts_with("content://") && !uri.starts_with("file://")) {
+        return Err(PdfImportError {
+            code: "invalid".into(),
+            message: "Bitte eine gültige PDF-Datei auswählen (maximal 100 MB).".into(),
+        });
+    }
+    app.state::<AndroidBridge<R>>()
+        .0
+        .run_mobile_plugin_async("stageIncomingPdf", StageIncomingPdf { uri })
+        .await
+        .map_err(Into::into)
+}
+
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ClipboardImage {

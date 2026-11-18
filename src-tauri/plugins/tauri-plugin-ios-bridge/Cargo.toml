@@ -1,0 +1,16 @@
+[package]
+name = "tauri-plugin-ios-bridge"
+version = "0.1.0"
+description = "Security-scoped local PDF intake for iOS"
+authors = ["PDF Annotation Editor contributors"]
+license = "AGPL-3.0-only"
+edition = "2021"
+rust-version = "1.77.2"
+links = "tauri-plugin-ios-bridge"
+
+[dependencies]
+tauri = { version = "2" }
+serde = { version = "1", features = ["derive"] }
+
+[build-dependencies]
+tauri-plugin = { version = "=2.7.2", features = ["build"] }

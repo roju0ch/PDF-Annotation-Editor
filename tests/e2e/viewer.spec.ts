@@ -119,6 +119,10 @@ test("trackpad profile pans, ctrl-wheel pinches, file replacement and rejection"
   await page
     .getByLabel("PDF öffnen", { exact: true })
     .setInputFiles("artifacts/fixture.pdf");
+  await expect(page.getByTestId("viewport")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
   await expect(page.getByLabel("PDF-Seite 1")).toHaveAttribute(
     "data-rendered",
     "true",
@@ -129,11 +133,19 @@ test("trackpad profile pans, ctrl-wheel pinches, file replacement and rejection"
     buffer: Buffer.from("not a PDF"),
   });
   await expect(page.getByRole("alert")).toContainText("gültige PDF");
-  await expect(page.locator("canvas")).toHaveCount(0);
+  await expect(page.getByLabel("PDF-Seite 1")).toHaveAttribute(
+    "data-rendered",
+    "true",
+  );
+  await expect(page.getByText("3 Seiten · Native Annotationen")).toBeVisible();
   await page
     .getByLabel("PDF öffnen", { exact: true })
     .setInputFiles("artifacts/encrypted.pdf");
   await expect(page.getByRole("alert")).toContainText("Passwortgeschützte");
+  await expect(page.getByLabel("PDF-Seite 1")).toHaveAttribute(
+    "data-rendered",
+    "true",
+  );
 });
 
 test("touch pinch, fit controls and repeated page cache reuse", async ({

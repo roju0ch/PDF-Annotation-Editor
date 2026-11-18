@@ -1,0 +1,13 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "pdf-open",
+  "description": "Consume only PDF documents already handed to the local main window by the operating system.",
+  "windows": ["main"],
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "pdf-open:allow-next-pdf-open",
+    "pdf-open:allow-read-pdf-open",
+    "pdf-open:allow-finish-pdf-open"
+  ]
+}

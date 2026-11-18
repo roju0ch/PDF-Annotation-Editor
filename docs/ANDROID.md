@@ -12,6 +12,12 @@ Die neue APK aus dem zugehörigen PR-Lauf herunterladen: **Actions → Test rele
 
 Am Gerät eine synthetische PDF kommentieren, lokal in einen gewählten Ordner speichern, die Datei in einer anderen PDF-App öffnen und wieder in den Editor laden. Zusätzlich Abbrechen und einen nicht beschreibbaren Speicherort prüfen. Ein erfolgreicher Cloud-Build oder eine simulierte IPC-Antwort ersetzt diese Geräteprüfung nicht.
 
+## Aus anderen Apps öffnen
+
+Die App bietet sich für `application/pdf` über den von Tauri erzeugten `ACTION_VIEW`-Filter an. In Samsung **Eigene Dateien**, **Downloads** oder einer anderen App eine PDF öffnen und **PDF Viewer** beziehungsweise **PDF Viewer Test** auswählen. **Immer** legt die Auswahl fest, sofern die Quell-App den Systemdialog verwendet. Eine bisherige Standard-App gegebenenfalls zuerst in deren Android-App-Einstellungen zurücksetzen. [Genaue Anleitung und Grenzen](FILE_ASSOCIATIONS.md#android).
+
+Kaltstart und laufende App verwenden den offiziellen Tauri-Öffnungsmechanismus. Freigegebene `content://`-URIs werden über `ContentResolver` gelesen; lokale `file://`-URIs nur mit bereits vorhandenen OS-Leserechten. Es werden keine allgemeinen Speicherberechtigungen angefordert. Größenprüfung und private Arbeitskopie sind auf 100 MiB begrenzt. Beschädigte PDFs und entzogene Freigaben müssen eine Meldung zeigen und das bisherige Dokument erhalten. Vor dem Wechsel bei ungesicherten Änderungen bestätigen oder abbrechen. Diese Abläufe zusätzlich auf einem echten Samsung-Gerät und mit mindestens einem weiteren Dokumentanbieter prüfen.
+
 ## Systemleisten und Zwischenablage prüfen
 
 1. PDF öffnen. Die Werkzeugleiste muss unterhalb von Uhr/Akku beginnen; die untere Leiste darf nicht unter der Gesten-/Navigationsleiste liegen. Hoch- und Querformat testen, einschließlich Displayausschnitt.

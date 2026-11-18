@@ -13,3 +13,11 @@ src-tauri/gen/
 *.keystore
 *.p12
 *.pfx
+
+# Generated native bridge build products
+src-tauri/plugins/**/core/.build/
+src-tauri/plugins/**/ios/.build/
+src-tauri/plugins/**/ios/.swiftpm/
+src-tauri/plugins/**/ios/.tauri/
+src-tauri/plugins/**/android/build/
+scripts/release/__pycache__/

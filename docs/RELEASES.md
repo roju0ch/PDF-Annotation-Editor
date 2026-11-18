@@ -12,10 +12,13 @@ Eine lokale Entwicklungsumgebung beim Projektinhaber ist nicht erforderlich. Git
 | Linux x64           | `.AppImage`   | Datei ausführbar machen und starten. Auf Ubuntu 22.04 gebaut; benötigt kompatibles Linux/glibc, Grafikstack und gegebenenfalls FUSE 2 bzw. AppImage-Extraktion.                            |
 | Debian/Ubuntu x64   | `.deb`        | Über die Paketverwaltung installieren. Fehlende Systemabhängigkeiten, insbesondere WebKitGTK 4.1, müssen dort installiert werden; deren Erstinstallation kann Internet benötigen.          |
 | Android ARM64       | `.apk`        | Testinstallation aus erlaubter Quelle. Android API 24+ mit aktuellem System-WebView; keine Play-Store-Veröffentlichung.                                                                    |
+| iOS ARM64 Simulator | `.app` im ZIP | Nur für den iOS-Simulator auf einem Mac; kein auf iPhone/iPad installierbares IPA. Native PDF-Registrierung und sicherer Import werden erstmals in CI geprüft.                             |
 
 Nach einem PR-Build: **Actions → Test release pipeline → Lauf → Artifacts → installer-…**. Das heruntergeladene ZIP entpacken und den enthaltenen Installer verwenden. Die Plattform-Manifeste enthalten Version, Commit, Dateigröße, SHA-256 und Signierungsmodus. Artefakte bleiben 14 Tage erhalten. Die aktuellen tatsächlichen Build-Ergebnisse und Einschränkungen stehen im PR; ein vorgesehener Pakettyp allein ist kein Nachweis eines erfolgreichen Builds.
 
 Nach dem Merge kann **Actions → Test release pipeline → Run workflow** alle Pakete erneut erzeugen, ohne etwas zu veröffentlichen. `signed` bleibt zunächst ausgeschaltet. Die eigenständigen Workflows für Desktop und Android sind ebenfalls manuell ausführbar. Der Projektinhaber braucht weder Node noch Rust, Xcode oder Android Studio.
+
+**Dateizuordnung:** Die Pakete deklarieren `.pdf` und `application/pdf`. Windows-NSIS registriert **Öffnen mit** und **Standard-Apps**, ohne die vorhandene Auswahl zu überschreiben. DEB installiert eine Desktop-Datei mit Dateinamenübergabe; die AppImage benötigt zusätzlich eine ausdrückliche Desktop-Integration. macOS/iOS enthalten `CFBundleDocumentTypes`; Android enthält den von Tauri generierten `ACTION_VIEW`-Filter. CI prüft die tatsächlichen Paketinhalte und führt unter Windows sowie Linux zusätzlich Installations-/Deinstallationsprüfungen mit einer vorhandenen PDF-Standardzuordnung aus. Das ersetzt keinen echten Dateiöffnungs-/Gerätetest. [Standardprogramm auf jedem System auswählen](FILE_ASSOCIATIONS.md).
 
 ## Freigegebenes Tag und Veröffentlichung
 
@@ -72,6 +75,14 @@ Für dauerhaft aktualisierbare APKs einmal einen eigenen Schlüssel erzeugen (z.
 - Variable `SIGN_ANDROID=true`.
 
 `sign-android.sh` benutzt dann ausschließlich diesen Schlüssel; fehlende Secrets führen zum Fehler, nicht zum stillen Wechsel auf einen Testschlüssel. Der öffentliche Zertifikat-Fingerprint steht im Prüflog; vor dauerhafter Verteilung gegen die eigene gesicherte Identität prüfen. Für Updates Paket-ID und Schlüssel beibehalten und Versionsnummer/versionCode erhöhen. Tauri leitet den versionCode aus Major/Minor/Patch ab; Tags werden nicht wiederverwendet. Für Play Store sind AAB, Play App Signing und weitere Geräte-/Policy-Prüfungen gesondert einzurichten; hier ist nur APK/Sideload vorgesehen.
+
+### iOS / iPadOS
+
+Der Workflow **iOS simulator PDF handler** verwendet den fixierten Tauri-CLI, erzeugt das Xcode-Projekt in GitHub Actions und baut mit `--target aarch64-sim --no-sign`. Er führt Swift-Tests des begrenzten, Security-Scope-/`NSFileCoordinator`-gestützten PDF-Lesepfads aus und prüft die tatsächliche Simulator-App auf PDF-Dokumenttyp, Rolle `Editor`, Rang `Alternate` sowie den offiziellen Importkopie-Modus (`LSSupportsOpeningDocumentsInPlace=false`). UIKit kopiert übergebene Dokumente dabei regulär in die eigene Inbox, bevor die gemeinsame Pipeline sie verarbeitet; das Original wird nicht bearbeitet. Die App verwendet den von der geprüften Tauri-Version unterstützten Legacy-URL-Lifecycle; ein `UIApplicationSceneManifest` würde in der geprüften Tao-Version die initialen Datei-URLs verlieren und wird daher in CI ausgeschlossen.
+
+`ios-simulator-app-and-test-evidence` ist ein Simulator-Artefakt, kein installierbares Gerätepaket. Es wird nicht als iPhone-Installer in ein GitHub Release aufgenommen. Der Simulator-Build benötigt keine im Repository hinterlegten Apple-Zugangsdaten. Reale Geräteverteilung benötigt eine Apple-Team-ID, ein passendes Signierungszertifikat und Provisioning-Profil sowie einen dafür eingerichteten Geräte-/TestFlight-Workflow. Diese Zugangsdaten gehören ausschließlich in geschützte GitHub-Secrets; eine private Schlüsseldatei darf weder eingecheckt noch als allgemeines Artefakt verteilt werden. Dieser PR richtet keine automatische App-Store-Veröffentlichung ein.
+
+Der erstmals bereitgestellte iOS-Importprototyp besitzt noch keinen nativen Speicherweg. Die Speichersteuerung ist dort klar deaktiviert, statt einen WebView-Download als Speichern auszugeben. Die übrigen Plattformen behalten ihre bestehenden Speicherfunktionen. Für produktive iPhone-/iPad-Bearbeitung sind Speicherung, signierter Gerätebuild und die echte Dateien-App-/Dokumentanbieter-Abnahme noch erforderlich.
 
 ### Signierung vor einer Tag-Freigabe prüfen
 

@@ -1,4 +1,5 @@
 import { compositedRaster } from "./compositedRaster";
+import { respondToDocumentSwitch } from "./documentSwitch";
 import { menu, closeMenu, tool, viewAction } from "./menus";
 import { test, expect, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
@@ -233,10 +234,10 @@ test("warns before discarding document edits and protects pending property chang
       includeHidden: true,
     }),
   ).toBeDisabled();
-  page.once("dialog", (dialog) => dialog.dismiss());
   await page
     .getByLabel("PDF öffnen", { exact: true })
     .setInputFiles("artifacts/fixture.pdf");
+  await respondToDocumentSwitch(page, false);
   await menu(page, "annotations");
   await expect(
     page.getByLabel("Annotationsinhalt", { exact: true }),
@@ -245,18 +246,18 @@ test("warns before discarding document edits and protects pending property chang
   await expect(
     page.getByText("Ungesicherte Änderungen", { exact: true }),
   ).toBeVisible();
-  page.once("dialog", (dialog) => dialog.dismiss());
   await page
     .getByLabel("PDF öffnen", { exact: true })
     .setInputFiles("artifacts/fixture.pdf");
+  await respondToDocumentSwitch(page, false);
   await menu(page, "annotations");
   await expect(
     page.getByLabel("Annotationsinhalt", { exact: true }),
   ).toHaveValue("Noch nicht übernommen");
-  page.once("dialog", (dialog) => dialog.accept());
   await page
     .getByLabel("PDF öffnen", { exact: true })
     .setInputFiles("artifacts/fixture.pdf");
+  await respondToDocumentSwitch(page, true);
   await expect(
     page
       .locator(".annotation-list button")

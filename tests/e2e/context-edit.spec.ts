@@ -312,6 +312,10 @@ for (const index of [0, 1]) {
       await page
         .getByLabel("PDF öffnen", { exact: true })
         .setInputFiles(redone.path);
+      await expect(page.getByTestId("viewport")).toHaveAttribute(
+        "aria-busy",
+        "false",
+      );
       await expect(
         page.getByLabel("PDF-Seite 1", { exact: true }),
       ).toHaveAttribute("data-rendered", "true");
