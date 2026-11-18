@@ -56,10 +56,6 @@ try {
   $message = $_.Exception.Message.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
   Write-Output "::error title=Windows PDF association::$message"
   throw
-} catch {
-  $detail = $_.Exception.Message.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
-  Write-Output "::error title=Windows PDF association::$detail"
-  throw
 } finally {
   if ($hadDefault) { $classes.SetValue('', $oldDefault, $oldKind) } else { $classes.DeleteValue('', $false) }
   $classes.Dispose()

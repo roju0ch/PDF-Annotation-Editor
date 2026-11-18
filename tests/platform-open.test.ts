@@ -141,6 +141,25 @@ it("subscribes before draining a cold-start PDF and preserves exact multi-chunk 
   expect(host.onError).not.toHaveBeenCalled();
 });
 
+it("does not poll an idle native queue when ordinary view renders resume readiness", async () => {
+  const host = native();
+  const subscription = host.subscribe();
+  await subscription.ready;
+  await Promise.resolve();
+  expect(api.invoke).toHaveBeenCalledExactlyOnceWith(prefix + "next_pdf_open");
+  api.invoke.mockClear();
+  // A new source needs an OS availability notification. Callback/readiness
+  // updates alone must not discover it by polling on every pan/zoom render.
+  host.queue.push(entry());
+  for (let render = 0; render < 100; render++) subscription.resume();
+  await Promise.resolve();
+  expect(api.invoke).not.toHaveBeenCalled();
+  expect(host.onFile).not.toHaveBeenCalled();
+  host.signal();
+  await vi.waitFor(() => expect(host.finished).toEqual([id]));
+  expect(host.onFile).toHaveBeenCalledOnce();
+});
+
 it("handles warm opens in order and coalesces repeated availability events while importing", async () => {
   const host = native();
   host.subscribe();
@@ -189,9 +208,12 @@ it("keeps requests in the native queue while the editor is busy and resumes expl
   await subscription.ready;
   host.signal();
   expect(api.invoke).not.toHaveBeenCalled();
+  for (let render = 0; render < 10; render++) subscription.resume();
+  expect(api.invoke).not.toHaveBeenCalled();
   host.state.busy = false;
-  subscription.wake();
+  subscription.resume();
   await vi.waitFor(() => expect(host.finished).toEqual([id]));
+  expect(host.onFile).toHaveBeenCalledOnce();
 });
 
 it("does not acknowledge when readiness changes during transfer and reuses the bounded File on resume", async () => {
@@ -207,7 +229,7 @@ it("does not acknowledge when readiness changes during transfer and reuses the b
   expect(host.finished).toEqual([]);
   expect(host.onFile).not.toHaveBeenCalled();
   host.state.busy = false;
-  subscription.wake();
+  subscription.resume();
   await vi.waitFor(() => expect(host.finished).toEqual([id]));
   expect(
     api.invoke.mock.calls.filter(
@@ -218,11 +240,17 @@ it("does not acknowledge when readiness changes during transfer and reuses the b
 
 it("keeps a deferred document switch pending and consumes it only after the shared importer handles it", async () => {
   const host = native([entry()]);
-  host.onFile.mockResolvedValueOnce("deferred");
+  host.onFile.mockImplementationOnce(async () => {
+    // A short transaction may complete without React ever observing a busy
+    // render. The retained File must still resume on its next passive effect.
+    host.state.busy = true;
+    host.state.busy = false;
+    return "deferred";
+  });
   const subscription = host.subscribe();
   await vi.waitFor(() => expect(host.onFile).toHaveBeenCalledOnce());
   expect(host.finished).toEqual([]);
-  subscription.wake();
+  subscription.resume();
   await vi.waitFor(() => expect(host.finished).toEqual([id]));
   expect(host.onFile).toHaveBeenCalledTimes(2);
   expect(

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import {
   subscribePdfOpens,
   type PdfOpenOutcome,
@@ -12,10 +12,15 @@ export function usePdfOpen(
 ) {
   const current = useRef({ canOpen, onFile, onError });
   const controller = useRef<ReturnType<typeof subscribePdfOpens> | null>(null);
-  useEffect(() => {
+  useLayoutEffect(() => {
     current.current = { canOpen, onFile, onError };
-    controller.current?.wake();
   }, [canOpen, onFile, onError]);
+  useEffect(() => {
+    // View/annotation renders may update callbacks without a new OS request.
+    // Resume only known pending work, including a transaction that deferred
+    // and became ready again before React rendered the intermediate busy state.
+    controller.current?.resume();
+  });
   useEffect(() => {
     const subscription = subscribePdfOpens({
       canOpen: () => current.current.canOpen,

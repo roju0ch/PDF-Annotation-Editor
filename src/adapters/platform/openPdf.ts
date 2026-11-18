@@ -169,14 +169,27 @@ export function subscribePdfOpens(consumer: Consumer) {
       if (!disposed) consumer.onError(PDF_OPEN_MESSAGES.unavailable);
     } finally {
       active = false;
-      if (requested && !disposed && consumer.canOpen()) wake();
+      if (requested) resume();
     }
+  }
+
+  // A render is only a readiness update, not evidence of a new OS document.
+  // Never poll an idle native queue while zooming, panning or editing.
+  function resume() {
+    if (
+      !disposed &&
+      initialized &&
+      !active &&
+      (requested || pending) &&
+      consumer.canOpen()
+    )
+      void drain();
   }
 
   function wake() {
     if (disposed) return;
     requested = true;
-    if (initialized && !active && consumer.canOpen()) void drain();
+    resume();
   }
 
   const ready = (async () => {
@@ -198,6 +211,7 @@ export function subscribePdfOpens(consumer: Consumer) {
   return {
     ready,
     wake,
+    resume,
     dispose() {
       disposed = true;
       pending = undefined;

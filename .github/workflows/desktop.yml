@@ -65,6 +65,17 @@ jobs:
       APPIMAGE_EXTRACT_AND_RUN: "1"
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Parse Windows integration test script before building
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $nativeTokens = $null
+          $nativeParseErrors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path 'scripts/release/verify-windows-associations.ps1'), [ref]$nativeTokens, [ref]$nativeParseErrors) | Out-Null
+          if ($nativeParseErrors.Count) {
+            foreach ($failure in $nativeParseErrors) { Write-Output ("::error title=Windows test script syntax::{0}" -f $failure.Message) }
+            throw 'Windows integration test script has syntax errors'
+          }
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "24"
