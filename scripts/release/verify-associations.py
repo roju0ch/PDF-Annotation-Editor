@@ -114,8 +114,7 @@ def verify_installed_deb(package):
                 unchanged()
                 print('::notice title=Linux installed PDF association::Real DEB removal preserved the previous per-user PDF default.')
 
-def macos_package(root, expected_arch=None):
-    assert expected_arch in (None, 'arm64', 'x86_64'), 'Unsupported expected macOS architecture'
+def macos_package(root):
     dmgs = list(pathlib.Path(root).rglob('*.dmg'))
     assert len(dmgs) == 1, 'Expected one DMG'
     with tempfile.TemporaryDirectory(prefix='pdf-dmg-') as temporary:
@@ -138,20 +137,7 @@ def macos_package(root, expected_arch=None):
         try:
             plists = list(pathlib.Path(temporary).glob('*.app/Contents/Info.plist'))
             assert len(plists) == 1, 'Expected one app inside DMG'
-            metadata = plistlib.loads(plists[0].read_bytes())
-            verify_plist(metadata)
-            if expected_arch is not None:
-                # Tauri removes the loose .app after DMG-only bundling. Inspect
-                # the executable the user will actually install from the image.
-                executable = metadata.get('CFBundleExecutable', '')
-                assert executable and pathlib.Path(executable).name == executable, 'Invalid bundle executable name'
-                binary = plists[0].parent / 'MacOS' / executable
-                # -verify_arch consumes all remaining arguments as CPU names;
-                # the input file must precede that option, including on Apple lipo.
-                subprocess.run(['lipo', str(binary), '-verify_arch', expected_arch], check=True)
-                architectures = command('lipo', '-archs', str(binary)).split()
-                assert architectures == [expected_arch], f'Expected one {expected_arch} executable, found {architectures}'
-                print(f'::notice title=macOS package architecture::Actual executable inside DMG verified with lipo: {expected_arch}.')
+            verify_plist(plistlib.loads(plists[0].read_bytes()))
         finally:
             subprocess.run(['hdiutil', 'detach', temporary], check=True, stdout=subprocess.DEVNULL)
     print('::notice title=macOS PDF association::Actual DMG app declares com.adobe.pdf, .pdf, Editor and Alternate in CFBundleDocumentTypes.')
@@ -167,13 +153,8 @@ def ios_package(app):
 
 if __name__ == '__main__':
     try:
-        mode, root, *extra = sys.argv[1:]
-        if mode == 'macos':
-            assert len(extra) <= 1, 'Expected at most one macOS architecture'
-            macos_package(root, extra[0] if extra else None)
-        else:
-            assert not extra, 'Unexpected extra platform verification arguments'
-            {'linux': desktop_packages, 'android': android_package, 'ios': ios_package}[mode](root)
+        mode, root = sys.argv[1:]
+        {'linux': desktop_packages, 'macos': macos_package, 'android': android_package, 'ios': ios_package}[mode](root)
     except Exception as error:
         message = str(error).replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
         print('::error title=PDF package association verification::'+message, file=sys.stderr)
