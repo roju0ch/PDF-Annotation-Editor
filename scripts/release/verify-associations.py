@@ -48,7 +48,10 @@ def verify_android_xml(text):
                 assert 'android.intent.category.DEFAULT' in categories, 'PDF handler not available as default choice'
                 assert not schemes or 'content' in schemes, 'PDF handler excludes content URIs'
                 assert activity.get(ANDROID+'exported') == 'true', 'PDF activity not exported'
-                assert activity.get(ANDROID+'launchMode') in {'singleTask', 'singleTop'}, 'Warm PDF opens create unrelated activities'
+                # apkanalyzer decodes AXML enums as integers on some SDKs:
+                # ActivityInfo.LAUNCH_SINGLE_TOP=1, LAUNCH_SINGLE_TASK=2.
+                mode = activity.get(ANDROID+'launchMode')
+                assert mode in {'singleTask', 'singleTop', '1', '2', '0x1', '0x2'}, f'Warm PDF opens create unrelated activities (launchMode={mode})'
                 matches.append(activity.get(ANDROID+'name'))
     assert matches, 'Missing PDF ACTION_VIEW handler'
 

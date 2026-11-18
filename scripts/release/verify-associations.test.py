@@ -33,6 +33,12 @@ class AssociationMetadataTests(unittest.TestCase):
     def test_android_accepts_content_or_mime_only_filters(self):
         a.verify_android_xml(self.manifest())
         a.verify_android_xml(self.manifest(scheme='android:scheme="content"'))
+    def test_android_accepts_decoded_activity_enums_but_rejects_standard_launches(self):
+        for mode in ['singleTop', 'singleTask', '1', '2', '0x1', '0x2']:
+            a.verify_android_xml(self.manifest().replace('launchMode="singleTask"', f'launchMode="{mode}"'))
+        for mode in ['standard', '0', '0x0']:
+            with self.assertRaises(AssertionError):
+                a.verify_android_xml(self.manifest().replace('launchMode="singleTask"', f'launchMode="{mode}"'))
     def test_android_rejects_pdf_mime_outside_view_filter(self):
         with self.assertRaises(AssertionError): a.verify_android_xml(self.manifest(action='SEND'))
     def test_android_requires_default_and_content_uri_support(self):
