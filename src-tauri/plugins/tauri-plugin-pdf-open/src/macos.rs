@@ -161,6 +161,22 @@ async fn on_ui<R: Runtime, T: Send + 'static>(
     .await
 }
 
+/// Tauri holds its plugin-store mutex while invoking `on_event`. Building a
+/// WebView reads that same store to collect its initialization scripts. Hop off
+/// the callback thread before scheduling the UI task: `run_on_main_thread`
+/// alone executes inline when already on the Cocoa thread and would deadlock.
+fn defer<R: Runtime>(
+    app: &AppHandle<R>,
+    action: impl FnOnce(AppHandle<R>) -> Result<(), OpenError> + Send + 'static,
+) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Err(failure) = on_ui(app.clone(), action).await {
+            error(&app, failure);
+        }
+    });
+}
+
 #[tauri::command]
 pub async fn new_pdf_window<R: Runtime>(
     app: AppHandle<R>,
@@ -394,16 +410,23 @@ pub(super) fn setup<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
 pub(super) fn on_event<R: Runtime>(app: &AppHandle<R>, broker: &PdfOpen, event: &tauri::RunEvent) {
     match event {
         tauri::RunEvent::Opened { urls } => {
-            for url in urls {
-                if let Err(failure) = dispatch(app, Source::from_url(url, UrlPolicy::Desktop)) {
-                    error(app, failure);
+            let sources: Vec<_> = urls
+                .iter()
+                .map(|url| Source::from_url(url, UrlPolicy::Desktop))
+                .collect();
+            // Preserve the order within one OS delivery, including multi-file
+            // Finder selections, without creating a thread for every file.
+            defer(app, move |app| {
+                for source in sources {
+                    if let Err(failure) = dispatch(&app, source) {
+                        error(&app, failure);
+                    }
                 }
-            }
+                Ok(())
+            });
         }
         tauri::RunEvent::MenuEvent(event) if event.id().as_ref() == NEW_WINDOW => {
-            if let Err(failure) = create_empty(app) {
-                error(app, failure);
-            }
+            defer(app, |app| create_empty(&app));
         }
         tauri::RunEvent::WindowEvent {
             label,
@@ -422,16 +445,19 @@ pub(super) fn on_event<R: Runtime>(app: &AppHandle<R>, broker: &PdfOpen, event: 
             }
         }
         tauri::RunEvent::Reopen { .. } => {
-            let empty = broker
-                .windows
-                .lock()
-                .map(|windows| windows.routes.is_empty())
-                .unwrap_or(false);
-            if empty {
-                if let Err(failure) = create_empty(app) {
-                    error(app, failure);
+            defer(app, |app| {
+                // Recheck after deferral: a Finder delivery can have created
+                // a document window between Reopen and this UI task.
+                let empty = state(&app)
+                    .windows
+                    .lock()
+                    .map(|windows| windows.routes.is_empty())
+                    .unwrap_or(false);
+                if empty {
+                    create_empty(&app)?;
                 }
-            }
+                Ok(())
+            });
         }
         tauri::RunEvent::Ready => record(app),
         _ => {}
