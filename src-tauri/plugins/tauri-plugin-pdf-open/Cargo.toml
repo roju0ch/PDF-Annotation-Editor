@@ -1,0 +1,25 @@
+[package]
+name = "tauri-plugin-pdf-open"
+version = "0.1.0"
+description = "Bounded operating-system PDF handoff into the existing editor import pipeline"
+license = "AGPL-3.0-only"
+edition = "2021"
+rust-version = "1.77.2"
+links = "tauri-plugin-pdf-open"
+
+[dependencies]
+tauri = { version = "2" }
+serde = { version = "1", features = ["derive"] }
+base64 = "=0.23.1"
+uuid = { version = "=1.29.2", features = ["v4"] }
+url = "=2.5.8"
+fs2 = "=0.4.3"
+
+[target.'cfg(target_os = "android")'.dependencies]
+tauri-plugin-android-bridge = { path = "../tauri-plugin-android-bridge" }
+
+[target.'cfg(target_os = "ios")'.dependencies]
+tauri-plugin-ios-bridge = { path = "../tauri-plugin-ios-bridge" }
+
+[build-dependencies]
+tauri-plugin = { version = "=2.7.2", features = ["build"] }

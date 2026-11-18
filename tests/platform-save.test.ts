@@ -3,6 +3,8 @@ import {
   isAndroidApp,
   savePdf,
   usesNativeSave,
+  supportsPdfSave,
+  PDF_SAVE_UNAVAILABLE,
 } from "../src/adapters/platform/savePdf";
 
 const api = vi.hoisted(() => ({ invoke: vi.fn(), isTauri: vi.fn() }));
@@ -61,6 +63,19 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
   vi.resetAllMocks();
+});
+
+it("does not offer saving in the iOS import prototype or fall back to a WebView download", async () => {
+  const browser = platform(true, "iPhone");
+  vi.stubGlobal("window", { __PDF_IOS_IMPORT_ONLY__: true });
+  expect(supportsPdfSave()).toBe(false);
+  await expect(savePdf(pdf(), "Plan.pdf")).rejects.toThrow(
+    PDF_SAVE_UNAVAILABLE,
+  );
+  expect(api.invoke).not.toHaveBeenCalled();
+  expect(browser.create).not.toHaveBeenCalled();
+  api.isTauri.mockReturnValue(false);
+  expect(supportsPdfSave()).toBe(true);
 });
 
 it("recognizes only native Android and transfers exact bytes as bounded ordered chunks", async () => {

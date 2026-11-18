@@ -38,6 +38,11 @@ class PdfSaveTokenArgs {
     var token: String = ""
 }
 
+@InvokeArg
+class StageIncomingPdfArgs {
+    var uri: String = ""
+}
+
 @TauriPlugin
 class AndroidBridgePlugin(private val activity: Activity) : Plugin(activity) {
     private val reader = ClipboardImageReader(activity.contentResolver)
@@ -45,6 +50,7 @@ class AndroidBridgePlugin(private val activity: Activity) : Plugin(activity) {
     private val reading = AtomicBoolean(false)
     private val systemBarInsets = SystemBarInsets()
     private val pdfSaves = PdfSaveSession(activity.cacheDir, activity.contentResolver)
+    private val pdfImports = IncomingPdfReader(activity.cacheDir, activity.contentResolver)
     private val destroyed = AtomicBoolean(false)
     private data class PendingPdfSave(val token: String, val invoke: Invoke)
     private val pendingPdfSave = AtomicReference<PendingPdfSave?>(null)
@@ -54,6 +60,37 @@ class AndroidBridgePlugin(private val activity: Activity) : Plugin(activity) {
         // than guessing status-bar heights in CSS. Rotation and cutouts dispatch
         // new insets automatically, including landscape side navigation bars.
         systemBarInsets.install(activity.findViewById<View>(android.R.id.content))
+    }
+
+    /** Rust-only command: the native OS-open queue supplies the granted URI.
+     * It is deliberately absent from the JavaScript invoke handler/capabilities.
+     * Tauri/tao delivers both initial ACTION_VIEW and onNewIntent through RunEvent::Opened.
+     */
+    @Command
+    fun stageIncomingPdf(invoke: Invoke) {
+        if (destroyed.get()) {
+            invoke.reject("Das Öffnen der PDF wurde unterbrochen. Bitte die Datei erneut auswählen.", "interrupted")
+            return
+        }
+        try {
+            executor.execute {
+                try {
+                    val args = invoke.parseArgs(StageIncomingPdfArgs::class.java)
+                    val staged = pdfImports.stage(args.uri)
+                    invoke.resolve(JSObject().apply {
+                        put("path", staged.path)
+                        put("fileName", staged.fileName)
+                        put("byteLength", staged.byteLength)
+                    })
+                } catch (error: PdfImportException) {
+                    invoke.reject(error.message, error.code)
+                } catch (_: Exception) {
+                    invoke.reject("Die übergebene PDF konnte nicht gelesen werden. Bitte die Datei erneut über ‚Öffnen mit‘ auswählen.", "unavailable")
+                }
+            }
+        } catch (_: RejectedExecutionException) {
+            invoke.reject("Das Öffnen der PDF wurde unterbrochen. Bitte die Datei erneut auswählen.", "interrupted")
+        }
     }
 
     @Command
@@ -192,6 +229,7 @@ class AndroidBridgePlugin(private val activity: Activity) : Plugin(activity) {
 
     override fun onDestroy(activity: AppCompatActivity) {
         destroyed.set(true)
+        pdfImports.close()
         pdfSaves.close()
         pendingPdfSave.getAndSet(null)?.invoke?.reject("Der Speichervorgang wurde unterbrochen. Die Änderungen bleiben ungesichert.", "unavailable")
         executor.shutdownNow()

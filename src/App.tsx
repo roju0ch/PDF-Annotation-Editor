@@ -15,7 +15,16 @@ import { MenuHeading, Icon, useMenuKeyboard } from "./app/CompactMenu";
 import { AnnotationOverlay } from "./app/AnnotationOverlay";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PdfClient } from "./adapters/pdf/client";
-import { usesNativeSave } from "./adapters/platform/savePdf";
+import {
+  usesNativeSave,
+  supportsPdfSave,
+  PDF_SAVE_UNAVAILABLE,
+} from "./adapters/platform/savePdf";
+import {
+  PDF_OPEN_MESSAGES as messages,
+  type PdfOpenOutcome,
+} from "./adapters/platform/openPdf";
+import { usePdfOpen } from "./app/usePdfOpen";
 import type { PageInfo } from "./adapters/pdf/types";
 import {
   fit,
@@ -27,9 +36,6 @@ import {
 } from "./core/viewport";
 import "./style.css";
 const initial: View = { x: 24, y: 24, scale: 1 };
-const messages = {
-  badFile: "Bitte eine gültige PDF-Datei auswählen (maximal 100 MB).",
-};
 function inputTarget(target: EventTarget | null) {
   return (
     target instanceof HTMLElement &&
@@ -37,12 +43,18 @@ function inputTarget(target: EventTarget | null) {
   );
 }
 export default function App() {
-  const exportLabel = usesNativeSave()
-    ? "PDF speichern unter …"
-    : "PDF herunterladen";
+  const canSave = supportsPdfSave();
+  const exportLabel = !canSave
+    ? PDF_SAVE_UNAVAILABLE
+    : usesNativeSave()
+      ? "PDF speichern unter …"
+      : "PDF herunterladen";
   const stage = useRef<HTMLDivElement>(null),
     client = useRef<PdfClient | null>(null),
     generation = useRef(0);
+  const opening = useRef(false),
+    openSequence = useRef(0),
+    openingClient = useRef<PdfClient | null>(null);
   const cancelPendingPointer = useRef<() => void>(() => {});
   const canvases = useRef(new Map<number, HTMLCanvasElement>());
   const detailLayers = useRef(new Map<number, HTMLDivElement>());
@@ -164,6 +176,8 @@ export default function App() {
   useEffect(
     () => () => {
       generation.current++;
+      openSequence.current++;
+      openingClient.current?.dispose();
       client.current?.dispose();
     },
     [],
@@ -476,58 +490,71 @@ export default function App() {
     });
     setPage(closest);
   }, [view, box, continuous, pages, tops, annotation.formDirty]);
-  async function open(file: File) {
-    if (annotation.busy) {
+  usePdfOpen(!annotation.busy && !loading, open, setError);
+  async function open(file: File): Promise<PdfOpenOutcome> {
+    if (opening.current || !annotation.beginDocumentChange()) {
       setError("Bitte warten, bis die PDF-Verarbeitung abgeschlossen ist.");
-      return;
+      return "deferred";
     }
-    if (
-      annotation.unsaved &&
-      !window.confirm(
-        "Ungesicherte Änderungen verwerfen und eine andere PDF öffnen?",
-      )
-    )
-      return;
-    annotation.reset();
-    const token = ++generation.current;
-    client.current?.dispose();
-    client.current = null;
-    setPages([]);
-    setError("");
-    setLoading(true);
-    setRendering(false);
-    setName("");
+    opening.current = true;
+    const token = ++openSequence.current;
+    let candidate: PdfClient | null = null;
     try {
+      if (
+        annotation.unsaved &&
+        !window.confirm(
+          "Ungesicherte Änderungen verwerfen und eine andere PDF öffnen?",
+        )
+      )
+        return "handled";
+      setError("");
+      setLoading(true);
       if (file.size > 100 * 1024 * 1024 || file.size < 5)
         throw new Error(messages.badFile);
       const data = await file.arrayBuffer();
-      if (token !== generation.current) return;
+      if (token !== openSequence.current) return "handled";
       if (new TextDecoder().decode(data.slice(0, 1024)).indexOf("%PDF-") < 0)
         throw new Error(messages.badFile);
-      const c = new PdfClient();
-      client.current = c;
-      const result = await c.request({ type: "open", data });
-      if (token !== generation.current) return;
-      const infos = result.pages!;
+      candidate = new PdfClient();
+      openingClient.current = candidate;
+      const result = await candidate.request({ type: "open", data });
+      if (token !== openSequence.current) return "handled";
+      const infos = result.pages;
+      if (!infos?.length || !result.editor) throw new Error(messages.badFile);
+      // Commit only after the existing parser has accepted the whole document.
+      // Invalid files leave the old worker, annotations and unsaved edits intact.
+      cancelPendingPointer.current();
+      const previous = client.current;
+      client.current = candidate;
+      candidate = null;
+      openingClient.current = null;
+      generation.current++;
       annotation.reset(result.editor!);
       setPages(infos);
       setName(file.name);
       setPage(0);
       setContinuous(false);
+      setRendering(false);
       updateView(() =>
         fit(infos[0].width, infos[0].height, current.current.box),
       );
+      previous?.dispose();
     } catch (e) {
-      if (token === generation.current) {
+      if (token === openSequence.current) {
         setError(
           e instanceof Error ? e.message : "PDF konnte nicht geöffnet werden.",
         );
-        client.current?.dispose();
-        client.current = null;
       }
     } finally {
-      if (token === generation.current) setLoading(false);
+      candidate?.dispose();
+      if (token === openSequence.current) {
+        openingClient.current = null;
+        opening.current = false;
+        annotation.endDocumentChange();
+        setLoading(false);
+      }
     }
+    return "handled";
   }
   const ready = pages.length > 0;
   return (
@@ -568,7 +595,7 @@ export default function App() {
             popoverTarget="pages-menu"
             aria-label="Seitenübersicht"
             title="Seiten sortieren und PDFs hinzufügen"
-            disabled={!ready}
+            disabled={!ready || loading}
           >
             <Icon name="pages" />
           </button>
@@ -613,6 +640,7 @@ export default function App() {
             aria-label={exportLabel}
             title={exportLabel}
             disabled={
+              !canSave ||
               !ready ||
               annotation.busy ||
               annotation.formDirty ||
@@ -775,6 +803,7 @@ export default function App() {
           data-testid="viewport"
           tabIndex={0}
           aria-label="PDF-Arbeitsfläche"
+          aria-busy={loading}
           onDragOver={(e) => e.preventDefault()}
           onDrop={(e) => {
             e.preventDefault();
@@ -798,6 +827,7 @@ export default function App() {
           )}
           {ready && (
             <div
+              key={generation.current}
               className="world"
               data-testid="world"
               style={{

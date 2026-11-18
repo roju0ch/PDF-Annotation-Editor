@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name={{name}}
+Comment={{comment}}
+Exec={{exec}} %F
+Icon={{icon}}
+Terminal=false
+Categories=Office;Viewer;
+MimeType={{mime_type}};
+StartupNotify=true

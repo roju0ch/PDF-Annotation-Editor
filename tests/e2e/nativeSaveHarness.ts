@@ -4,6 +4,12 @@ import * as mupdf from "mupdf";
 import { tool } from "./menus";
 
 export type Outcome = "saved" | "cancelled" | "failure";
+export type NativeOpenRequest = {
+  id: string;
+  fileName: string;
+  base64: string;
+  error?: { code: string; message: string };
+};
 type SaveTransaction = {
   fileName: string;
   expected: number;
@@ -18,6 +24,13 @@ export type NativeSaveState = {
   workerDirty: boolean | null;
   acknowledgements: number;
   browserDownloads: number;
+  openQueue: NativeOpenRequest[];
+  openCalls: { command: string; id?: string; offset?: number }[];
+  finishedOpens: string[];
+  workerOpens: number;
+  workerExports: number;
+  enqueueOpen: (request: NativeOpenRequest) => void;
+  wakeOpen: () => void;
   failAcknowledgement?: boolean;
   release?: (outcome: Outcome) => void;
 };
@@ -32,9 +45,10 @@ export const errorText = "Kein Schreibzugriff auf das gewählte Dokument.";
  * Native Android ContentResolver and desktop filesystem tests run separately.
  * This bridge does not claim to exercise real operating-system dialogs.
  */
-export type NativePlatform = "android" | "windows" | "macos" | "linux";
+export type NativePlatform = "android" | "ios" | "windows" | "macos" | "linux";
 const agents: Record<NativePlatform, string> = {
   android: "Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36",
+  ios: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15",
   windows: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
   macos: "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15",
   linux: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36",
@@ -43,16 +57,17 @@ export async function nativeSaveBridge(
   page: Page,
   mode: NativeSaveState["mode"],
   platform: NativePlatform = "android",
+  initialOpens: NativeOpenRequest[] = [],
 ) {
   await page.setViewportSize(
-    platform === "android"
+    platform === "android" || platform === "ios"
       ? { width: 390, height: 844 }
       : { width: 1440, height: 900 },
   );
   const namespace = platform === "android" ? "android-bridge" : "desktop-save";
   const userAgent = agents[platform];
   await page.addInitScript(
-    ({ mode, savedName, errorText, namespace, userAgent }) => {
+    ({ mode, savedName, errorText, namespace, userAgent, initialOpens }) => {
       Object.defineProperty(navigator, "userAgent", {
         value: userAgent,
       });
@@ -65,7 +80,36 @@ export async function nativeSaveBridge(
         workerDirty: null,
         acknowledgements: 0,
         browserDownloads: 0,
+        openQueue: initialOpens,
+        openCalls: [],
+        finishedOpens: [],
+        workerOpens: 0,
+        workerExports: 0,
+        enqueueOpen: (request) => {
+          if (!state.openQueue.some((item) => item.id === request.id))
+            state.openQueue.push(request);
+          state.wakeOpen();
+        },
+        wakeOpen: () => {
+          for (const [id, listener] of listeners) {
+            if (listener.event === "pdf-open-available")
+              callbacks.get(listener.handler)?.({
+                event: "pdf-open-available",
+                id,
+                payload: null,
+              });
+          }
+        },
       };
+      const callbacks = new Map<number, (event: unknown) => void>();
+      const listeners = new Map<number, { event: string; handler: number }>();
+      let sequence = 1;
+      Object.defineProperty(globalThis, "__TAURI_EVENT_PLUGIN_INTERNALS__", {
+        value: {
+          unregisterListener: (_event: string, id: number) =>
+            listeners.delete(id),
+        },
+      });
       Object.defineProperty(globalThis, "nativeSaveTest", { value: state });
       const observed = new WeakSet<Worker>();
       const post = Worker.prototype.postMessage;
@@ -83,6 +127,20 @@ export async function nativeSaveBridge(
             },
           );
         }
+        if (
+          message &&
+          typeof message === "object" &&
+          "type" in message &&
+          message.type === "open"
+        )
+          state.workerOpens++;
+        if (
+          message &&
+          typeof message === "object" &&
+          "type" in message &&
+          message.type === "export"
+        )
+          state.workerExports++;
         if (
           message &&
           typeof message === "object" &&
@@ -120,10 +178,68 @@ export async function nativeSaveBridge(
       };
       Object.defineProperty(globalThis, "__TAURI_INTERNALS__", {
         value: {
+          transformCallback: (callback: (event: unknown) => void) => {
+            const id = sequence++;
+            callbacks.set(id, callback);
+            return id;
+          },
           invoke: async (
             command: string,
             args: Record<string, unknown> = {},
           ) => {
+            if (command === "plugin:event|listen") {
+              const id = sequence++;
+              listeners.set(id, {
+                event: String(args.event),
+                handler: Number(args.handler),
+              });
+              return id;
+            }
+            if (command === "plugin:event|unlisten") {
+              listeners.delete(Number(args.eventId));
+              return;
+            }
+            if (command.startsWith("plugin:pdf-open|")) {
+              state.openCalls.push({
+                command,
+                id: typeof args.id === "string" ? args.id : undefined,
+                offset:
+                  typeof args.offset === "number" ? args.offset : undefined,
+              });
+              const request = state.openQueue[0];
+              if (command === "plugin:pdf-open|next_pdf_open") {
+                if (!request) return null;
+                return request.error
+                  ? { id: request.id, error: request.error }
+                  : {
+                      id: request.id,
+                      fileName: request.fileName,
+                      byteLength: atob(request.base64).length,
+                    };
+              }
+              if (!request || args.id !== request.id)
+                throw Error("Unexpected native open transaction");
+              if (command === "plugin:pdf-open|read_pdf_open") {
+                const offset = Number(args.offset);
+                const bytes = atob(request.base64);
+                if (
+                  !Number.isSafeInteger(offset) ||
+                  offset < 0 ||
+                  offset >= bytes.length
+                )
+                  throw Error("Unexpected native open offset");
+                return {
+                  offset,
+                  base64: btoa(bytes.slice(offset, offset + 256 * 1024)),
+                };
+              }
+              if (command === "plugin:pdf-open|finish_pdf_open") {
+                state.finishedOpens.push(request.id);
+                state.openQueue.shift();
+                return;
+              }
+              throw Error("Unexpected native open IPC command");
+            }
             state.calls.push(command);
             if (command === `plugin:${namespace}|begin_pdf_save`) {
               state.transactions.push({
@@ -168,7 +284,7 @@ export async function nativeSaveBridge(
         },
       });
     },
-    { mode, savedName, errorText, namespace, userAgent },
+    { mode, savedName, errorText, namespace, userAgent, initialOpens },
   );
 }
 export async function state(page: Page) {
@@ -181,6 +297,7 @@ export async function state(page: Page) {
       workerDirty: value.workerDirty,
       acknowledgements: value.acknowledgements,
       browserDownloads: value.browserDownloads,
+      workerExports: value.workerExports,
     };
   });
 }

@@ -18,6 +18,13 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 
 tauri-plugin-android-bridge = { path = "plugins/tauri-plugin-android-bridge" }
+tauri-plugin-pdf-open = { path = "plugins/tauri-plugin-pdf-open" }
+
+[target.'cfg(target_os = "ios")'.dependencies]
+tauri-plugin-ios-bridge = { path = "plugins/tauri-plugin-ios-bridge" }
+
+[target.'cfg(any(target_os = "windows", target_os = "linux"))'.dependencies]
+tauri-plugin-single-instance = { version = "=2.5.5" }
 
 [target.'cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))'.dependencies]
 tauri-plugin-desktop-save = { path = "plugins/tauri-plugin-desktop-save" }
