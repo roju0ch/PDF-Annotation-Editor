@@ -116,6 +116,7 @@ impl Source {
             (UrlPolicy::Android, "content") if url.host_str().is_some() => Self::Mobile(raw.into()),
             (UrlPolicy::Ios | UrlPolicy::Android, "file")
                 if url.query().is_none()
+                    && matches!(url.host_str(), None | Some("") | Some("localhost"))
                     && url.to_file_path().is_ok_and(|path| path.is_absolute()) =>
             {
                 Self::Mobile(raw.into())

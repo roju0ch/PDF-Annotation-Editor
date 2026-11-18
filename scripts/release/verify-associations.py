@@ -124,7 +124,9 @@ def macos_package(root):
         for attempt in range(3):
             attached = subprocess.run(
                 ['hdiutil', 'attach', str(dmgs[0].resolve()), '-nobrowse', '-readonly', '-noautoopen', '-mountpoint', temporary],
-                capture_output=True, text=True,
+                # bundle.licenseFile embeds our AGPL license as a DMG SLA.
+                # hdiutil cancels on EOF unless CI answers this license prompt.
+                input='Y\n', capture_output=True, text=True,
             )
             if attached.returncode == 0:
                 break

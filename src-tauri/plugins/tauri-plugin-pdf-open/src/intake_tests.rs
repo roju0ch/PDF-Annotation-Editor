@@ -119,13 +119,15 @@ fn only_local_file_urls_and_android_content_urls_are_accepted() {
         Source::from_url(&file, UrlPolicy::Android),
         Source::Mobile(_)
     ));
-    assert!(matches!(
-        Source::from_url(
-            &Url::parse("file://remote.invalid/Plan.pdf").unwrap(),
-            UrlPolicy::Ios
-        ),
-        Source::Rejected(_)
-    ));
+    for policy in [UrlPolicy::Ios, UrlPolicy::Android] {
+        assert!(matches!(
+            Source::from_url(
+                &Url::parse("file://remote.invalid/Plan.pdf").unwrap(),
+                policy
+            ),
+            Source::Rejected(_)
+        ));
+    }
 }
 
 #[test]
