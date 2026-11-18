@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import unicodedata
 
 
 def escaped(value):
@@ -159,16 +160,21 @@ def run(app):
             actual = value.get("actualWindowLabels", [])
             visible = value.get("visibleWindowLabels", [])
             titles = value.get("windowTitles", {})
+            # macOS filesystem/LaunchServices can return decomposed Unicode
+            # (e.g. u + combining diaeresis) for a name created as precomposed
+            # ü. Compare canonically equivalent text while still requiring the
+            # exact filename, page count, visible native window and own title.
+            expected_name = unicodedata.normalize("NFC", name)
             return [
                 window
                 for window in value.get("windows", [])
-                if window.get("fileName") == name
+                if unicodedata.normalize("NFC", window.get("fileName", "")) == expected_name
                 and window.get("hasDocument") is True
                 and window.get("pageCount") == page_count
                 and window.get("busy") is False
                 and window.get("label") in actual
                 and window.get("label") in visible
-                and name in titles.get(window.get("label"), "")
+                and expected_name in unicodedata.normalize("NFC", titles.get(window.get("label"), ""))
             ]
 
         try:
