@@ -3,8 +3,16 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      arm_cross:
+        description: "Only cross-build an unsigned Apple Silicon DMG on Intel (no ARM runtime test)"
+        type: boolean
+        default: false
   workflow_call:
     inputs:
+      arm_cross:
+        type: boolean
+        default: false
       sign_windows:
         type: boolean
         default: false
@@ -32,6 +40,7 @@ permissions:
   contents: read
 jobs:
   desktop:
+    if: ${{ !inputs.arm_cross }}
     strategy:
       fail-fast: false
       matrix:
@@ -171,6 +180,55 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: installer-${{ matrix.label }}
+          path: release-assets/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+  arm_cross:
+    # Manual capacity fallback; the normal matrix retains native ARM testing.
+    if: inputs.arm_cross
+    runs-on: macos-15-intel
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24"
+          cache: npm
+      - name: Install Apple Silicon cross-compilation target
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add aarch64-apple-darwin
+      - run: npm ci
+      - name: Cross-build ordinary unsigned Apple Silicon DMG
+        run: node scripts/release/run.mjs node node_modules/@tauri-apps/cli/tauri.js build --target aarch64-apple-darwin --bundles dmg -- --locked
+      - name: Verify actual Apple Silicon executable architecture
+        run: |
+          python3 - <<'PY'
+          import pathlib, plistlib, subprocess
+          app = pathlib.Path('src-tauri/target/aarch64-apple-darwin/release/bundle/macos/PDF Viewer.app')
+          metadata = plistlib.loads((app / 'Contents/Info.plist').read_bytes())
+          binary = app / 'Contents/MacOS' / metadata['CFBundleExecutable']
+          subprocess.run(['lipo', '-verify_arch', 'arm64', str(binary)], check=True)
+          architectures = subprocess.check_output(['lipo', '-archs', str(binary)], text=True).split()
+          if architectures != ['arm64']:
+              raise SystemExit(f'Expected one ARM64 executable, found {architectures}')
+          print('::notice title=Apple Silicon cross-build::Actual ARM64 executable verified with lipo. Built on Intel; ARM runtime, native ARM tests and ARM GUI have NOT been executed. No signing, notarization or publication.')
+          PY
+          git diff --exit-code -- src-tauri/Cargo.lock
+      - name: Verify PDF handler metadata in actual DMG
+        run: python3 scripts/release/verify-associations.py macos src-tauri/target/aarch64-apple-darwin/release/bundle
+      - name: Collect Apple Silicon DMG and checksums
+        env:
+          PACKAGE_SIGNING: unsigned-or-ad-hoc
+        run: node scripts/release/collect.mjs src-tauri/target/aarch64-apple-darwin/release/bundle macos-apple-silicon dmg
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: installer-macos-apple-silicon-cross
           path: release-assets/
           if-no-files-found: error
           compression-level: 0
