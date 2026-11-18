@@ -26,6 +26,11 @@ import {
   type PdfOpenOutcome,
 } from "./adapters/platform/openPdf";
 import { usePdfOpen } from "./app/usePdfOpen";
+import { usePdfWindows } from "./app/usePdfWindows";
+import {
+  newPdfWindow,
+  supportsMultiplePdfWindows,
+} from "./adapters/platform/pdfWindows";
 import type { PageInfo } from "./adapters/pdf/types";
 import {
   fit,
@@ -44,6 +49,7 @@ function inputTarget(target: EventTarget | null) {
   );
 }
 export default function App() {
+  const multipleWindows = supportsMultiplePdfWindows();
   const canSave = supportsPdfSave();
   const exportLabel = !canSave
     ? PDF_SAVE_UNAVAILABLE
@@ -127,6 +133,17 @@ export default function App() {
     invalidate,
     setError,
     pagesChanged,
+  );
+  usePdfWindows(
+    {
+      hasDocument: pages.length > 0,
+      unsaved: annotation.unsaved,
+      busy: annotation.busy || loading,
+      fileName: name,
+      pageCount: pages.length,
+    },
+    () => discard.request("close"),
+    setError,
   );
   const { escape: escapeEditor, contextMenu } = annotation;
   const escape = useCallback(
@@ -655,6 +672,25 @@ export default function App() {
         aria-label="Ansicht und Navigation"
       >
         <MenuHeading target="view-menu">Ansicht und Navigation</MenuHeading>
+        {multipleWindows && (
+          <div className="menu-row">
+            <button
+              onClick={() => {
+                document.getElementById("view-menu")?.hidePopover();
+                void newPdfWindow().catch((failure: unknown) =>
+                  setError(
+                    failure instanceof Error
+                      ? failure.message
+                      : "Ein weiteres PDF-Fenster konnte nicht geöffnet werden.",
+                  ),
+                );
+              }}
+              title="Neues PDF-Fenster (⌘N)"
+            >
+              Neues Fenster
+            </button>
+          </div>
+        )}
         <div className="menu-row">
           <button
             disabled={!ready || annotation.formDirty || page === 0}

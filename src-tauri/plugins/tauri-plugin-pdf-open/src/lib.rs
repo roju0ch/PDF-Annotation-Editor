@@ -1,5 +1,11 @@
 mod cache;
 mod intake;
+#[cfg(target_os = "macos")]
+mod macos;
+#[cfg(all(target_os = "macos", feature = "native-window-tests"))]
+mod probe;
+#[cfg(any(target_os = "macos", test))]
+mod routing;
 
 use base64::{engine::general_purpose::STANDARD, Engine};
 use intake::{Descriptor, Document, OpenError, Queue, Source};
@@ -11,7 +17,7 @@ use std::{
 };
 use tauri::{
     plugin::{Builder, TauriPlugin},
-    AppHandle, Emitter, Manager, Runtime,
+    AppHandle, Emitter, Manager, Runtime, WebviewWindow,
 };
 
 const AVAILABLE: &str = "pdf-open-available";
@@ -22,28 +28,51 @@ struct Backend {
     queue: Queue,
     cache: Option<cache::CacheInstance>,
     processing: bool,
+    closed: bool,
 }
 
-/// Created before single-instance setup, so an extremely early second launch
-/// can already enqueue its documents before the main WebView exists.
-#[derive(Clone, Default)]
-pub struct PdfOpen(Arc<Mutex<Backend>>);
+#[derive(Clone)]
+struct Session {
+    label: String,
+    backend: Arc<Mutex<Backend>>,
+}
 
-impl PdfOpen {
+impl Session {
+    fn new(label: &str) -> Self {
+        Self {
+            label: label.into(),
+            backend: Arc::default(),
+        }
+    }
+
+    fn close(&self) {
+        if let Ok(mut backend) = self.backend.lock() {
+            backend.closed = true;
+            backend.queue = Queue::default();
+            // An active worker retains its cache until its current bounded I/O
+            // has returned and all file handles can be closed on Windows too.
+            if !backend.processing {
+                backend.cache = None;
+            }
+        }
+    }
     fn push<R: Runtime>(&self, app: &AppHandle<R>, source: Source) {
-        if let Ok(mut backend) = self.0.lock() {
+        if let Ok(mut backend) = self.backend.lock() {
+            if backend.closed {
+                return;
+            }
             backend.queue.push(source, Instant::now());
         }
         // Payloads never contain a private path, URI, or document content.
-        let _ = app.emit_to("main", AVAILABLE, ());
+        let _ = app.emit_to(&self.label, AVAILABLE, ());
         self.kick(app);
     }
 
     fn kick<R: Runtime>(&self, app: &AppHandle<R>) {
-        let Ok(mut backend) = self.0.lock() else {
+        let Ok(mut backend) = self.backend.lock() else {
             return;
         };
-        if backend.processing {
+        if backend.processing || backend.closed {
             return;
         }
         backend.processing = true;
@@ -54,15 +83,59 @@ impl PdfOpen {
             let result = process(&handle, &queue).await;
             if result.is_err() {
                 let mut notify = false;
-                if let Ok(mut backend) = queue.0.lock() {
+                if let Ok(mut backend) = queue.backend.lock() {
                     notify = backend.queue.fail_pending(OpenError::unavailable());
                     backend.processing = false;
+                    if backend.closed {
+                        backend.cache = None;
+                    }
                 }
                 if notify {
-                    let _ = handle.emit_to("main", AVAILABLE, ());
+                    let _ = handle.emit_to(&queue.label, AVAILABLE, ());
                 }
             }
         });
+    }
+}
+
+/// Created before single-instance setup, so an extremely early second launch
+/// can enqueue documents before the main WebView exists. Each macOS document
+/// owns its own Session; the other platforms keep their existing main session.
+#[derive(Clone)]
+pub struct PdfOpen {
+    main: Session,
+    #[cfg(target_os = "macos")]
+    windows: Arc<Mutex<macos::Windows>>,
+}
+
+impl Default for PdfOpen {
+    fn default() -> Self {
+        let main = Session::new("main");
+        Self {
+            #[cfg(target_os = "macos")]
+            windows: Arc::new(Mutex::new(macos::Windows::new(main.clone()))),
+            main,
+        }
+    }
+}
+
+impl PdfOpen {
+    fn session(&self, label: &str) -> Result<Session, OpenError> {
+        #[cfg(target_os = "macos")]
+        {
+            self.windows
+                .lock()
+                .map_err(|_| OpenError::unavailable())?
+                .session(label)
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            if label == "main" {
+                Ok(self.main.clone())
+            } else {
+                Err(OpenError::invalid())
+            }
+        }
     }
 
     /// `arguments` includes argv[0], as supplied by std and the official plugin.
@@ -82,20 +155,18 @@ impl PdfOpen {
             if !positional && argument.starts_with('-') {
                 continue;
             }
-            self.push(app, Source::from_argument(&argument, cwd));
+            self.main.push(app, Source::from_argument(&argument, cwd));
         }
     }
 
-    #[cfg(any(target_os = "macos", target_os = "android", target_os = "ios"))]
+    #[cfg(any(target_os = "android", target_os = "ios"))]
     fn urls<R: Runtime>(&self, app: &AppHandle<R>, urls: &[url::Url]) {
-        #[cfg(target_os = "macos")]
-        let policy = intake::UrlPolicy::Desktop;
         #[cfg(target_os = "android")]
         let policy = intake::UrlPolicy::Android;
         #[cfg(target_os = "ios")]
         let policy = intake::UrlPolicy::Ios;
         for url in urls {
-            self.push(app, Source::from_url(url, policy));
+            self.main.push(app, Source::from_url(url, policy));
         }
     }
 }
@@ -113,14 +184,17 @@ async fn io<T: Send + 'static>(
 }
 
 #[tauri::command]
-async fn next_pdf_open<R: Runtime>(app: AppHandle<R>) -> Result<Option<Descriptor>, OpenError> {
-    let state = state(&app);
+async fn next_pdf_open<R: Runtime>(
+    app: AppHandle<R>,
+    window: WebviewWindow<R>,
+) -> Result<Option<Descriptor>, OpenError> {
+    let state = state(&app).session(window.label())?;
     state.kick(&app);
-    let guard = state.0.lock().map_err(|_| OpenError::unavailable())?;
+    let guard = state.backend.lock().map_err(|_| OpenError::unavailable())?;
     Ok(guard.queue.next())
 }
 
-async fn process<R: Runtime>(app: &AppHandle<R>, state: &PdfOpen) -> Result<(), OpenError> {
+async fn process<R: Runtime>(app: &AppHandle<R>, state: &Session) -> Result<(), OpenError> {
     let app_cache = app
         .path()
         .app_cache_dir()
@@ -129,7 +203,15 @@ async fn process<R: Runtime>(app: &AppHandle<R>, state: &PdfOpen) -> Result<(), 
         let preparing = state.clone();
         let cache_root = app_cache.clone();
         let work = io(move || {
-            let mut guard = preparing.0.lock().map_err(|_| OpenError::unavailable())?;
+            let mut guard = preparing
+                .backend
+                .lock()
+                .map_err(|_| OpenError::unavailable())?;
+            if guard.closed {
+                guard.processing = false;
+                guard.cache = None;
+                return Ok(None);
+            }
             if guard.cache.is_none() {
                 // This serial worker owns all mobile staging. Startup cleanup
                 // always finishes before a native URI reader is invoked.
@@ -168,15 +250,17 @@ async fn process<R: Runtime>(app: &AppHandle<R>, state: &PdfOpen) -> Result<(), 
         };
         let completing = state.clone();
         io(move || {
-            completing
-                .0
+            let mut backend = completing
+                .backend
                 .lock()
-                .map_err(|_| OpenError::unavailable())?
-                .queue
-                .complete(&claim.id, result)
+                .map_err(|_| OpenError::unavailable())?;
+            if backend.closed {
+                return Ok(());
+            }
+            backend.queue.complete(&claim.id, result)
         })
         .await?;
-        let _ = app.emit_to("main", AVAILABLE, ());
+        let _ = app.emit_to(&state.label, AVAILABLE, ());
     }
 }
 
@@ -223,13 +307,14 @@ struct Chunk {
 #[tauri::command]
 async fn read_pdf_open<R: Runtime>(
     app: AppHandle<R>,
+    window: WebviewWindow<R>,
     id: String,
     offset: usize,
 ) -> Result<Chunk, OpenError> {
-    let state = state(&app);
+    let state = state(&app).session(window.label())?;
     io(move || {
         let bytes = state
-            .0
+            .backend
             .lock()
             .map_err(|_| OpenError::unavailable())?
             .queue
@@ -243,33 +328,53 @@ async fn read_pdf_open<R: Runtime>(
 }
 
 #[tauri::command]
-async fn finish_pdf_open<R: Runtime>(app: AppHandle<R>, id: String) -> Result<(), OpenError> {
-    let state = state(&app);
+async fn finish_pdf_open<R: Runtime>(
+    app: AppHandle<R>,
+    window: WebviewWindow<R>,
+    id: String,
+) -> Result<(), OpenError> {
+    let state = state(&app).session(window.label())?;
     let waking = state.clone();
     io(move || {
         state
-            .0
+            .backend
             .lock()
             .map_err(|_| OpenError::unavailable())?
             .queue
             .finish(&id, Instant::now())
     })
     .await?;
-    let _ = app.emit_to("main", AVAILABLE, ());
+    #[cfg(target_os = "macos")]
+    macos::release(&app, window.label());
+    let _ = app.emit_to(&waking.label, AVAILABLE, ());
     waking.kick(&app);
     Ok(())
 }
 
 pub fn init<R: Runtime>(queue: PdfOpen) -> TauriPlugin<R> {
     let setup_queue = queue.clone();
-    let builder = Builder::new("pdf-open")
-        .invoke_handler(tauri::generate_handler![
-            next_pdf_open,
-            read_pdf_open,
-            finish_pdf_open
-        ])
+    let builder = Builder::new("pdf-open");
+    #[cfg(target_os = "macos")]
+    let builder = builder.invoke_handler(tauri::generate_handler![
+        next_pdf_open,
+        read_pdf_open,
+        finish_pdf_open,
+        macos::new_pdf_window,
+        macos::report_window_state,
+        macos::close_pdf_window,
+        macos::cancel_window_close,
+    ]);
+    #[cfg(not(target_os = "macos"))]
+    let builder = builder.invoke_handler(tauri::generate_handler![
+        next_pdf_open,
+        read_pdf_open,
+        finish_pdf_open
+    ]);
+    let builder = builder
         .setup(move |app, _| {
             app.manage(setup_queue.clone());
+            #[cfg(target_os = "macos")]
+            macos::setup(app)?;
             #[cfg(any(target_os = "windows", target_os = "linux"))]
             setup_queue.arguments(
                 app,
@@ -278,13 +383,103 @@ pub fn init<R: Runtime>(queue: PdfOpen) -> TauriPlugin<R> {
             );
             Ok(())
         })
-        .on_event(move |_app, _event| {
-            #[cfg(any(target_os = "macos", target_os = "android", target_os = "ios"))]
-            if let tauri::RunEvent::Opened { urls } = _event {
-                queue.urls(_app, urls);
+        .on_event(move |app, event| {
+            #[cfg(target_os = "macos")]
+            macos::on_event(app, &queue, event);
+            #[cfg(any(target_os = "android", target_os = "ios"))]
+            if let tauri::RunEvent::Opened { urls } = event {
+                queue.urls(app, urls);
             }
+            #[cfg(not(any(target_os = "macos", target_os = "android", target_os = "ios")))]
+            let _ = (app, event, &queue);
         });
     #[cfg(target_os = "ios")]
     let builder = builder.js_init_script("Object.defineProperty(window, '__PDF_IOS_IMPORT_ONLY__', { value: true, writable: false, configurable: false });");
+    #[cfg(target_os = "macos")]
+    let builder = builder.js_init_script("Object.defineProperty(window, '__PDF_MULTI_WINDOW__', { value: true, writable: false, configurable: false });");
     builder.build()
+}
+
+#[cfg(test)]
+mod session_tests {
+    use super::*;
+
+    struct Fixture(PathBuf);
+    impl Fixture {
+        fn new() -> Self {
+            let path =
+                std::env::temp_dir().join(format!("pdf-window-session-{}", uuid::Uuid::new_v4()));
+            std::fs::create_dir(&path).unwrap();
+            Self(path)
+        }
+        fn stage(&self, session: &Session, name: &str, bytes: &[u8]) -> String {
+            let source = self.0.join(name);
+            std::fs::write(&source, bytes).unwrap();
+            let directory = self.0.join(&session.label);
+            std::fs::create_dir(&directory).unwrap();
+            let mut backend = session.backend.lock().unwrap();
+            backend.queue.push(Source::Local(source), Instant::now());
+            let claim = backend.queue.claim().unwrap();
+            let document = Document::stage(
+                match &claim.source {
+                    Ok(Source::Local(path)) => path,
+                    _ => panic!("expected file"),
+                },
+                &directory,
+            )
+            .unwrap();
+            backend.queue.complete(&claim.id, Ok(document)).unwrap();
+            claim.id
+        }
+    }
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn caller_sessions_cannot_read_or_acknowledge_another_windows_document() {
+        let fixture = Fixture::new();
+        let first = Session::new("first");
+        let second = Session::new("second");
+        let first_id = fixture.stage(&first, "first.pdf", b"%PDF-first");
+        let second_id = fixture.stage(&second, "second.pdf", b"%PDF-second");
+        {
+            let mut owner = first.backend.lock().unwrap();
+            assert!(owner.queue.read(&second_id, 0).is_err());
+            assert!(owner.queue.finish(&second_id, Instant::now()).is_err());
+            assert_eq!(owner.queue.read(&first_id, 0).unwrap(), b"%PDF-first");
+        }
+        let mut owner = second.backend.lock().unwrap();
+        assert!(owner.queue.read(&first_id, 0).is_err());
+        assert_eq!(owner.queue.read(&second_id, 0).unwrap(), b"%PDF-second");
+    }
+
+    #[test]
+    fn closing_one_session_cleans_only_its_private_copy_and_other_viewer_remains_usable() {
+        let fixture = Fixture::new();
+        let first = Session::new("first");
+        let second = Session::new("second");
+        fixture.stage(&first, "first.pdf", b"%PDF-first");
+        let other_id = fixture.stage(&second, "second.pdf", b"%PDF-second");
+        first.close();
+        assert!(first.backend.lock().unwrap().closed);
+        assert!(first.backend.lock().unwrap().queue.next().is_none());
+        assert_eq!(
+            std::fs::read_dir(fixture.0.join("first")).unwrap().count(),
+            0
+        );
+        let mut other = second.backend.lock().unwrap();
+        assert_eq!(other.queue.read(&other_id, 0).unwrap(), b"%PDF-second");
+        other.queue.finish(&other_id, Instant::now()).unwrap();
+        assert_eq!(
+            std::fs::read(fixture.0.join("first.pdf")).unwrap(),
+            b"%PDF-first"
+        );
+        assert_eq!(
+            std::fs::read(fixture.0.join("second.pdf")).unwrap(),
+            b"%PDF-second"
+        );
+    }
 }

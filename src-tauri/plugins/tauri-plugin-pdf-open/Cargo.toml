@@ -7,9 +7,13 @@ edition = "2021"
 rust-version = "1.77.2"
 links = "tauri-plugin-pdf-open"
 
+[features]
+native-window-tests = ["dep:serde_json"]
+
 [dependencies]
 tauri = { version = "2" }
 serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", optional = true }
 base64 = "=0.23.1"
 uuid = { version = "=1.29.2", features = ["v4"] }
 url = "=2.5.8"

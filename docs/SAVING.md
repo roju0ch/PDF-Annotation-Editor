@@ -10,6 +10,8 @@ Android nutzt das Storage Access Framework (`ACTION_CREATE_DOCUMENT`) und den vo
 
 Die Desktop-Apps verwenden einen nativen Dateidialog und einen eigenen begrenzten Speicherpfad. Die Ausgabe wird zunächst in einer temporären Datei neben dem gewählten Ziel geschrieben und überprüft, bevor sie an dessen Stelle tritt. JavaScript erhält keine allgemeinen Dateisystemrechte. Ein bewusst gewähltes bestehendes Ziel ist vom automatischen Überschreiben der Quelldatei zu unterscheiden; die Auswahl und die Überschreibentscheidung gehören zum Systemdialog.
 
+Die Mac-Mehrfensterfunktion verwendet getrennte native Speichertransaktionen je tatsächlichem Aufruffenster. Zwei Fenster können unterschiedliche PDFs vorbereiten; Token, Dateidialog und Bestätigung dürfen nicht zwischen ihnen vermischt werden. Das Schließen eines Fensters verwirft nur dessen temporäre Transaktion; eine verspätete Antwort darf keine andere PDF schreiben. [Mehrfenster-Bedienung](MULTIPLE_WINDOWS.md).
+
 ## iOS-Simulatorprototyp
 
 Der neue iOS-Build dient zunächst dem Öffnen externer PDFs und der Simulatorprüfung. Ein nativer iOS-Speicherweg ist noch nicht vorhanden. Der Speicherknopf ist dort ausdrücklich deaktiviert; auch das Tastaturkürzel behauptet keinen Export. Die Android-, Desktop- und Browser-Speicherwege bleiben erhalten. Dieser Prototyp eignet sich noch nicht zur produktiven Bearbeitung mit anschließender Speicherung auf iPhone/iPad. [Dateizuordnung und Signierungsgrenzen](FILE_ASSOCIATIONS.md).

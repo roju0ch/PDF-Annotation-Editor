@@ -49,6 +49,8 @@ Anschließend muss der Desktop die neue Datei erkennen; gegebenenfalls ab- und a
 
 Der App-Bundle deklariert den PDF-Dokumenttyp mit `CFBundleDocumentTypes`, Rolle `Editor` und Rang `Alternate`. Finder beziehungsweise Launch Services übergeben Dokumente beim Kaltstart und an die laufende App. Ein App-Start allein ändert keinen Standard.
 
+Auf macOS öffnet eine weitere Finder-PDF ein eigenes Fenster; bereits offene Dokumente bleiben erhalten. **Datei → Neues Fenster / ⌘N** erzeugt ein leeres Fenster. Ein Austausch über **PDF öffnen** innerhalb desselben Fensters fragt weiterhin nach ungesicherten Änderungen. [Mehrfenster-Bedienung und Abnahme](MULTIPLE_WINDOWS.md).
+
 ## Android
 
 1. Die APK installieren. Temporär signierte Builds erscheinen als **PDF Viewer Test** und können neben der Haupt-App installiert bleiben.

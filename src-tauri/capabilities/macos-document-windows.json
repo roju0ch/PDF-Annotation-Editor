@@ -1,0 +1,22 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "macos-document-windows",
+  "description": "Local macOS PDF document windows consume and save only their own native transactions.",
+  "platforms": ["macOS"],
+  "windows": ["main", "pdf-*"],
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "pdf-open:allow-next-pdf-open",
+    "pdf-open:allow-read-pdf-open",
+    "pdf-open:allow-finish-pdf-open",
+    "pdf-open:allow-new-pdf-window",
+    "pdf-open:allow-report-window-state",
+    "pdf-open:allow-close-pdf-window",
+    "pdf-open:allow-cancel-window-close",
+    "desktop-save:allow-begin-pdf-save",
+    "desktop-save:allow-append-pdf-save",
+    "desktop-save:allow-finish-pdf-save",
+    "desktop-save:allow-abort-pdf-save"
+  ]
+}

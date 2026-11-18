@@ -13,6 +13,7 @@ type PendingDecision = {
   resolve: (discard: boolean) => void;
   focus: HTMLElement | null;
 };
+export type DocumentDiscardAction = "open" | "close";
 
 /** A shared app modal also works in WebViews without JavaScript confirm UI. */
 export function useDocumentDiscardDialog(
@@ -20,7 +21,8 @@ export function useDocumentDiscardDialog(
 ) {
   const pending = useRef<PendingDecision | null>(null);
   const [open, setOpen] = useState(false);
-  const request = useCallback(() => {
+  const [action, setAction] = useState<DocumentDiscardAction>("open");
+  const request = useCallback((nextAction: DocumentDiscardAction = "open") => {
     if (pending.current) return pending.current.promise;
     let resolve!: (discard: boolean) => void;
     const promise = new Promise<boolean>((answer) => {
@@ -34,6 +36,7 @@ export function useDocumentDiscardDialog(
           ? document.activeElement
           : null,
     };
+    setAction(nextAction);
     setOpen(true);
     return promise;
   }, []);
@@ -62,6 +65,7 @@ export function useDocumentDiscardDialog(
     dialog: (
       <DocumentDiscardDialog
         open={open}
+        action={action}
         onDecision={decide}
         focusTarget={focusTarget}
         returnFocus={returnFocus}
@@ -72,11 +76,13 @@ export function useDocumentDiscardDialog(
 
 function DocumentDiscardDialog({
   open,
+  action,
   onDecision,
   focusTarget,
   returnFocus,
 }: {
   open: boolean;
+  action: DocumentDiscardAction;
   onDecision: (discard: boolean) => void;
   focusTarget: () => HTMLElement | null;
   returnFocus: RefObject<HTMLDivElement | null>;
@@ -146,14 +152,18 @@ function DocumentDiscardDialog({
     >
       <h2 id={title}>Ungesicherte Änderungen</h2>
       <p id={description}>
-        Ungesicherte Änderungen verwerfen und eine andere PDF öffnen?
+        {action === "close"
+          ? "Ungesicherte Änderungen verwerfen und dieses Fenster schließen?"
+          : "Ungesicherte Änderungen verwerfen und eine andere PDF öffnen?"}
       </p>
       <div className="document-discard-actions">
         <button ref={cancel} type="button" onClick={() => onDecision(false)}>
           Abbrechen
         </button>
         <button type="button" onClick={() => onDecision(true)}>
-          Verwerfen und öffnen
+          {action === "close"
+            ? "Verwerfen und schließen"
+            : "Verwerfen und öffnen"}
         </button>
       </div>
     </dialog>
