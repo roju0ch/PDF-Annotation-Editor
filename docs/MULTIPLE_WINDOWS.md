@@ -32,6 +32,8 @@ Automatisierte Browser-Tests verwenden unabhängige Seiten mit echten PDF-Worker
 
 Die macOS-CI baut zunächst das reguläre DMG. Ein separat mit einer Testfunktion gebauter App-Bundle dient danach dem echten macOS-Fenstertest: Zwei synthetische PDFs werden über Launch Services geöffnet; dieselbe App muss zwei tatsächliche WebViews mit den richtigen, vom PDF-Worker gelesenen Dokumenten melden. Die ausschließlich dafür kompilierte lokale Diagnosefunktion gehört nicht zum ausgelieferten DMG. Signierte Release-Probeläufe verwenden diese Diagnose-App nicht. Tatsächliche Ergebnisse und Paket-Links stehen im Pull Request.
 
+Intel wird auf macOS 15, Apple Silicon auf macOS 26 geprüft. Der ARM-Runner wurde nach kapazitätsbedingten Abbrüchen im älteren GitHub-Pool aktualisiert; auch der bestehende iOS-Simulator-Build verwendet das aktuelle ARM-Image. Das ändert nicht die konfigurierte Mindestversion der installierten App. Die Diagnose liest native Fenstertitel nach deren asynchroner Cocoa-Aktualisierung erneut; sie setzt keine Titel selbst und schwächt die externen Prüfkriterien nicht ab.
+
 Auf einem echten Mac zusätzlich prüfen:
 
 1. Zwei unterschiedliche PDFs aus dem Finder öffnen und beide gleichzeitig sehen.

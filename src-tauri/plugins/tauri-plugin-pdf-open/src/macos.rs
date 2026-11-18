@@ -467,33 +467,53 @@ pub(super) fn on_event<R: Runtime>(app: &AppHandle<R>, broker: &PdfOpen, event: 
 fn record<R: Runtime>(app: &AppHandle<R>) {
     #[cfg(feature = "native-window-tests")]
     {
+        if !super::probe::enabled() {
+            return;
+        }
         // Finish/ACK can arrive on a runtime worker. Do not hold the probe's
         // writer lock there while synchronously querying Cocoa: a UI-thread
         // report could otherwise wait for that lock while the worker waits
-        // for Cocoa. Serialize the complete snapshot on the UI thread.
+        // for Cocoa. Always enqueue the complete snapshot from a worker.
+        // Tao also applies set_title asynchronously on the Cocoa dispatch
+        // queue, separately from Tauri's event queue. Retry a bounded number
+        // of times until the actual native titles have caught up; recording
+        // inline can otherwise leave CI with a permanently stale last report.
         let handle = app.clone();
-        let _ = app.run_on_main_thread(move || {
-            super::probe::record(&handle, || {
-                let broker = state(&handle);
-                let Ok(windows) = broker.windows.lock() else {
-                    return serde_json::json!({ "windows": [] });
-                };
-                let reports: Vec<_> = windows
-                    .routes
-                    .labels()
-                    .iter()
-                    .filter_map(|label| {
-                        windows.routes.window_report(label).map(|report| {
-                            serde_json::json!({
-                                "label": label, "fileName": report.file_name,
-                                "hasDocument": report.has_document, "unsaved": report.unsaved,
-                                "busy": report.busy, "pageCount": report.page_count,
+        tauri::async_runtime::spawn(async move {
+            for attempt in 0..40 {
+                let settled = on_ui(handle.clone(), |app| {
+                    Ok(super::probe::record(&app, || {
+                        let broker = state(&app);
+                        let Ok(windows) = broker.windows.lock() else {
+                            return serde_json::json!({ "windows": [] });
+                        };
+                        let reports: Vec<_> = windows
+                            .routes
+                            .labels()
+                            .iter()
+                            .filter_map(|label| {
+                                windows.routes.window_report(label).map(|report| {
+                                    serde_json::json!({
+                                        "label": label, "fileName": report.file_name,
+                                        "hasDocument": report.has_document, "unsaved": report.unsaved,
+                                        "busy": report.busy, "pageCount": report.page_count,
+                                    })
+                                })
                             })
-                        })
-                    })
-                    .collect();
-                serde_json::json!({ "windows": reports })
-            });
+                            .collect();
+                        serde_json::json!({ "windows": reports })
+                    }))
+                })
+                .await;
+                if !matches!(settled, Ok(false)) || attempt == 39 {
+                    break;
+                }
+                let _ = io(|| {
+                    std::thread::sleep(std::time::Duration::from_millis(50));
+                    Ok(())
+                })
+                .await;
+            }
         });
     }
     #[cfg(not(feature = "native-window-tests"))]

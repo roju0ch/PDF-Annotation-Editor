@@ -51,7 +51,9 @@ jobs:
             label: macos-intel
             bundles: dmg
             formats: dmg
-          - os: macos-15
+          # Keep Intel on macOS 15; use the current ARM image. The older ARM
+          # pool has cancelled jobs without acquiring a runner (capacity).
+          - os: macos-26
             target: aarch64-apple-darwin
             label: macos-apple-silicon
             bundles: dmg
