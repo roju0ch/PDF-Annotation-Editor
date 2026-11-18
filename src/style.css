@@ -738,6 +738,43 @@ header .tool-button[aria-pressed="true"] {
 .free-text-dialog::backdrop {
   background: #132b3866;
 }
+.document-discard-dialog {
+  width: min(
+    420px,
+    calc(100vw - 32px - var(--app-safe-area-left) - var(--app-safe-area-right))
+  );
+  max-height: calc(
+    100dvh - 32px - var(--app-safe-area-top) - var(--app-safe-area-bottom)
+  );
+  padding: 14px;
+  overflow: auto;
+  border: 1px solid #bccdcc;
+  border-radius: 10px;
+  color: #192b32;
+  background: #fbfdfc;
+  box-shadow: 0 12px 40px #17343b40;
+  font-size: 13px;
+}
+.document-discard-dialog::backdrop {
+  background: #132b3866;
+}
+.document-discard-dialog h2 {
+  margin: 0;
+  font-size: 16px;
+}
+.document-discard-dialog p {
+  margin: 10px 0 14px;
+  line-height: 1.45;
+}
+.document-discard-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.document-discard-actions button {
+  min-height: 44px;
+}
 .free-text-form {
   display: flex;
   flex-direction: column;

@@ -5,6 +5,7 @@ import plistlib
 import subprocess
 import sys
 import tempfile
+import time
 import xml.etree.ElementTree as ET
 
 ANDROID = '{http://schemas.android.com/apk/res/android}'
@@ -114,7 +115,20 @@ def macos_package(root):
     dmgs = list(pathlib.Path(root).rglob('*.dmg'))
     assert len(dmgs) == 1, 'Expected one DMG'
     with tempfile.TemporaryDirectory(prefix='pdf-dmg-') as temporary:
-        subprocess.run(['hdiutil', 'attach', str(dmgs[0].resolve()), '-nobrowse', '-readonly', '-mountpoint', temporary], check=True, stdout=subprocess.DEVNULL)
+        # The bundler has just detached this image. DiskImages/Spotlight can
+        # briefly retain its device on hosted macOS runners; retry and expose
+        # the actual tool diagnostic rather than only its exit status.
+        for attempt in range(3):
+            attached = subprocess.run(
+                ['hdiutil', 'attach', str(dmgs[0].resolve()), '-nobrowse', '-readonly', '-noautoopen', '-mountpoint', temporary],
+                capture_output=True, text=True,
+            )
+            if attached.returncode == 0:
+                break
+            if attempt < 2:
+                time.sleep(2)
+        else:
+            raise RuntimeError('Cannot inspect actual DMG: ' + (attached.stderr or attached.stdout).strip()[-3000:])
         try:
             plists = list(pathlib.Path(temporary).glob('*.app/Contents/Info.plist'))
             assert len(plists) == 1, 'Expected one app inside DMG'

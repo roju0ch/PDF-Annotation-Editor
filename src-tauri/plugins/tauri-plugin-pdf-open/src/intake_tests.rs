@@ -109,7 +109,8 @@ fn only_local_file_urls_and_android_content_urls_are_accepted() {
         Source::from_url(&content, UrlPolicy::Ios),
         Source::Rejected(_)
     ));
-    let file = Url::parse("file:///tmp/Plan%20S%C3%BCd.pdf").unwrap();
+    let directory = Directory::new();
+    let file = Url::from_file_path(directory.path("Plan Süd.pdf")).unwrap();
     assert!(matches!(
         Source::from_url(&file, UrlPolicy::Ios),
         Source::Mobile(_)

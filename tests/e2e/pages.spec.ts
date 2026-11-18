@@ -1,4 +1,5 @@
 import { compositedRaster } from "./compositedRaster";
+import { respondToDocumentSwitch } from "./documentSwitch";
 import { test, expect, type Page } from "@playwright/test";
 import { readFile, writeFile } from "node:fs/promises";
 import * as m from "mupdf";
@@ -203,7 +204,6 @@ test("append, keyboard move, invalid PDF rejection, and bounded thumbnails for l
   await expect(page.locator("#pages-menu h2")).toHaveText("Seiten · 5");
   await closeMenu(page);
   await page.getByRole("button", { name: "Meldung schließen" }).click();
-  page.once("dialog", (dialog) => void dialog.accept());
   await page
     .getByLabel("PDF öffnen", { exact: true })
     .setInputFiles("artifacts/pages-many.pdf");
@@ -271,10 +271,10 @@ test("mobile long-press drag, scrolling and cancellation", async ({
     .poll(() => ids(page))
     .toEqual([original[1], original[0], original[2]]);
   await closeMenu(page);
-  page.once("dialog", (dialog) => void dialog.accept());
   await page
     .getByLabel("PDF öffnen", { exact: true })
     .setInputFiles("artifacts/pages-many.pdf");
+  await respondToDocumentSwitch(page, true);
   await overview(page);
   await expect(page.locator("#pages-menu h2")).toHaveText("Seiten · 50");
   const row = (await page

@@ -1,4 +1,10 @@
-import { expect, test, type CDPSession, type Page } from "@playwright/test";
+import {
+  expect,
+  test,
+  type CDPSession,
+  type Locator,
+  type Page,
+} from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import * as mupdf from "mupdf";
 import {
@@ -11,6 +17,10 @@ import {
   type TestWindow,
 } from "./nativeSaveHarness";
 import { tool } from "./menus";
+import {
+  documentSwitchDialog,
+  respondToDocumentSwitch,
+} from "./documentSwitch";
 
 // Simulates only the native queue/event IPC, not Finder/Explorer/Android intents.
 // Every successful import passes through App.open(File) and the real PDF worker.
@@ -217,16 +227,10 @@ test("unsaved desktop edits survive a rejected external switch, and a later acce
   await nativeSaveBridge(page, "saved", "macos");
   await openAndEdit(page);
   const next = request(2, "Externer Folgevertrag.pdf", second);
-  let confirmations = 0;
-  page.on("dialog", async (dialog) => {
-    confirmations++;
-    expect(dialog.message()).toBe(
-      "Ungesicherte Änderungen verwerfen und eine andere PDF öffnen?",
-    );
-    if (confirmations === 1) await dialog.dismiss();
-    else await dialog.accept();
-  });
   await enqueue(page, next, 4);
+  await respondToDocumentSwitch(page, false, () =>
+    page.keyboard.press("Escape"),
+  );
   await expect
     .poll(async () => (await openState(page)).finished)
     .toEqual([next.id]);
@@ -234,14 +238,48 @@ test("unsaved desktop edits survive a rejected external switch, and a later acce
   await expect(page.locator(".annotation-list button")).toHaveCount(2);
   expect((await saveState(page)).workerDirty).toBe(true);
   expect((await openState(page)).workerOpens).toBe(1);
+  await expect(documentSwitchDialog(page)).not.toBeVisible();
   await enqueue(page, { ...next, id: id(3) });
+  await respondToDocumentSwitch(page, true);
   await rendered(page, next.fileName, 1);
   await expect(page.locator(".annotation-list button")).toHaveCount(1);
   await expect
     .poll(async () => (await openState(page)).finished)
     .toEqual([next.id, id(3)]);
-  expect(confirmations).toBe(2);
+  await expect(documentSwitchDialog(page)).not.toBeVisible();
   expect((await openState(page)).workerOpens).toBe(2);
+  expect((await saveState(page)).workerDirty).toBe(false);
+});
+
+test("an external switch protects an unfinished text dialog and keeps cancellation focused", async ({
+  page,
+}) => {
+  await nativeSaveBridge(page, "saved", "macos");
+  await openAndEdit(page);
+  await tool(page, "FreeText");
+  const sheet = (await page.getByTestId("page-0").boundingBox())!;
+  await page.mouse.click(
+    sheet.x + sheet.width * 0.3,
+    sheet.y + sheet.height * 0.4,
+  );
+  const draft = page.getByRole("dialog", { name: "Textkommentar erstellen" });
+  const input = draft.getByLabel("Textkommentar", { exact: true });
+  await input.fill("Noch nicht übernommener Text");
+  const incoming = request(2, "Nach dem Textentwurf.pdf", second);
+  await enqueue(page, incoming);
+  await respondToDocumentSwitch(page, false);
+  await expect(draft).toBeVisible();
+  await expect(input).toHaveValue("Noch nicht übernommener Text");
+  await expect(input).toBeFocused();
+  await expect
+    .poll(async () => (await openState(page)).finished)
+    .toEqual([incoming.id]);
+  expect((await saveState(page)).workerDirty).toBe(true);
+  expect((await openState(page)).workerOpens).toBe(1);
+  await enqueue(page, { ...incoming, id: id(3) });
+  await respondToDocumentSwitch(page, true);
+  await rendered(page, incoming.fileName, 1);
+  await expect(draft).not.toBeVisible();
   expect((await saveState(page)).workerDirty).toBe(false);
 });
 
@@ -250,7 +288,6 @@ test("invalid, corrupt and unreadable external PDFs retain the current document 
 }) => {
   await nativeSaveBridge(page, "saved", "windows");
   await openAndEdit(page);
-  page.on("dialog", (dialog) => dialog.accept());
   const failures = [
     request(2, "Falscher Inhalt.pdf", Buffer.from("This is not a PDF file.")),
     request(
@@ -269,6 +306,7 @@ test("invalid, corrupt and unreadable external PDFs retain the current document 
   ];
   for (const [index, incoming] of failures.entries()) {
     await enqueue(page, incoming);
+    if (!("error" in incoming)) await respondToDocumentSwitch(page, true);
     await expect
       .poll(async () => (await openState(page)).finished)
       .toHaveLength(index + 1);
@@ -287,6 +325,7 @@ test("invalid, corrupt and unreadable external PDFs retain the current document 
   // A bad item must not wedge delivery of later valid operating-system events.
   const next = request(5, "Nach dem Fehler.pdf", second);
   await enqueue(page, next);
+  await respondToDocumentSwitch(page, true);
   await rendered(page, next.fileName, 1);
   await expect(page.getByRole("alert")).toHaveCount(0);
   await expect
@@ -315,11 +354,6 @@ test("an external open arriving during a native save waits for verified completi
   ).toBe(false);
   expect((await saveState(page)).acknowledgements).toBe(0);
   await transferredPdf(page, browserName, "external-open-during-save");
-  let prompts = 0;
-  page.on("dialog", async (dialog) => {
-    prompts++;
-    await dialog.dismiss();
-  });
   await page.evaluate(() => {
     const release = (globalThis as TestWindow).nativeSaveTest.release;
     if (!release) throw Error("Expected a pending native save");
@@ -330,7 +364,7 @@ test("an external open arriving during a native save waits for verified completi
     .poll(async () => (await openState(page)).finished)
     .toEqual([incoming.id]);
   expect((await saveState(page)).acknowledgements).toBe(1);
-  expect(prompts).toBe(0);
+  await expect(documentSwitchDialog(page)).not.toBeVisible();
   expect((await openState(page)).workerOpens).toBe(2);
 });
 
@@ -372,17 +406,25 @@ test("Android touch editing keeps a new external PDF queued until the unsaved-sw
   await expect(editor).not.toBeVisible();
   await expect(page.locator(".annotation-list button")).toHaveCount(2);
   await expect.poll(async () => (await saveState(page)).workerDirty).toBe(true);
-  page.once("dialog", (dialog) => dialog.dismiss());
   const next = request(2, "Android neuer Plan.pdf", second);
   await enqueue(page, next);
+  const activate = async (button: Locator) => {
+    const bounds = (await button.boundingBox())!;
+    await tap(
+      session,
+      bounds.x + bounds.width / 2,
+      bounds.y + bounds.height / 2,
+    );
+  };
+  await respondToDocumentSwitch(page, false, activate);
   await expect
     .poll(async () => (await openState(page)).finished)
     .toEqual([first.id, next.id]);
   await rendered(page, first.fileName, 3);
   await expect(page.locator(".annotation-list")).toContainText("Touchänderung");
   expect((await saveState(page)).workerDirty).toBe(true);
-  page.once("dialog", (dialog) => dialog.accept());
   await enqueue(page, { ...next, id: id(3) });
+  await respondToDocumentSwitch(page, true, activate);
   await rendered(page, next.fileName, 1);
   expect((await saveState(page)).workerDirty).toBe(false);
   await session.detach();

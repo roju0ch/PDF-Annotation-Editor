@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "tauri-plugin-ios-bridge",
-    platforms: [.iOS(.v13)],
+    platforms: [.macOS(.v12), .iOS(.v13)],
     products: [
         .library(
             name: "tauri-plugin-ios-bridge",

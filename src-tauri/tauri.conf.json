@@ -67,7 +67,7 @@
       }
     },
     "iOS": {
-      "minimumSystemVersion": "15.0"
+      "minimumSystemVersion": "17.0"
     }
   }
 }

@@ -5,6 +5,7 @@ import { visibleTilePlan } from "./core/render/tiles";
 import { PageOrganizer } from "./app/PageOrganizer";
 import { AnnotationContextMenu } from "./app/AnnotationContextMenu";
 import { FreeTextDialog } from "./app/FreeTextDialog";
+import { useDocumentDiscardDialog } from "./app/DocumentDiscardDialog";
 import { useAnnotations } from "./app/useAnnotations";
 import {
   AnnotationToolbar,
@@ -55,6 +56,7 @@ export default function App() {
   const opening = useRef(false),
     openSequence = useRef(0),
     openingClient = useRef<PdfClient | null>(null);
+  const discard = useDocumentDiscardDialog(stage);
   const cancelPendingPointer = useRef<() => void>(() => {});
   const canvases = useRef(new Map<number, HTMLCanvasElement>());
   const detailLayers = useRef(new Map<number, HTMLDivElement>());
@@ -500,13 +502,7 @@ export default function App() {
     const token = ++openSequence.current;
     let candidate: PdfClient | null = null;
     try {
-      if (
-        annotation.unsaved &&
-        !window.confirm(
-          "Ungesicherte Änderungen verwerfen und eine andere PDF öffnen?",
-        )
-      )
-        return "handled";
+      if (annotation.unsaved && !(await discard.request())) return "handled";
       setError("");
       setLoading(true);
       if (file.size > 100 * 1024 * 1024 || file.size < 5)
@@ -778,6 +774,7 @@ export default function App() {
       />
       <AnnotationToolbar editor={annotation} ready={ready} />
       <FreeTextDialog editor={annotation} returnFocus={stage} />
+      {discard.dialog}
       <PageOrganizer
         key={generation.current}
         pages={pages}
