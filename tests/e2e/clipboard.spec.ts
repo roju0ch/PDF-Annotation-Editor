@@ -1,3 +1,4 @@
+import { zoomWithWheel } from "./viewerInput";
 import { compositedRaster } from "./compositedRaster";
 import { test, expect, type Page } from "@playwright/test";
 import { readFile, writeFile } from "node:fs/promises";
@@ -291,6 +292,9 @@ test("Ctrl+A/C/X/V, rotated target page and text-field shortcuts", async ({
   await page
     .getByLabel("PDF öffnen", { exact: true })
     .setInputFiles(`artifacts/clipboard-keyboard-${browserName}.pdf`);
+  await expect(page.locator(".filename")).toHaveText(
+    `clipboard-keyboard-${browserName}.pdf`,
+  );
   await expect(page.getByLabel("PDF-Seite 1")).toHaveAttribute(
     "data-rendered",
     "true",
@@ -463,7 +467,7 @@ for (const index of [0, 1]) {
     if (index) {
       const p = await point(page, 100, 180, index);
       await page.mouse.move(p.x, p.y);
-      await page.mouse.wheel(0, -80);
+      await zoomWithWheel(page, -80);
     }
     const selected = await page
       .getByTestId("selection-outline")

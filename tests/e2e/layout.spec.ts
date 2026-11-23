@@ -249,6 +249,8 @@ test("safe areas protect actions, PDF and popups through portrait/landscape chan
     expect(panel.y + panel.height).toBeLessThanOrEqual(
       layout.height - layout.bottom,
     );
+    // In the continuous layout, resizing can bring another page to the center.
+    await page.getByLabel("Seite", { exact: true }).fill("1");
     await page
       .getByRole("button", { name: "Seite einpassen", exact: true })
       .click();

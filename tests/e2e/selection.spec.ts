@@ -1,3 +1,4 @@
+import { zoomWithWheel } from "./viewerInput";
 import { writeSelectionFixture } from "./fixtures";
 import { test, expect, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
@@ -61,7 +62,7 @@ for (const index of [0, 1]) {
       await viewAction(page, "Nächste Seite");
       const anchor = await point(page, 180, 210, index);
       await page.mouse.move(anchor.x, anchor.y);
-      await page.mouse.wheel(0, -80);
+      await zoomWithWheel(page, -80);
       await expect(page.getByLabel("PDF-Seite 2")).toHaveAttribute(
         "data-rendered",
         "true",

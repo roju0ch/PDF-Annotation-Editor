@@ -3,6 +3,7 @@ export type View = Point & { scale: number };
 export type Matrix = [number, number, number, number, number, number];
 export const MIN_SCALE = 0.05;
 export const MAX_SCALE = 12;
+const PAGE_MARGIN = 24;
 export const toScreen = (p: Point, v: View): Point => ({
   x: p.x * v.scale + v.x,
   y: p.y * v.scale + v.y,
@@ -45,16 +46,44 @@ export function fit(
     MIN_SCALE,
     Math.min(
       MAX_SCALE,
-      (box.x - 48) / width,
-      onlyWidth ? MAX_SCALE : (box.y - 48) / height,
+      (box.x - 2 * PAGE_MARGIN) / width,
+      onlyWidth ? MAX_SCALE : (box.y - 2 * PAGE_MARGIN) / height,
     ),
   );
   return {
     scale,
     x: (box.x - width * scale) / 2,
-    y: onlyWidth ? 24 : (box.y - height * scale) / 2,
+    y: onlyWidth ? PAGE_MARGIN : (box.y - height * scale) / 2,
   };
 }
-export function wheelPixels(delta: number, mode: number, height: number) {
-  return delta * (mode === 1 ? 16 : mode === 2 ? height : 1);
+export function wheelPixels(delta: number, mode: number, viewportSize: number) {
+  return delta * (mode === 1 ? 16 : mode === 2 ? viewportSize : 1);
+}
+
+export function scrollLimits(
+  size: number,
+  viewportSize: number,
+  firstSize = size,
+  lastSize = size,
+) {
+  return {
+    start: Math.max(PAGE_MARGIN, (viewportSize - firstSize) / 2),
+    end:
+      viewportSize -
+      size -
+      Math.max(PAGE_MARGIN, (viewportSize - lastSize) / 2),
+  };
+}
+
+export function scrollAxis(
+  position: number,
+  delta: number,
+  { start, end }: ReturnType<typeof scrollLimits>,
+) {
+  // Pointer panning and cursor zoom can leave the view outside these limits.
+  // Scrolling can move back towards the document without snapping to it.
+  return Math.max(
+    Math.min(position, end),
+    Math.min(Math.max(position, start), position - delta),
+  );
 }

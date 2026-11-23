@@ -1,3 +1,4 @@
+import { zoomWithWheel } from "./viewerInput";
 import { expect, test, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import * as mupdf from "mupdf";
@@ -220,7 +221,7 @@ test("Mac-capable viewer requests a new window and reports document state withou
   const before = await geometry();
   const bounds = (await page.getByTestId("viewport").boundingBox())!;
   await page.mouse.move(bounds.x + 280, bounds.y + 220);
-  await page.mouse.wheel(0, -100);
+  await zoomWithWheel(page, -100);
   await expect
     .poll(async () => (await geometry()).scale)
     .toBeGreaterThan(before.scale);
