@@ -20,7 +20,7 @@ pub fn enabled() -> bool {
         .is_some_and(|path| path.is_absolute())
 }
 
-/// Returns whether actual Cocoa titles have caught up with the current report.
+/// Returns whether the native titles have caught up and the snapshot was written.
 /// The caller can briefly refresh a stale asynchronous title without changing
 /// either the native state or the assertions made by the external verifier.
 pub fn record<R: Runtime>(
@@ -117,5 +117,5 @@ pub fn record<R: Runtime>(
     if result.is_err() {
         let _ = fs::remove_file(temporary);
     }
-    titles_settled
+    titles_settled && result.is_ok()
 }

@@ -9,7 +9,7 @@ Die Browser-/GitHub-Pages-Version registriert sich nicht als Betriebssystemprogr
 1. Den NSIS-Installer (`.exe`) installieren.
 2. Im Explorer eine PDF mit der rechten Maustaste anklicken → **Öffnen mit** → **Andere App auswählen** → **PDF Viewer**. Je nach Windows-Version **Immer** beziehungsweise **Immer diese App zum Öffnen von .pdf-Dateien verwenden** wählen.
 3. Alternativ unter **Einstellungen → Apps → Standard-Apps** nach `.pdf` suchen und PDF Viewer auswählen.
-4. Eine PDF doppelklicken. Bei bereits laufender App wird deren Fenster verwendet; bei ungesicherten Änderungen erscheint vor dem Wechsel eine Nachfrage.
+4. Eine PDF doppelklicken. Bei bereits geöffneter PDF erhält die neue Datei ein eigenes Fenster in der laufenden App.
 
 Der Installer hinterlegt PDF Viewer als auswählbaren Handler. Vorhandene Zuordnungen und `UserChoice` werden nicht als Installationsnebenwirkung überschrieben. Windows verwaltet die geschützte Standardprogramm-Auswahl selbst.
 
@@ -17,7 +17,7 @@ Der Installer hinterlegt PDF Viewer als auswählbaren Handler. Vorhandene Zuordn
 
 1. Das DEB-Paket über die Paketverwaltung installieren.
 2. Im Dateimanager eine PDF mit der rechten Maustaste anklicken → **Eigenschaften** beziehungsweise **Öffnen mit** → **PDF Viewer** → als Standard festlegen. Die genaue Beschriftung hängt von GNOME, KDE oder dem verwendeten Desktop ab.
-3. Eine PDF doppelklicken; eine bereits laufende Instanz erhält die Datei.
+3. Eine PDF doppelklicken. Die laufende App erhält die Datei über die D-Bus-Sitzung und öffnet sie bei bereits geöffneter PDF in einem eigenen Fenster.
 
 Die installierte Desktop-Datei enthält `MimeType=application/pdf;` und übergibt die ausgewählten Dateinamen als einzelne Argumente über `%F`. Sie setzt keine bestehende Standard-App über `xdg-mime default` oder `mimeapps.list` um.
 
@@ -77,7 +77,7 @@ Der Prototyp besitzt außerdem noch keinen nativen iOS-Speicherweg. Die Speicher
 - Quellen werden nach dem OS-Ereignis bereits im Hintergrund gesichert, unabhängig davon, wann React bereit ist. Die Übergabe ans Frontend erfolgt sequenziell über eine auf 32 ausstehende Einträge und 200 MiB gesicherte Daten begrenzte Warteschlange und kleine Datenblöcke. Bei Überschreitung erscheint ein Hinweis zum erneuten einzelnen Öffnen. JavaScript erhält keinen beliebigen Pfad-/URI-Lesebefehl.
 - Doppelte noch ausstehende Übergaben werden zusammengefasst. Ein späteres bewusstes erneutes Öffnen derselben Datei bleibt möglich.
 - Die bestehende Funktion `open(file: File)` liest und prüft die PDF mit dem bisherigen MuPDF-Worker. Es gibt keine zweite PDF-Engine oder Importpipeline.
-- Bei laufender Speicherung/Bearbeitung wartet die externe Öffnung. Ungesicherte Änderungen benötigen vor dem Dokumentwechsel die gemeinsame App-Bestätigung. Der Dialog funktioniert unabhängig von nativen JavaScript-Confirm-Panels; Abbrechen ist zunächst fokussiert und Escape bricht ab. Abbrechen erhält das bisherige Dokument.
+- Desktop-Installationen weisen eine weitere Datei einem freien Fenster zu oder erzeugen ein neues Fenster. Dokumente mit laufenden Änderungen oder Speicherungen behalten ihr Fenster. Ein ausdrücklicher Dokumentwechsel im selben Fenster und unter Android/iOS fragt bei ungesicherten Änderungen nach. Abbrechen und Escape erhalten das bisherige Dokument.
 - Ungültige, unlesbare oder beschädigte PDFs erhalten eine verständliche Fehlermeldung. Ein fehlgeschlagener Wechsel soll das bisherige Dokument und dessen Änderungen erhalten.
 - Für den sicheren Wechsel bleibt der bisherige PDF-Worker bis zur erfolgreichen Prüfung des Kandidaten erhalten. Kurzzeitig existieren dadurch zwei Worker und zusätzlicher Speicherbedarf; nach Erfolg wird der alte Worker, nach einem Fehler der Kandidat freigegeben.
 - Das Importlimit beträgt weiterhin **100 MiB**. Alle PDF-Verarbeitung bleibt lokal; HTTP-/Weblinks werden nicht als PDF heruntergeladen. Externe Dateianbieter werden nur durch die ausdrückliche Dateiöffnung des Betriebssystems angesprochen.
@@ -90,7 +90,7 @@ Auf jedem echten Zielgerät zusätzlich prüfen:
 
 1. Mit geschlossener App eine synthetische PDF aus dem Dateimanager öffnen.
 2. Eine zweite PDF bei laufender App öffnen; Dateinamen mit Leerzeichen, Umlauten und Sonderzeichen verwenden.
-3. Im ersten Dokument zeichnen und erneut extern öffnen: **Abbrechen** muss Dokument und Änderungen erhalten, Bestätigen muss wechseln.
+3. Im ersten Dokument zeichnen und eine andere PDF extern öffnen. Auf dem Desktop müssen beide Fenster sichtbar bleiben. Bei einem Austausch im selben Fenster muss **Abbrechen** das erste Dokument und seine Änderungen erhalten.
 4. Eine beschädigte PDF und eine nicht mehr lesbare Freigabe öffnen; kein Absturz und kein stiller Verlust des bisherigen Dokuments.
 5. Kommentieren, speichern und die gespeicherte PDF in einem zweiten Viewer sowie erneut im Editor öffnen.
 6. Vor und nach Installation beziehungsweise Deinstallation prüfen, dass eine zuvor gewählte andere Standard-App erhalten bleibt. Unter Android außerdem Samsung **Eigene Dateien** und mindestens einen weiteren Anbieter; unter iOS/iPadOS lokale Dateien und einen freigegebenen Dokumentanbieter prüfen.

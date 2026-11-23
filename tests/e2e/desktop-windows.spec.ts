@@ -167,12 +167,17 @@ async function exported(page: Page) {
     doc.destroy();
   }
 }
-async function twoViewers(a: Page, b: Page, mode: "saved" | "hold" = "hold") {
-  await nativeSaveBridge(a, mode, "macos", [incoming(1, filenameA, sourceA)], {
+async function twoViewers(
+  a: Page,
+  b: Page,
+  mode: "saved" | "hold" = "hold",
+  platform: NativePlatform = "macos",
+) {
+  await nativeSaveBridge(a, mode, platform, [incoming(1, filenameA, sourceA)], {
     label: "main",
     savedFileName: "Gespeichert A.pdf",
   });
-  await nativeSaveBridge(b, mode, "macos", [incoming(2, filenameB, sourceB)], {
+  await nativeSaveBridge(b, mode, platform, [incoming(2, filenameB, sourceB)], {
     label: labelB,
     savedFileName: "Gespeichert B.pdf",
   });
@@ -180,156 +185,161 @@ async function twoViewers(a: Page, b: Page, mode: "saved" | "hold" = "hold") {
   await Promise.all([rendered(a, filenameA), rendered(b, filenameB)]);
 }
 
-test("Mac-capable viewer requests a new window and reports document state without polling on zoom or pan", async ({
-  page,
-}) => {
-  await nativeSaveBridge(page, "saved", "macos", [], { label: "main" });
-  await page.goto("");
-  await expect
-    .poll(() =>
-      page.evaluate(() =>
-        (globalThis as TestWindow).nativeSaveTest.closeListenerCount(),
-      ),
-    )
-    .toBe(1);
-  await menu(page, "view");
-  await page
-    .getByRole("button", { name: "Neues Fenster", exact: true })
-    .click();
-  await expect.poll(async () => (await windowState(page)).created).toBe(1);
-  await closeMenu(page);
-  await page.evaluate(
-    (request) => (globalThis as TestWindow).nativeSaveTest.enqueueOpen(request),
-    incoming(1, filenameA, sourceA),
-  );
-  await rendered(page, filenameA);
-  await expect
-    .poll(async () => (await windowState(page)).reports.at(-1))
-    .toMatchObject({
-      hasDocument: true,
-      fileName: filenameA,
-      busy: false,
-      unsaved: false,
-    });
-  const reports = (await windowState(page)).reports.length;
-  const geometry = () =>
-    page.getByTestId("world").evaluate((element) => {
-      const matrix = new DOMMatrix(getComputedStyle(element).transform);
-      return { scale: matrix.a, x: matrix.e };
-    });
-  const before = await geometry();
-  const bounds = (await page.getByTestId("viewport").boundingBox())!;
-  await page.mouse.move(bounds.x + 280, bounds.y + 220);
-  await page.mouse.wheel(0, -100);
-  await expect
-    .poll(async () => (await geometry()).scale)
-    .toBeGreaterThan(before.scale);
-  await page.mouse.down({ button: "middle" });
-  await page.mouse.move(bounds.x + 340, bounds.y + 240);
-  await page.mouse.up({ button: "middle" });
-  await expect.poll(async () => (await geometry()).x).not.toBe(before.x);
-  expect((await windowState(page)).reports).toHaveLength(reports);
-  expect(
-    (await windowState(page)).calls.every(
-      (call) => !("label" in call.args) && !("path" in call.args),
-    ),
-  ).toBe(true);
-});
-
-test("two Mac viewers keep PDFs, undo, clipboard and simultaneous native saves independent", async ({
-  page,
-  context,
-}) => {
-  const other = await context.newPage();
-  await twoViewers(page, other);
-  await edit(page, "Bearbeitung ausschließlich A");
-  await edit(other, "Bearbeitung ausschließlich B");
-  await page.bringToFront();
-  await tool(page, "select");
-  await menu(page, "annotations");
-  await page
-    .locator(".annotation-list button")
-    .filter({ hasText: "Bearbeitung ausschließlich A" })
-    .click();
-  await closeMenu(page);
-  await page.keyboard.press("Meta+c");
-  for (const [viewer, canPaste] of [
-    [page, true],
-    [other, false],
-  ] as const) {
-    await viewer.bringToFront();
-    await tool(viewer, "select");
-    const sheet = (await viewer.getByTestId("page-0").boundingBox())!;
-    await viewer.mouse.click(
-      sheet.x + sheet.width * 0.8,
-      sheet.y + sheet.height * 0.8,
-      { button: "right" },
+for (const platform of ["macos", "windows", "linux"] as const) {
+  test(`${platform}: a desktop viewer requests a new window and reports document state without polling on zoom or pan`, async ({
+    page,
+  }) => {
+    await nativeSaveBridge(page, "saved", platform, [], { label: "main" });
+    await page.goto("");
+    await expect
+      .poll(() =>
+        page.evaluate(() =>
+          (globalThis as TestWindow).nativeSaveTest.closeListenerCount(),
+        ),
+      )
+      .toBe(1);
+    await menu(page, "view");
+    await page
+      .getByRole("button", { name: "Neues Fenster", exact: true })
+      .click();
+    await expect.poll(async () => (await windowState(page)).created).toBe(1);
+    await closeMenu(page);
+    await page.evaluate(
+      (request) =>
+        (globalThis as TestWindow).nativeSaveTest.enqueueOpen(request),
+      incoming(1, filenameA, sourceA),
     );
-    const paste = viewer.getByRole("menuitem", {
-      name: /^Einfügen\b/,
+    await rendered(page, filenameA);
+    await expect
+      .poll(async () => (await windowState(page)).reports.at(-1))
+      .toMatchObject({
+        hasDocument: true,
+        fileName: filenameA,
+        busy: false,
+        unsaved: false,
+      });
+    const reports = (await windowState(page)).reports.length;
+    const geometry = () =>
+      page.getByTestId("world").evaluate((element) => {
+        const matrix = new DOMMatrix(getComputedStyle(element).transform);
+        return { scale: matrix.a, x: matrix.e };
+      });
+    const before = await geometry();
+    const bounds = (await page.getByTestId("viewport").boundingBox())!;
+    await page.mouse.move(bounds.x + 280, bounds.y + 220);
+    await page.mouse.wheel(0, -100);
+    await expect
+      .poll(async () => (await geometry()).scale)
+      .toBeGreaterThan(before.scale);
+    await page.mouse.down({ button: "middle" });
+    await page.mouse.move(bounds.x + 340, bounds.y + 240);
+    await page.mouse.up({ button: "middle" });
+    await expect.poll(async () => (await geometry()).x).not.toBe(before.x);
+    expect((await windowState(page)).reports).toHaveLength(reports);
+    expect(
+      (await windowState(page)).calls.every(
+        (call) => !("label" in call.args) && !("path" in call.args),
+      ),
+    ).toBe(true);
+  });
+
+  test(`${platform}: two viewers keep PDFs, undo, clipboard and simultaneous native saves independent`, async ({
+    page,
+    context,
+  }) => {
+    const other = await context.newPage();
+    await twoViewers(page, other, "hold", platform);
+    await edit(page, "Bearbeitung ausschließlich A");
+    await edit(other, "Bearbeitung ausschließlich B");
+    await page.bringToFront();
+    await tool(page, "select");
+    await menu(page, "annotations");
+    await page
+      .locator(".annotation-list button")
+      .filter({ hasText: "Bearbeitung ausschließlich A" })
+      .click();
+    await closeMenu(page);
+    await page.keyboard.press(platform === "macos" ? "Meta+c" : "Control+c");
+    for (const [viewer, canPaste] of [
+      [page, true],
+      [other, false],
+    ] as const) {
+      await viewer.bringToFront();
+      await tool(viewer, "select");
+      const sheet = (await viewer.getByTestId("page-0").boundingBox())!;
+      await viewer.mouse.click(
+        sheet.x + sheet.width * 0.8,
+        sheet.y + sheet.height * 0.8,
+        { button: "right" },
+      );
+      const paste = viewer.getByRole("menuitem", {
+        name: /^Einfügen\b/,
+      });
+      if (canPaste) await expect(paste).toBeEnabled();
+      else await expect(paste).toBeDisabled();
+      await viewer.keyboard.press("Escape");
+    }
+    await page.getByRole("button", { name: "Rückgängig", exact: true }).click();
+    await expect(page.locator(".annotation-list button")).toHaveCount(1);
+    await expect(other.locator(".annotation-list")).toContainText(
+      "Bearbeitung ausschließlich B",
+    );
+    expect((await saveState(other)).workerDirty).toBe(true);
+    await page
+      .getByRole("button", { name: "Wiederholen", exact: true })
+      .click();
+    await expect(page.locator(".annotation-list")).toContainText(
+      "Bearbeitung ausschließlich A",
+    );
+    await Promise.all([saveButton(page).click(), saveButton(other).click()]);
+    await expect
+      .poll(async () => (await saveState(page)).pendingFinish)
+      .toBe(true);
+    await expect
+      .poll(async () => (await saveState(other)).pendingFinish)
+      .toBe(true);
+    const resultA = await exported(page),
+      resultB = await exported(other);
+    expect(resultA.pages).toBe(3);
+    expect(resultB.pages).toBe(1);
+    expect(resultA.contents).toContain("Independent fixture note");
+    expect(resultA.contents).toContain("Bearbeitung ausschließlich A");
+    expect(resultA.contents).not.toContain("Bearbeitung ausschließlich B");
+    expect(resultB.contents).toContain("Originalnotiz nur in B");
+    expect(resultB.contents).toContain("Bearbeitung ausschließlich B");
+    expect(resultB.contents).not.toContain("Bearbeitung ausschließlich A");
+    expect(resultA.bytes.equals(resultB.bytes)).toBe(false);
+    await release(page, "cancelled");
+    await expect
+      .poll(async () => (await saveState(page)).pendingFinish)
+      .toBe(false);
+    expect(await saveState(page)).toMatchObject({
+      workerDirty: true,
+      acknowledgements: 0,
     });
-    if (canPaste) await expect(paste).toBeEnabled();
-    else await expect(paste).toBeDisabled();
-    await viewer.keyboard.press("Escape");
-  }
-  await page.getByRole("button", { name: "Rückgängig", exact: true }).click();
-  await expect(page.locator(".annotation-list button")).toHaveCount(1);
-  await expect(other.locator(".annotation-list")).toContainText(
-    "Bearbeitung ausschließlich B",
-  );
-  expect((await saveState(other)).workerDirty).toBe(true);
-  await page.getByRole("button", { name: "Wiederholen", exact: true }).click();
-  await expect(page.locator(".annotation-list")).toContainText(
-    "Bearbeitung ausschließlich A",
-  );
-  await Promise.all([saveButton(page).click(), saveButton(other).click()]);
-  await expect
-    .poll(async () => (await saveState(page)).pendingFinish)
-    .toBe(true);
-  await expect
-    .poll(async () => (await saveState(other)).pendingFinish)
-    .toBe(true);
-  const resultA = await exported(page),
-    resultB = await exported(other);
-  expect(resultA.pages).toBe(3);
-  expect(resultB.pages).toBe(1);
-  expect(resultA.contents).toContain("Independent fixture note");
-  expect(resultA.contents).toContain("Bearbeitung ausschließlich A");
-  expect(resultA.contents).not.toContain("Bearbeitung ausschließlich B");
-  expect(resultB.contents).toContain("Originalnotiz nur in B");
-  expect(resultB.contents).toContain("Bearbeitung ausschließlich B");
-  expect(resultB.contents).not.toContain("Bearbeitung ausschließlich A");
-  expect(resultA.bytes.equals(resultB.bytes)).toBe(false);
-  await release(page, "cancelled");
-  await expect
-    .poll(async () => (await saveState(page)).pendingFinish)
-    .toBe(false);
-  expect(await saveState(page)).toMatchObject({
-    workerDirty: true,
-    acknowledgements: 0,
+    expect(await saveState(other)).toMatchObject({
+      pendingFinish: true,
+      workerDirty: true,
+      acknowledgements: 0,
+    });
+    await release(other, "saved");
+    await expect
+      .poll(async () => (await saveState(other)).workerDirty)
+      .toBe(false);
+    await expect(other.getByRole("status")).toContainText("Gespeichert B.pdf");
+    expect((await saveState(page)).workerDirty).toBe(true);
+    await page.evaluate(() => {
+      (globalThis as TestWindow).nativeSaveTest.mode = "saved";
+    });
+    await saveButton(page).click();
+    await expect
+      .poll(async () => (await saveState(page)).workerDirty)
+      .toBe(false);
+    await expect(page.getByRole("status")).toContainText("Gespeichert A.pdf");
+    expect((await saveState(other)).transactions).toHaveLength(1);
+    expect((await saveState(other)).browserDownloads).toBe(0);
   });
-  expect(await saveState(other)).toMatchObject({
-    pendingFinish: true,
-    workerDirty: true,
-    acknowledgements: 0,
-  });
-  await release(other, "saved");
-  await expect
-    .poll(async () => (await saveState(other)).workerDirty)
-    .toBe(false);
-  await expect(other.getByRole("status")).toContainText("Gespeichert B.pdf");
-  expect((await saveState(page)).workerDirty).toBe(true);
-  await page.evaluate(() => {
-    (globalThis as TestWindow).nativeSaveTest.mode = "saved";
-  });
-  await saveButton(page).click();
-  await expect
-    .poll(async () => (await saveState(page)).workerDirty)
-    .toBe(false);
-  await expect(page.getByRole("status")).toContainText("Gespeichert A.pdf");
-  expect((await saveState(other)).transactions).toHaveLength(1);
-  expect((await saveState(other)).browserDownloads).toBe(0);
-});
+}
 
 test("cancelling and approving one Mac close keeps the other viewer and its save usable", async ({
   page,
@@ -407,7 +417,7 @@ for (const platform of [
   "android",
   "ios",
 ] as NativePlatform[]) {
-  test(`${platform} without the native Mac capability keeps its existing single-window interface`, async ({
+  test(`${platform} without the desktop window capability keeps its existing single-window interface`, async ({
     page,
   }) => {
     await nativeSaveBridge(page, "saved", platform);

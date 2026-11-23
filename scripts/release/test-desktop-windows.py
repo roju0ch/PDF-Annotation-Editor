@@ -1,9 +1,9 @@
-"""Exercise real macOS LaunchServices delivery into two actual Tauri windows.
+"""Exercise native PDF delivery into two actual desktop Tauri windows.
 
 The optional native-window-tests build reports read-only native/React state for
 synthetic PDFs. This verifier does not automate Accessibility, fake a successful
-window, or expose a production command channel. Ordinary DMG builds exclude the
-diagnostic feature; this separately built loose .app is never an installer.
+window, or expose a production command channel. The diagnostic executable is
+built separately from the regular installers.
 """
 
 import json
@@ -44,8 +44,8 @@ def one_page_pdf(path):
     path.write_bytes(output)
 
 
-def command(*args):
-    result = subprocess.run(args, capture_output=True, text=True)
+def command(*args, **kwargs):
+    result = subprocess.run(args, capture_output=True, text=True, timeout=30, **kwargs)
     if result.returncode:
         raise RuntimeError(
             f"{args[0]} exited with {result.returncode}: "
@@ -104,36 +104,40 @@ def owned_processes(app):
 
 def run(app):
     app = pathlib.Path(app).resolve()
-    if sys.platform != "darwin":
-        raise RuntimeError("This test requires an actual macOS GUI runner")
-    if not app.is_dir() or app.suffix != ".app":
-        raise RuntimeError("Expected the separately built probe .app bundle")
-    help_result = subprocess.run(["open", "-h"], capture_output=True, text=True)
-    help_text = help_result.stdout + help_result.stderr
-    for option in ["--env", "--stdout", "--stderr"]:
-        if option not in help_text:
-            raise RuntimeError(f"Installed macOS open command does not support {option}")
+    mac = sys.platform == "darwin"
+    if mac:
+        if not app.is_dir() or app.suffix != ".app":
+            raise RuntimeError("Expected the separately built probe .app bundle")
+        help_result = subprocess.run(["open", "-h"], capture_output=True, text=True)
+        help_text = help_result.stdout + help_result.stderr
+        for option in ["--env", "--stdout", "--stderr"]:
+            if option not in help_text:
+                raise RuntimeError(f"Installed macOS open command does not support {option}")
+    elif sys.platform not in ("win32", "linux") or not app.is_file():
+        raise RuntimeError("Expected the separately built Windows or Linux probe executable")
     fixture = pathlib.Path("artifacts/fixture.pdf").resolve()
     if not fixture.is_file():
         raise RuntimeError("Generate synthetic fixtures with node scripts/fixtures.mjs first")
     pids = set()
-    with tempfile.TemporaryDirectory(prefix="pdf-mac-windows-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="pdf-desktop-windows-") as temporary:
         directory = pathlib.Path(temporary)
-        first = directory / "Mac Plan A 50%.pdf"
-        second = directory / "Mac Plan Süd #2.pdf"
+        first = directory / "Plan A 50%.pdf"
+        second = directory / "Weiteres Verzeichnis" / "Plan Süd #2.pdf"
+        second.parent.mkdir()
         shutil.copyfile(fixture, first)
         one_page_pdf(second)
         report = directory / "window-state.json"
         stdout = directory / "application.stdout.log"
         stderr = directory / "application.stderr.log"
         latest = None
+        primary = None
 
         def wait_for(description, predicate, expected_pid=None):
             nonlocal latest
             deadline = time.monotonic() + 45
             while time.monotonic() < deadline:
                 try:
-                    value = json.loads(report.read_text())
+                    value = json.loads(report.read_text(encoding="utf-8"))
                     if value.get("schemaVersion") != 1:
                         raise RuntimeError("Unexpected native window report schema")
                     pid = value.get("pid")
@@ -147,6 +151,8 @@ def run(app):
                         return value
                 except (FileNotFoundError, json.JSONDecodeError):
                     pass
+                if primary and primary.poll() is not None:
+                    break
                 time.sleep(0.15)
             logs = "\n".join(
                 path.read_text(errors="replace")[-5000:]
@@ -154,7 +160,7 @@ def run(app):
                 if path.exists()
             )
             state = json.dumps(latest, ensure_ascii=False)[:6000]
-            raise RuntimeError(f"Timed out waiting for {description}. Native state: {state}\n{logs}")
+            raise RuntimeError(f"Failed to observe {description}. Native state: {state}\n{logs}")
 
         def ready(value, name, page_count):
             actual = value.get("actualWindowLabels", [])
@@ -178,19 +184,33 @@ def run(app):
             ]
 
         try:
-            command(
-                "open", "-n", "--env", f"PDF_EDITOR_WINDOW_TEST_REPORT={report}",
-                "--stdout", str(stdout), "--stderr", str(stderr),
-                "-a", str(app), str(first),
-            )
+            if mac:
+                command(
+                    "open", "-n", "--env", f"PDF_EDITOR_WINDOW_TEST_REPORT={report}",
+                    "--stdout", str(stdout), "--stderr", str(stderr),
+                    "-a", str(app), str(first),
+                )
+            else:
+                env = os.environ | {"PDF_EDITOR_WINDOW_TEST_REPORT": str(report)}
+                with stdout.open("wb") as out, stderr.open("wb") as err:
+                    primary = subprocess.Popen(
+                        [str(app), first.name], cwd=first.parent, env=env, stdout=out, stderr=err,
+                    )
             cold = wait_for(
                 "the cold-start PDF in one actual visible window",
                 lambda state: len(state.get("actualWindowLabels", [])) == 1
                 and len(ready(state, first.name, 3)) == 1,
             )
             pid = cold["pid"]
+            if primary and pid != primary.pid:
+                raise RuntimeError("The first PDF was not opened by the launched application process")
             first_label = ready(cold, first.name, 3)[0]["label"]
-            command("open", "-a", str(app), str(second))
+            if mac:
+                command("open", "-a", str(app), str(second))
+            else:
+                # The installer uses argv. A different cwd also verifies that
+                # the single-instance handoff resolves the caller's filename.
+                command(str(app), second.name, cwd=second.parent, env=env)
             warm = wait_for(
                 "two independent visible PDFs in the existing process",
                 lambda state: len(state.get("actualWindowLabels", [])) == 2
@@ -202,22 +222,31 @@ def run(app):
             second_window = ready(warm, second.name, 1)[0]
             if first_window["label"] != first_label or first_label == second_window["label"]:
                 raise RuntimeError("The second PDF replaced or reused the first document window")
+            delivery = "LaunchServices" if mac else "single-instance argv handoff"
             print(
-                "::notice title=macOS real PDF window runtime::"
-                "Actual LaunchServices cold/warm delivery opened synthetic 3-page and 1-page PDFs "
-                "in two visible Cocoa/Wry windows of one process; each existing MuPDF importer "
+                "::notice title=Desktop PDF document windows::"
+                f"Cold/warm {delivery} opened synthetic 3-page and 1-page PDFs "
+                "in two visible native windows of one process. Each MuPDF importer "
                 "reported its own filename/page count, and the first window remained intact."
             )
         finally:
-            pids.update(owned_processes(app))
-            cleanup_processes(app, pids)
+            if mac:
+                pids.update(owned_processes(app))
+                cleanup_processes(app, pids)
+            elif primary and primary.poll() is None:
+                primary.terminate()
+                try:
+                    primary.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    primary.kill()
+                    primary.wait(timeout=5)
 
 
 if __name__ == "__main__":
     try:
         if len(sys.argv) != 2:
-            raise RuntimeError("Usage: test-macos-windows.py path/to/probe.app")
+            raise RuntimeError("Usage: test-desktop-windows.py path/to/probe[.app|.exe]")
         run(sys.argv[1])
     except Exception as error:
-        print("::error title=macOS real PDF window runtime::" + escaped(error), file=sys.stderr)
+        print("::error title=Desktop PDF document windows::" + escaped(error), file=sys.stderr)
         raise SystemExit(1)

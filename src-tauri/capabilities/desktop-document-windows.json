@@ -1,8 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
-  "identifier": "macos-document-windows",
-  "description": "Local macOS PDF document windows consume and save only their own native transactions.",
-  "platforms": ["macOS"],
+  "identifier": "desktop-document-windows",
+  "description": "Local desktop PDF document windows consume and save only their own native transactions.",
+  "platforms": ["windows", "macOS", "linux"],
   "windows": ["main", "pdf-*"],
   "permissions": [
     "core:event:allow-listen",

@@ -1,15 +1,16 @@
-//! macOS document windows. Only the originating WebView can consume its queue.
+//! Desktop document windows. Only the originating WebView can consume its queue.
+#[cfg(target_os = "macos")]
+use super::intake::UrlPolicy;
 use super::{
-    intake::UrlPolicy,
     routing::{Route, Routes, WindowReport},
     *,
 };
 use std::collections::{BTreeMap, VecDeque};
-use tauri::{
-    menu::{Menu, MenuItem, MenuItemKind, PredefinedMenuItem, Submenu},
-    WebviewUrl, WebviewWindowBuilder,
-};
+#[cfg(target_os = "macos")]
+use tauri::menu::{Menu, MenuItem, MenuItemKind, PredefinedMenuItem, Submenu};
+use tauri::{WebviewUrl, WebviewWindowBuilder};
 
+#[cfg(target_os = "macos")]
 const NEW_WINDOW: &str = "pdf-new-window";
 const WINDOW_ERROR: &str = "pdf-window-error";
 
@@ -18,6 +19,8 @@ pub(super) struct Windows {
     sessions: BTreeMap<String, Session>,
     quit_pending: VecDeque<String>,
     quit_active: Option<String>,
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
+    launches: LaunchQueue,
 }
 impl Windows {
     pub fn new(main: Session) -> Self {
@@ -28,6 +31,8 @@ impl Windows {
             sessions,
             quit_pending: VecDeque::new(),
             quit_active: None,
+            #[cfg(any(target_os = "windows", target_os = "linux"))]
+            launches: LaunchQueue::startup(),
         }
     }
     pub fn session(&self, label: &str) -> Result<Session, OpenError> {
@@ -45,6 +50,178 @@ impl Windows {
         self.quit_active = None;
     }
 }
+
+#[cfg(any(target_os = "windows", target_os = "linux"))]
+mod launch {
+    use super::*;
+
+    enum Launch {
+        Document(Source),
+        Activate,
+        Overflow,
+    }
+
+    #[derive(Default)]
+    pub(super) struct LaunchQueue {
+        pending: VecDeque<Launch>,
+        ready: bool,
+        running: bool,
+        overflow: bool,
+    }
+
+    impl LaunchQueue {
+        pub(super) fn startup() -> Self {
+            // Capture the primary argv before registering the single-instance
+            // callback so even an early forwarded launch stays behind it.
+            let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+            let mut queue = Self::default();
+            queue.enqueue(
+                std::env::args_os().map(|arg| arg.to_string_lossy().into_owned()),
+                &cwd,
+            );
+            queue
+        }
+
+        fn enqueue(&mut self, argv: impl IntoIterator<Item = String>, cwd: &Path) {
+            let mut positional = false;
+            let mut found = false;
+            for argument in argv.into_iter().skip(1) {
+                if !positional && argument == "--" {
+                    positional = true;
+                    continue;
+                }
+                if !positional && argument.starts_with('-') {
+                    continue;
+                }
+                found = true;
+                if !self.push(Launch::Document(Source::from_argument(&argument, cwd))) {
+                    break;
+                }
+            }
+            if !found {
+                self.push(Launch::Activate);
+            }
+        }
+
+        fn push(&mut self, launch: Launch) -> bool {
+            if self.pending.len() >= intake::MAX_PENDING {
+                self.overflow = true;
+                return false;
+            }
+            self.pending.push_back(launch);
+            true
+        }
+
+        fn next(&mut self) -> Option<Launch> {
+            let next = self
+                .pending
+                .pop_front()
+                .or_else(|| std::mem::take(&mut self.overflow).then_some(Launch::Overflow));
+            if next.is_none() {
+                self.running = false;
+            }
+            next
+        }
+    }
+
+    pub(in super::super) fn arguments<R: Runtime>(
+        app: &AppHandle<R>,
+        broker: &PdfOpen,
+        argv: impl IntoIterator<Item = String>,
+        cwd: &Path,
+    ) {
+        if let Ok(mut windows) = broker.windows.lock() {
+            windows.launches.enqueue(argv, cwd);
+        }
+        kick(app, broker);
+    }
+
+    pub(super) fn ready<R: Runtime>(app: &AppHandle<R>, broker: &PdfOpen) {
+        if let Ok(mut windows) = broker.windows.lock() {
+            windows.launches.ready = true;
+        }
+        kick(app, broker);
+    }
+
+    fn kick<R: Runtime>(app: &AppHandle<R>, broker: &PdfOpen) {
+        let Ok(mut windows) = broker.windows.lock() else {
+            return;
+        };
+        let queue = &mut windows.launches;
+        if !queue.ready || queue.running || queue.pending.is_empty() {
+            return;
+        }
+        queue.running = true;
+        drop(windows);
+        let app = app.clone();
+        let broker = broker.clone();
+        // Windows WebView2 creation must originate off the native event
+        // thread. Drain serially to keep cold, warm and multi-file argv ordered.
+        tauri::async_runtime::spawn_blocking(move || loop {
+            let next = broker
+                .windows
+                .lock()
+                .ok()
+                .and_then(|mut windows| windows.launches.next());
+            let result = match next {
+                Some(Launch::Document(source)) => dispatch(&app, source),
+                Some(Launch::Activate) => activate(&app),
+                Some(Launch::Overflow) => Err(OpenError::queue_full()),
+                None => break,
+            };
+            if let Err(failure) = result {
+                error(&app, failure);
+            }
+        });
+    }
+
+    fn activate<R: Runtime>(app: &AppHandle<R>) -> Result<(), OpenError> {
+        let windows = app.webview_windows();
+        let current = windows
+            .values()
+            .find(|window| window.is_focused().unwrap_or(false))
+            .or_else(|| windows.get("main"))
+            .or_else(|| windows.values().next());
+        if let Some(window) = current {
+            focus(app, window.label());
+            Ok(())
+        } else {
+            create_empty(app)
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn forwarded_launches_preserve_argument_order_and_caller_directory() {
+            let mut queue = LaunchQueue::default();
+            let cold = std::env::temp_dir().join("cold");
+            let warm = std::env::temp_dir().join("warm");
+            queue.enqueue(["app", "erste.pdf"].map(str::to_owned), &cold);
+            queue.enqueue(
+                ["app", "--option", "--", "-zweite.pdf", "dritte.pdf"].map(str::to_owned),
+                &warm,
+            );
+            for expected in [
+                cold.join("erste.pdf"),
+                warm.join("-zweite.pdf"),
+                warm.join("dritte.pdf"),
+            ] {
+                assert!(
+                    matches!(queue.next(), Some(Launch::Document(Source::Local(path))) if path == expected)
+                );
+            }
+            assert!(queue.next().is_none());
+        }
+    }
+}
+
+#[cfg(any(target_os = "windows", target_os = "linux"))]
+pub(super) use launch::arguments;
+#[cfg(any(target_os = "windows", target_os = "linux"))]
+use launch::LaunchQueue;
 
 fn error<R: Runtime>(app: &AppHandle<R>, error: OpenError) {
     // No paths, URIs, or contents cross this error-only notification.
@@ -165,6 +342,7 @@ async fn on_ui<R: Runtime, T: Send + 'static>(
 /// WebView reads that same store to collect its initialization scripts. Hop off
 /// the callback thread before scheduling the UI task: `run_on_main_thread`
 /// alone executes inline when already on the Cocoa thread and would deadlock.
+#[cfg(target_os = "macos")]
 fn defer<R: Runtime>(
     app: &AppHandle<R>,
     action: impl FnOnce(AppHandle<R>) -> Result<(), OpenError> + Send + 'static,
@@ -183,7 +361,10 @@ pub async fn new_pdf_window<R: Runtime>(
     window: WebviewWindow<R>,
 ) -> Result<(), OpenError> {
     state(&app).session(window.label())?;
-    on_ui(app, |app| create_empty(&app)).await
+    #[cfg(target_os = "macos")]
+    return on_ui(app, |app| create_empty(&app)).await;
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
+    io(move || create_empty(&app)).await
 }
 
 fn name(value: &str) -> String {
@@ -242,7 +423,7 @@ pub async fn report_window_state<R: Runtime>(
             .map_err(|_| OpenError::unavailable())?
             .routes
             .report(&label, report)?;
-        // Update the actual Cocoa title before CI records its native snapshot.
+        // Update the native title before CI records its snapshot.
         app.get_webview_window(&label)
             .ok_or_else(OpenError::invalid)?
             .set_title(&title)
@@ -373,6 +554,7 @@ fn destroyed<R: Runtime>(app: &AppHandle<R>, broker: &PdfOpen, label: &str) {
     }
 }
 
+#[cfg(target_os = "macos")]
 pub(super) fn setup<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     // Preserve the SDK's standard app/edit/window menus and their native text
     // editing behavior. Add the one missing document-window action to File.
@@ -409,6 +591,7 @@ pub(super) fn setup<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
 
 pub(super) fn on_event<R: Runtime>(app: &AppHandle<R>, broker: &PdfOpen, event: &tauri::RunEvent) {
     match event {
+        #[cfg(target_os = "macos")]
         tauri::RunEvent::Opened { urls } => {
             let sources: Vec<_> = urls
                 .iter()
@@ -425,6 +608,7 @@ pub(super) fn on_event<R: Runtime>(app: &AppHandle<R>, broker: &PdfOpen, event: 
                 Ok(())
             });
         }
+        #[cfg(target_os = "macos")]
         tauri::RunEvent::MenuEvent(event) if event.id().as_ref() == NEW_WINDOW => {
             defer(app, |app| create_empty(&app));
         }
@@ -444,6 +628,7 @@ pub(super) fn on_event<R: Runtime>(app: &AppHandle<R>, broker: &PdfOpen, event: 
                 request_quit(app, broker);
             }
         }
+        #[cfg(target_os = "macos")]
         tauri::RunEvent::Reopen { .. } => {
             defer(app, |app| {
                 // Recheck after deferral: a Finder delivery can have created
@@ -459,7 +644,11 @@ pub(super) fn on_event<R: Runtime>(app: &AppHandle<R>, broker: &PdfOpen, event: 
                 Ok(())
             });
         }
-        tauri::RunEvent::Ready => record(app),
+        tauri::RunEvent::Ready => {
+            #[cfg(any(target_os = "windows", target_os = "linux"))]
+            launch::ready(app, broker);
+            record(app);
+        }
         _ => {}
     }
 }
@@ -471,9 +660,9 @@ fn record<R: Runtime>(app: &AppHandle<R>) {
             return;
         }
         // Finish/ACK can arrive on a runtime worker. Do not hold the probe's
-        // writer lock there while synchronously querying Cocoa: a UI-thread
+        // writer lock there while synchronously querying the UI: a main-thread
         // report could otherwise wait for that lock while the worker waits
-        // for Cocoa. Always enqueue the complete snapshot from a worker.
+        // for the UI. Always enqueue the complete snapshot from a worker.
         // Tao also applies set_title asynchronously on the Cocoa dispatch
         // queue, separately from Tauri's event queue. Retry a bounded number
         // of times until the actual native titles have caught up; recording
