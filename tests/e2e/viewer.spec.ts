@@ -411,6 +411,7 @@ test("single-sheet keyboard scrolls a tall page before moving to the adjoining p
   await expect.poll(() => geometry(page)).toEqual(initial);
 
   // Existing annotation shortcuts still work from the same focus target.
+  await expect(page.locator(".annotation-list button")).toHaveCount(1);
   await page.keyboard.press("Control+a");
   await expect(page.getByTestId("selection-outline")).toHaveCount(1);
   await page.keyboard.press("PageDown");
