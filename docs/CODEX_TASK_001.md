@@ -1,5 +1,7 @@
 # Codex-Auftrag 001 – Cloud-Projektgrundgerüst und PDF-Viewer
 
+Dieser Auftrag dokumentiert den ursprünglichen Viewer-Prototyp. Die aktuelle Standardansicht und Bedienung stehen im [Pflichtenheft](REQUIREMENTS.md#3-ansichten--navigation) und in der [Bedienungsanleitung](../README.md#im-browser-ausprobieren).
+
 ## An Codex Cloud
 Repository: `roju0ch/PDF-Annotation-Editor`
 
