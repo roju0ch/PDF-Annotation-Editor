@@ -1,3 +1,4 @@
+import { zoomWithWheel } from "./viewerInput";
 import { test, expect, type Page } from "@playwright/test";
 import { mkdir, writeFile, readFile } from "node:fs/promises";
 import * as mupdf from "mupdf";
@@ -165,8 +166,7 @@ test("editing native annotations preserves the large-plan raster and does not wa
     Math.floor(stage.x + stage.width / 2),
     Math.floor(stage.y + stage.height / 2),
   );
-  await page.mouse.wheel(0, -200);
-  await page.mouse.wheel(0, -200);
+  await zoomWithWheel(page, -200, -200);
   await settled(page);
   const baseline = await baseSnapshot(page, true);
   expect(baseline.hashes.length).toBeGreaterThan(1);

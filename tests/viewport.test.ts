@@ -6,7 +6,11 @@ import {
   transform,
   inverse,
   fit,
+  scrollAxis,
+  scrollLimits,
   wheelPixels,
+  MIN_SCALE,
+  MAX_SCALE,
   type Matrix,
 } from "../src/core/viewport";
 describe("viewport geometry", () => {
@@ -43,8 +47,40 @@ describe("viewport geometry", () => {
       952 / 300,
     );
   });
+  it("preserves the zoom limits", () => {
+    const view = { x: 24, y: 24, scale: 1 };
+    const pointer = { x: 100, y: 200 };
+    expect(zoomAt(view, pointer, 1000).scale).toBe(MAX_SCALE);
+    expect(zoomAt(view, pointer, 0.001).scale).toBe(MIN_SCALE);
+  });
   it("normalizes line and page wheel deltas", () => {
+    expect(wheelPixels(-7.5, 0, 800)).toBe(-7.5);
     expect(wheelPixels(2, 1, 800)).toBe(32);
     expect(wheelPixels(1, 2, 800)).toBe(800);
+    expect(wheelPixels(-1, 2, 1200)).toBe(-1200);
+  });
+  it("centers fitting sheets and limits scrolling on oversized sheets", () => {
+    const fitting = scrollLimits(400, 600);
+    expect(fitting).toEqual({ start: 100, end: 100 });
+    expect(scrollAxis(100, 40, fitting)).toBe(100);
+    const oversized = scrollLimits(1000, 600);
+    expect(oversized).toEqual({ start: 24, end: -424 });
+    expect(scrollAxis(24, 40, oversized)).toBe(-16);
+    expect(scrollAxis(-16, -40, oversized)).toBe(24);
+    expect(scrollAxis(-400, 40, oversized)).toBe(-424);
+  });
+  it("uses the first and last sheet sizes for continuous document edges", () => {
+    const limits = scrollLimits(2000, 800, 400, 200);
+    expect(limits).toEqual({ start: 200, end: -1500 });
+    expect(scrollAxis(limits.start, 1000, limits)).toBe(-800);
+    expect(scrollAxis(-800, 1000, limits)).toBe(limits.end);
+  });
+  it("returns to the scroll range smoothly after free pan or anchored zoom", () => {
+    const limits = scrollLimits(1000, 600);
+    expect(scrollAxis(80, 0, limits)).toBe(80);
+    expect(scrollAxis(80, 40, limits)).toBe(40);
+    expect(scrollAxis(80, -40, limits)).toBe(80);
+    expect(scrollAxis(-490, -40, limits)).toBe(-450);
+    expect(scrollAxis(-490, 40, limits)).toBe(-490);
   });
 });

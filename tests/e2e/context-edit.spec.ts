@@ -1,3 +1,4 @@
+import { zoomWithWheel } from "./viewerInput";
 import { test, expect, type Page, type Locator } from "@playwright/test";
 import { readFile, writeFile } from "node:fs/promises";
 import * as mupdf from "mupdf";
@@ -234,7 +235,7 @@ for (const index of [0, 1]) {
       if (index) {
         const p = await point(page, 80, 100, index);
         await page.mouse.move(p.x, p.y);
-        await page.mouse.wheel(0, -80);
+        await zoomWithWheel(page, -80);
         await page.mouse.down({ button: "middle" });
         await page.mouse.move(p.x + 25, p.y + 20);
         await page.mouse.up({ button: "middle" });

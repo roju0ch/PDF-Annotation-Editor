@@ -14,7 +14,14 @@ import {
 } from "./app/AnnotationToolbar";
 import { MenuHeading, Icon, useMenuKeyboard } from "./app/CompactMenu";
 import { AnnotationOverlay } from "./app/AnnotationOverlay";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
 import { PdfClient } from "./adapters/pdf/client";
 import {
   usesNativeSave,
@@ -34,6 +41,8 @@ import {
 import type { PageInfo } from "./adapters/pdf/types";
 import {
   fit,
+  scrollAxis,
+  scrollLimits,
   toWorld,
   wheelPixels,
   zoomAt,
@@ -42,11 +51,51 @@ import {
 } from "./core/viewport";
 import "./style.css";
 const initial: View = { x: 24, y: 24, scale: 1 };
+const openMenuSelector = ".compact-menu:popover-open, .annotation-context-menu";
+const openControlSelector = `dialog[open], ${openMenuSelector}`;
 function inputTarget(target: EventTarget | null) {
   return (
     target instanceof HTMLElement &&
-    !!target.closest("input,select,button,a,textarea")
+    !!target.closest(
+      "input,select,button,a,textarea,[contenteditable]:not([contenteditable=false])",
+    )
   );
+}
+type ScrollLayout = {
+  width: number;
+  pageWidth: number;
+  firstHeight: number;
+  lastHeight: number;
+  lastTop: number;
+};
+function verticalLimits(layout: ScrollLayout, box: Point, scale: number) {
+  return scrollLimits(
+    (layout.lastTop + layout.lastHeight) * scale,
+    box.y,
+    layout.firstHeight * scale,
+    layout.lastHeight * scale,
+  );
+}
+function scrollView(
+  view: View,
+  box: Point,
+  layout: ScrollLayout,
+  dx: number,
+  dy: number,
+): View {
+  return {
+    ...view,
+    x: scrollAxis(
+      view.x,
+      dx,
+      scrollLimits(
+        layout.width * view.scale,
+        box.x,
+        layout.pageWidth * view.scale,
+      ),
+    ),
+    y: scrollAxis(view.y, dy, verticalLimits(layout, box, view.scale)),
+  };
 }
 export default function App() {
   const multipleWindows = supportsMultiplePdfWindows();
@@ -57,6 +106,7 @@ export default function App() {
       ? "PDF speichern unter …"
       : "PDF herunterladen";
   const stage = useRef<HTMLDivElement>(null),
+    fileInput = useRef<HTMLInputElement>(null),
     client = useRef<PdfClient | null>(null),
     generation = useRef(0);
   const opening = useRef(false),
@@ -78,18 +128,9 @@ export default function App() {
     [error, setError] = useState(""),
     [loading, setLoading] = useState(false);
   const [page, setPage] = useState(0),
-    [continuous, setContinuous] = useState(false),
+    [continuous, setContinuous] = useState(true),
     [view, setView] = useState<View>(initial);
   const [box, setBox] = useState<Point>({ x: 800, y: 600 });
-  const [profile, setProfile] = useState<"mouse" | "trackpad">(() => {
-    try {
-      return localStorage.getItem("input-profile") === "trackpad"
-        ? "trackpad"
-        : "mouse";
-    } catch {
-      return "mouse";
-    }
-  });
   const [rendering, setRendering] = useState(false);
   const offsets = useMemo(() => {
     let y = 0;
@@ -103,6 +144,22 @@ export default function App() {
     () => pages.map((_, i) => (continuous ? offsets[i] : 0)),
     [pages, continuous, offsets],
   );
+  const documentWidth = useMemo(
+    () => pages.reduce((width, info) => Math.max(width, info.width), 0),
+    [pages],
+  );
+  const scrollLayout = useMemo(() => {
+    const first = continuous ? 0 : page;
+    const last = continuous ? pages.length - 1 : page;
+    const pageWidth = pages[page]?.width ?? 0;
+    return {
+      width: continuous ? documentWidth : pageWidth,
+      pageWidth,
+      firstHeight: pages[first]?.height ?? 0,
+      lastHeight: pages[last]?.height ?? 0,
+      lastTop: tops[last] ?? 0,
+    };
+  }, [continuous, documentWidth, page, pages, tops]);
   const [contentRevision, setContentRevision] = useState(0);
   const invalidate = useCallback((structural = false) => {
     if (structural) setContentRevision((v) => v + 1);
@@ -160,16 +217,12 @@ export default function App() {
   useEffect(() => {
     annotationInput.current = annotation.gesture;
   });
-  const current = useRef({ view, box, profile, pages, tops, continuous, page });
+  const current = useRef({ box, pages, scrollLayout });
   useEffect(() => {
-    current.current = { view, box, profile, pages, tops, continuous, page };
-  }, [view, box, profile, pages, tops, continuous, page]);
+    current.current = { box, pages, scrollLayout };
+  }, [box, pages, scrollLayout]);
   const updateView = useCallback((fn: (v: View) => View) => {
-    setView((v) => {
-      const next = fn(v);
-      current.current.view = next;
-      return next;
-    });
+    setView(fn);
   }, []);
   const fitPage = useCallback(
     (i: number, width = false, mode = continuous) => {
@@ -183,6 +236,77 @@ export default function App() {
   const navigate = (i: number) => {
     setPage(i);
     fitPage(i);
+  };
+  const keyNavigate = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (
+      e.target !== e.currentTarget ||
+      e.defaultPrevented ||
+      e.nativeEvent.isComposing ||
+      e.altKey ||
+      e.ctrlKey ||
+      e.metaKey ||
+      e.shiftKey ||
+      !pages.length ||
+      loading ||
+      annotation.formDirty ||
+      annotation.gesture.active() ||
+      document.querySelector(openControlSelector)
+    )
+      return;
+
+    const arrowStep = 40;
+    const screenStep = box.y * 0.9;
+    const goToPageEdge = (index: number, edge: "start" | "end") => {
+      const { width, height } = pages[index];
+      setPage(index);
+      updateView((v) => {
+        const x = scrollLimits(width * v.scale, box.x);
+        const y = continuous
+          ? verticalLimits(scrollLayout, box, v.scale)
+          : scrollLimits(height * v.scale, box.y);
+        return { ...v, x: Math.min(x.start, Math.max(x.end, v.x)), y: y[edge] };
+      });
+    };
+    const move = (dx: number, dy: number) =>
+      updateView((v) => scrollView(v, box, scrollLayout, dx, dy));
+    switch (e.key) {
+      case "ArrowLeft":
+        move(-arrowStep, 0);
+        break;
+      case "ArrowRight":
+        move(arrowStep, 0);
+        break;
+      case "ArrowUp":
+        move(0, -arrowStep);
+        break;
+      case "ArrowDown":
+        move(0, arrowStep);
+        break;
+      case "PageUp":
+      case "PageDown": {
+        const forward = e.key === "PageDown";
+        const delta = forward ? screenStep : -screenStep;
+        const nextPage = page + (forward ? 1 : -1);
+        const y = scrollAxis(
+          view.y,
+          delta,
+          verticalLimits(scrollLayout, box, view.scale),
+        );
+        if (!continuous && pages[nextPage] && Math.abs(y - view.y) < 1e-6)
+          goToPageEdge(nextPage, forward ? "start" : "end");
+        else move(0, delta);
+        break;
+      }
+      case "Home":
+        goToPageEdge(0, "start");
+        break;
+      case "End":
+        goToPageEdge(pages.length - 1, "end");
+        break;
+      default:
+        return;
+    }
+    e.preventDefault();
   };
   useEffect(() => {
     const el = stage.current!;
@@ -202,13 +326,6 @@ export default function App() {
     [],
   );
   useEffect(() => {
-    try {
-      localStorage.setItem("input-profile", profile);
-    } catch {
-      /* optional preference storage */
-    }
-  }, [profile]);
-  useEffect(() => {
     const el = stage.current!;
     let space = false;
     let hold: ReturnType<typeof setTimeout> | undefined;
@@ -224,6 +341,7 @@ export default function App() {
     cancelPendingPointer.current = clearHold;
     const points = new Map<number, Point>();
     let drag: Point | null = null;
+    let trackpadScale: number | null = null;
     let middlePasteBlocked = false;
     const local = (e: { clientX: number; clientY: number }): Point => {
       const b = el.getBoundingClientRect();
@@ -232,31 +350,64 @@ export default function App() {
     const wheel = (e: WheelEvent) => {
       clearHold();
       annotationInput.current.closeContext();
-      if (!current.current.pages.length) return;
+      const { pages, box, scrollLayout } = current.current;
+      if (!pages.length) return;
       e.preventDefault();
       annotationInput.current.cancel();
-      const dy = wheelPixels(e.deltaY, e.deltaMode, el.clientHeight),
-        dx = wheelPixels(e.deltaX, e.deltaMode, el.clientHeight);
-      if (current.current.profile === "trackpad" && !e.ctrlKey && !e.metaKey)
-        updateView((v) => ({ ...v, x: v.x - dx, y: v.y - dy }));
-      else
+      const mode = e.deltaMode;
+      const dy = wheelPixels(e.deltaY, mode, box.y);
+      if (e.ctrlKey) {
+        if (trackpadScale !== null) return;
+        const anchor = local(e);
         updateView((v) =>
           zoomAt(
             v,
-            local(e),
+            anchor,
             Math.exp(-Math.max(-200, Math.min(200, dy)) * 0.002),
           ),
         );
+      } else {
+        const dx = wheelPixels(e.deltaX, mode, box.x);
+        updateView((v) => scrollView(v, box, scrollLayout, dx, dy));
+      }
+    };
+    // Safari and WKWebView can send cumulative gesture scales for trackpad pinch.
+    const trackpadPinch = (event: Event) => {
+      if (event.type === "gesturestart") {
+        if (!current.current.pages.length || points.size || drag) return;
+        event.preventDefault();
+        clearHold();
+        annotationInput.current.closeContext();
+        annotationInput.current.cancel();
+        trackpadScale = 1;
+        return;
+      }
+      if (trackpadScale === null) return;
+      event.preventDefault();
+      if (event.type === "gestureend") {
+        trackpadScale = null;
+        return;
+      }
+      const e = event as Event & {
+        scale: number;
+        clientX?: number;
+        clientY?: number;
+      };
+      if (points.size || drag || !Number.isFinite(e.scale) || e.scale <= 0)
+        return;
+      const { box } = current.current;
+      const anchor =
+        typeof e.clientX === "number" && typeof e.clientY === "number"
+          ? local({ clientX: e.clientX, clientY: e.clientY })
+          : { x: box.x / 2, y: box.y / 2 };
+      const factor = e.scale / trackpadScale;
+      trackpadScale = e.scale;
+      updateView((v) => zoomAt(v, anchor, factor));
     };
     const down = (e: PointerEvent) => {
       middlePasteBlocked = e.button === 1;
       // A click outside a menu dismisses it; it must not also draw on the PDF.
-      if (
-        document.querySelector(
-          ".compact-menu:popover-open, .annotation-context-menu",
-        )
-      )
-        return;
+      if (document.querySelector(openMenuSelector)) return;
       if (!current.current.pages.length) return;
       annotationInput.current.hover(local(e));
       if (e.pointerType === "touch") {
@@ -373,7 +524,13 @@ export default function App() {
     };
     const keydown = (e: KeyboardEvent) => {
       middlePasteBlocked = false;
-      if (e.code === "Space" && !inputTarget(e.target)) {
+      if (
+        e.code === "Space" &&
+        !e.defaultPrevented &&
+        current.current.pages.length &&
+        !inputTarget(e.target) &&
+        !document.querySelector(openControlSelector)
+      ) {
         space = true;
         e.preventDefault();
       }
@@ -388,6 +545,7 @@ export default function App() {
       annotationInput.current.cancel();
       space = false;
       drag = null;
+      trackpadScale = null;
       points.clear();
       el.classList.remove("panning");
     };
@@ -415,6 +573,9 @@ export default function App() {
       if (middlePasteBlocked && !inputTarget(e.target)) e.preventDefault();
     };
     el.addEventListener("wheel", wheel, { passive: false });
+    el.addEventListener("gesturestart", trackpadPinch, { passive: false });
+    el.addEventListener("gesturechange", trackpadPinch, { passive: false });
+    el.addEventListener("gestureend", trackpadPinch, { passive: false });
     el.addEventListener("pointerdown", down);
     el.addEventListener("pointermove", move);
     el.addEventListener("pointerup", up);
@@ -437,6 +598,9 @@ export default function App() {
       el.removeEventListener("contextmenu", context);
       el.removeEventListener("pointerleave", leave);
       el.removeEventListener("wheel", wheel);
+      el.removeEventListener("gesturestart", trackpadPinch);
+      el.removeEventListener("gesturechange", trackpadPinch);
+      el.removeEventListener("gestureend", trackpadPinch);
       el.removeEventListener("pointerdown", down);
       el.removeEventListener("pointermove", move);
       el.removeEventListener("pointerup", up);
@@ -546,11 +710,17 @@ export default function App() {
       setPages(infos);
       setName(file.name);
       setPage(0);
-      setContinuous(false);
+      setContinuous(true);
       setRendering(false);
       updateView(() =>
         fit(infos[0].width, infos[0].height, current.current.box),
       );
+      if (
+        (document.activeElement === document.body ||
+          document.activeElement === fileInput.current) &&
+        !document.querySelector(openControlSelector)
+      )
+        stage.current?.focus({ preventScroll: true });
       previous?.dispose();
     } catch (e) {
       if (token === openSequence.current) {
@@ -578,6 +748,7 @@ export default function App() {
             <Icon name="open" />
             <span>Öffnen</span>
             <input
+              ref={fileInput}
               aria-label="PDF öffnen"
               type="file"
               accept="application/pdf,.pdf"
@@ -769,24 +940,14 @@ export default function App() {
               fitPage(page, false, mode);
             }}
           >
-            <option value="single">Einzelblatt</option>
             <option value="continuous">Fortlaufend</option>
-          </select>
-        </label>
-        <label className="menu-field">
-          Bedienung
-          <select
-            aria-label="Eingabeprofil"
-            value={profile}
-            onChange={(e) => setProfile(e.target.value as typeof profile)}
-          >
-            <option value="mouse">Maus: Rad zoomt</option>
-            <option value="trackpad">Trackpad: Scrollen</option>
+            <option value="single">Einzelblatt</option>
           </select>
         </label>
         <p className="small">
-          Mausrad: Zoom · Mitteltaste / Leertaste + Ziehen: Pan. Touch: mit zwei
-          Fingern zoomen und verschieben.
+          Mausrad scrollt. Strg (Ctrl) + Mausrad oder Pinch auf dem Trackpad
+          zoomt. Mitteltaste oder Leertaste + Ziehen verschiebt die Ansicht. Auf
+          dem Touchscreen mit zwei Fingern zoomen und verschieben.
         </p>
         <a
           href="https://github.com/roju0ch/PDF-Annotation-Editor"
@@ -837,6 +998,7 @@ export default function App() {
           tabIndex={0}
           aria-label="PDF-Arbeitsfläche"
           aria-busy={loading}
+          onKeyDown={keyNavigate}
           onDragOver={(e) => e.preventDefault()}
           onDrop={(e) => {
             e.preventDefault();

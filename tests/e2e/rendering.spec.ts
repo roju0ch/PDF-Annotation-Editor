@@ -1,3 +1,4 @@
+import { zoomWithWheel } from "./viewerInput";
 import { test, expect, type Page } from "@playwright/test";
 import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -186,7 +187,7 @@ test("large vector plan gains true detail at DPR3 zoom and refreshes only visibl
     // Chromium CDP scales wheel deltas by deviceScaleFactor. Drive toward an
     // observed zoom level rather than assuming eight physical events are enough.
     for (let i = 0; i < 32 && (await geometry(page)).scale < 1.2; i++) {
-      await page.mouse.wheel(0, -600);
+      await zoomWithWheel(page, -600);
       await page.waitForTimeout(35);
     }
     const zoomed = await geometry(page);

@@ -16,12 +16,13 @@ Ein schneller, einfacher, vollständig lokal nutzbarer PDF-Viewer und Annotation
 - Browser-Vorschau via GitHub Pages, wenn sie für den Entwicklungsstand sicher und technisch praktikabel ist. GitHub Pages muss ggf. einmalig manuell aktiviert werden.
 
 ## 3. Ansichten / Navigation
-- Einzelblattansicht als Standard, alternativ fortlaufende Seitenansicht.
+- Jedes neu geöffnete Dokument startet in der fortlaufenden Ansicht mit eingepasster erster Seite. Die Einzelblattansicht bleibt auswählbar.
 - Seitenwechsel, aktuelle Seitenzahl, Gesamtseitenzahl, Zoomfaktor, Fit Page und Fit Width.
-- Direktes Zoomen mit Mausrad, zunächst ohne Modifier. Pointer-Anker bleibt unter dem Mauszeiger.
+- Mausrad scrollt vertikal beziehungsweise horizontal, abhängig von der Radbewegung. Strg (Ctrl) + Mausrad zoomt am Mauszeiger.
 - Mittlere Maustaste: Pan zu jeder Zeit, unabhängig vom Werkzeug.
 - Leertaste + linke Maustaste: temporärer Pan.
-- Trackpad: Zwei-Finger-Scrollen bzw. Pan und Pinch zum Zoomen, nach Plattform/Browsereignissen differenziert. Konflikte von Mausrad/Trackpad über konfigurierbare Eingabeprofile lösen.
+- Trackpad: Zwei-Finger-Scrollen und Pinch zum Zoomen.
+- Tastatur bei fokussierter PDF-Arbeitsfläche: Pfeiltasten scrollen in kleinen Schritten, Bild ↑/↓ etwa eine Bildschirmhöhe, Pos1/Ende zum Dokumentanfang beziehungsweise -ende. In der Einzelblattansicht wechseln die Bildtasten am Seitenrand zur benachbarten Seite. Eingabefelder, Menüs und Dialoge behalten ihre Tastenbedienung.
 - Touch: Zwei-Finger-Pan und Pinch; Ein-Finger-Aktion nach aktivem Werkzeug.
 - Während Zoom und Pan sofortige visuelle Reaktion, hochauflösendes Nachrendern im Hintergrund; Render-Caching und effiziente Speicherfreigabe.
 - Orientierung, Rotation, CropBox, verschiedene Seitengrössen und hochauflösende Seiten korrekt behandeln.
