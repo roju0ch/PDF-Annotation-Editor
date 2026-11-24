@@ -71,6 +71,18 @@ fn owner<R: Runtime>(app: &AppHandle<R>, window: &WebviewWindow<R>) -> Result<wi
     owner.map_err(Into::into)
 }
 
+/// Called only after the PDF-open queue finishes an accepted OS-selected document.
+pub fn remember_open<R: Runtime>(
+    app: &AppHandle<R>,
+    window: &WebviewWindow<R>,
+    id: String,
+    path: PathBuf,
+) {
+    if let Ok(owner) = owner(app, window) {
+        owner.remember_location(id, &path);
+    }
+}
+
 #[tauri::command(rename_all = "camelCase")]
 async fn begin_pdf_save<R: Runtime>(
     app: AppHandle<R>,
@@ -126,6 +138,7 @@ async fn choose_target<R: Runtime>(
     window: WebviewWindow<R>,
     owner: windows::WindowSave,
     name: String,
+    directory: Option<PathBuf>,
 ) -> Result<Option<PathBuf>> {
     let (tx, rx) = mpsc::sync_channel(1);
     let handle = app.clone();
@@ -140,8 +153,12 @@ async fn choose_target<R: Runtime>(
             .set_parent(&window)
             .set_title("PDF speichern unter")
             .add_filter("PDF-Dokument", &["pdf"])
-            .set_file_name(name)
-            .save_file();
+            .set_file_name(name);
+        let picker = match directory {
+            Some(dir) => picker.set_directory(dir),
+            None => picker,
+        }
+        .save_file();
         std::thread::spawn(move || {
             let selected =
                 tauri::async_runtime::block_on(picker).map(|file| file.path().to_owned());
@@ -157,6 +174,7 @@ async fn finish_pdf_save<R: Runtime>(
     app: AppHandle<R>,
     window: WebviewWindow<R>,
     token: String,
+    source_id: Option<String>,
 ) -> Result<SaveResult> {
     if !storage::valid_token(&token) {
         return Err(invalid());
@@ -164,8 +182,14 @@ async fn finish_pdf_save<R: Runtime>(
     let owner = owner(&app, &window)?;
     let preparing = owner.clone();
     let preparing_token = token.clone();
-    let name = io(move || preparing.prepare(&preparing_token).map_err(Into::into)).await?;
-    let target = choose_target(&app, window, owner.clone(), name).await;
+    let (name, directory) = io(move || {
+        Ok((
+            preparing.prepare(&preparing_token)?,
+            preparing.initial_directory(source_id.as_deref()),
+        ))
+    })
+    .await?;
+    let target = choose_target(&app, window, owner.clone(), name, directory).await;
     // Even a failed dialog clears this transaction without acknowledging a file.
     let dialog_error = target.is_err();
     let path = target.ok().flatten();

@@ -371,6 +371,12 @@ impl Queue {
         });
     }
 
+    pub fn push_picked(&mut self, source: Source, now: Instant) {
+        // Reopening the same file explicitly is distinct from a repeated OS event.
+        self.recent.retain(|(previous, _)| previous != &source);
+        self.push(source, now);
+    }
+
     pub fn next(&self) -> Option<Descriptor> {
         let entry = self.entries.front()?;
         match &entry.status {
@@ -458,12 +464,14 @@ impl Queue {
         }
     }
 
-    pub fn finish(&mut self, id: &str, now: Instant) -> Result<(), OpenError> {
+    pub fn finish(&mut self, id: &str, now: Instant) -> Result<Option<Source>, OpenError> {
         let entry = self.entries.front().ok_or_else(OpenError::invalid)?;
         if entry.id != id || !matches!(entry.status, Status::Ready(_)) {
             return Err(OpenError::invalid());
         }
         let entry = self.entries.pop_front().unwrap();
+        let opened_source =
+            matches!(entry.status, Status::Ready(Ok(_))).then(|| entry.source.clone());
         self.recent.push_back((entry.source, now));
         while self.recent.len() > MAX_PENDING * 2 {
             self.recent.pop_front();
@@ -476,7 +484,7 @@ impl Queue {
                 status: Status::Ready(Err(OpenError::queue_full())),
             });
         }
-        Ok(())
+        Ok(opened_source)
     }
 }
 

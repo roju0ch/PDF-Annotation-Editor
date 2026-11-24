@@ -2,7 +2,7 @@
 use crate::{cache::CacheInstance, storage};
 use std::{
     collections::HashMap,
-    path::Path,
+    path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex,
@@ -20,6 +20,7 @@ struct Backend {
 #[derive(Default)]
 struct Owner {
     closed: AtomicBool,
+    location: Mutex<Option<(String, PathBuf)>>,
     backend: Mutex<Option<Backend>>,
 }
 
@@ -29,6 +30,21 @@ struct Owner {
 pub struct WindowSave(Arc<Owner>);
 
 impl WindowSave {
+    // Both keys originate in native code: an accepted open ID or a verified save token.
+    pub fn remember_location(&self, id: String, path: &Path) {
+        if let Some(parent) = path.parent().filter(|p| p.is_absolute()) {
+            if let Ok(mut location) = self.0.location.lock() {
+                *location = Some((id, parent.to_owned()));
+            }
+        }
+    }
+
+    pub fn initial_directory(&self, id: Option<&str>) -> Option<PathBuf> {
+        let location = self.0.location.lock().ok()?;
+        let (key, directory) = location.as_ref()?;
+        (Some(key.as_str()) == id && directory.is_dir()).then(|| directory.clone())
+    }
+
     pub fn is_open(&self) -> bool {
         !self.0.closed.load(Ordering::Acquire)
     }
@@ -82,7 +98,13 @@ impl WindowSave {
     }
 
     pub fn finish(&self, token: &str, target: Option<&Path>) -> Result<Option<String>> {
-        self.with(|sessions| sessions.finish(token, target))
+        self.with(|sessions| {
+            let result = sessions.finish(token, target)?;
+            if let (Some(_), Some(path)) = (&result, target) {
+                self.remember_location(token.to_owned(), path);
+            }
+            Ok(result)
+        })
     }
 
     pub fn abort(&self, token: &str) -> Result<()> {

@@ -1,3 +1,4 @@
+import { respondToDocumentSwitch } from "./documentSwitch";
 import { zoomWithWheel } from "./viewerInput";
 import { compositedRaster } from "./compositedRaster";
 import { test, expect, type Page } from "@playwright/test";
@@ -292,6 +293,7 @@ test("Ctrl+A/C/X/V, rotated target page and text-field shortcuts", async ({
   await page
     .getByLabel("PDF öffnen", { exact: true })
     .setInputFiles(`artifacts/clipboard-keyboard-${browserName}.pdf`);
+  await respondToDocumentSwitch(page, true);
   await expect(page.locator(".filename")).toHaveText(
     `clipboard-keyboard-${browserName}.pdf`,
   );

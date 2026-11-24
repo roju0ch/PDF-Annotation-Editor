@@ -1,3 +1,4 @@
+import { respondToDocumentSwitch } from "./documentSwitch";
 import { test, expect, type Page } from "@playwright/test";
 import { readFile, writeFile } from "node:fs/promises";
 import * as mupdf from "mupdf";
@@ -271,6 +272,7 @@ test("empty dialog, multiline appearance, persisted styles and native FreeText r
   ).not.toBeChecked();
   await next.getByRole("button", { name: "Abbrechen", exact: true }).click();
   await page.getByLabel("PDF öffnen", { exact: true }).setInputFiles(output);
+  await respondToDocumentSwitch(page, true);
   await expect(page.locator(".annotation-list button")).toHaveCount(1);
   await menu(page, "annotations");
   await page.locator(".annotation-list button").click();

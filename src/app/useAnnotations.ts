@@ -8,6 +8,7 @@ import { readClipboardImage } from "../adapters/platform/clipboard";
 import {
   usesNativeSave,
   savePdf,
+  type PdfFile,
   supportsPdfSave,
   PDF_SAVE_UNAVAILABLE,
 } from "../adapters/platform/savePdf";
@@ -110,7 +111,8 @@ type Layout = {
 export function useAnnotations(
   client: RefObject<PdfClient | null>,
   layout: Layout,
-  name: string,
+  file: PdfFile,
+  onSaved: (file: PdfFile) => void,
   invalidate: (structural?: boolean) => void,
   onError: (s: string) => void,
   onPagesChange: (pages: PageInfo[], focusPage?: number) => void,
@@ -431,10 +433,7 @@ export function useAnnotations(
     try {
       const r = await c.request({ type: "export" });
       if (token !== epoch.current) return;
-      const result = await savePdf(
-        r.bytes!,
-        name.replace(/\.pdf$/i, "") + "-annotiert.pdf",
-      );
+      const result = await savePdf(r.bytes!, file.fileName, file.sourceId);
       if (token !== epoch.current) return;
       if (result.status === "cancelled") {
         setNotice(
@@ -444,18 +443,21 @@ export function useAnnotations(
         );
         return;
       }
-      if (result.status === "saved") savedFileName = result.fileName;
+      if (result.status === "download-started") {
+        setNotice(
+          "PDF-Download gestartet. Bitte die heruntergeladene Datei prüfen.",
+        );
+        return;
+      }
+      savedFileName = result.fileName;
+      onSaved({ fileName: result.fileName, sourceId: result.sourceId });
       const ack = await c.request({
         type: "ack-export",
         revision: r.editor!.revision,
       });
       if (token !== epoch.current) return;
       setState(ack.editor!);
-      setNotice(
-        result.status === "saved"
-          ? `PDF gespeichert: ${result.fileName}`
-          : "PDF-Download gestartet. Bitte die heruntergeladene Datei prüfen.",
-      );
+      setNotice(`PDF gespeichert: ${result.fileName}`);
     } catch (e) {
       if (token === epoch.current) {
         if (savedFileName) {
@@ -474,7 +476,7 @@ export function useAnnotations(
         setBusy(false);
       }
     }
-  }, [client, name, onError]);
+  }, [client, file, onError, onSaved]);
   const closeContext = useCallback(() => {
     contextRef.current = null;
     setContextMenu(null);

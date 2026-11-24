@@ -15,10 +15,10 @@ const MAX_BYTES = 100 * 1024 * 1024;
 const CHUNK_BYTES = 256 * 1024;
 const PREFIX = "plugin:pdf-open|";
 type IncomingPdf = { id: string; fileName: string; byteLength: number };
-export type PdfOpenOutcome = "handled" | "deferred";
+export type PdfOpenOutcome = "opened" | "handled" | "deferred";
 type Consumer = {
   canOpen: () => boolean;
-  onFile: (file: File) => Promise<PdfOpenOutcome>;
+  onFile: (file: File, sourceId: string) => Promise<PdfOpenOutcome>;
   onError: (message: string) => void;
 };
 
@@ -99,11 +99,11 @@ export function subscribePdfOpens(consumer: Consumer) {
   let requested = false;
   let unlisten: UnlistenFn | undefined;
   let pending: { pdf: IncomingPdf; file: File } | undefined;
-  const handled = new Set<string>();
+  const handled = new Map<string, boolean>();
 
-  const remember = (id: string) => {
-    handled.add(id);
-    if (handled.size > 256) handled.delete(handled.values().next().value!);
+  const remember = (id: string, opened: boolean) => {
+    handled.set(id, opened);
+    if (handled.size > 256) handled.delete(handled.keys().next().value!);
   };
 
   async function drain() {
@@ -125,6 +125,7 @@ export function subscribePdfOpens(consumer: Consumer) {
           if (seen.has(id)) throw new Error(PDF_OPEN_MESSAGES.unavailable);
           seen.add(id);
           if (!handled.has(id)) {
+            let opened = false;
             try {
               if ("error" in raw) {
                 consumer.onError(nativeError(raw.error));
@@ -138,7 +139,8 @@ export function subscribePdfOpens(consumer: Consumer) {
                   requested = false;
                   return;
                 }
-                const result = await consumer.onFile(file);
+                const result = await consumer.onFile(file, id);
+                opened = result === "opened";
                 if (disposed) return;
                 if (result === "deferred") {
                   requested = false;
@@ -154,13 +156,16 @@ export function subscribePdfOpens(consumer: Consumer) {
                   : PDF_OPEN_MESSAGES.unavailable,
               );
             }
-            remember(id);
+            remember(id, opened);
           }
           // Keep the native head until the shared importer has completed or the
           // user has declined a document switch. Disposal never acknowledges a
           // request still being read, so React remounts can replay from offset 0.
           if (disposed) return;
-          await invoke(PREFIX + "finish_pdf_open", { id });
+          await invoke(PREFIX + "finish_pdf_open", {
+            id,
+            opened: handled.get(id),
+          });
           pending = undefined;
         }
       } while (requested && !disposed && consumer.canOpen());
@@ -218,4 +223,15 @@ export function subscribePdfOpens(consumer: Consumer) {
       unlisten?.();
     },
   };
+}
+
+/** The desktop picker enqueues an OS-selected file in the calling window. */
+export async function pickDesktopPdf() {
+  try {
+    await invoke(PREFIX + "pick_pdf_open");
+  } catch {
+    throw new Error(
+      "Die PDF-Auswahl konnte nicht geöffnet werden. Bitte erneut versuchen.",
+    );
+  }
 }

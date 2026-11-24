@@ -7,7 +7,7 @@ import {
 /** OS requests wait through editor transactions and always use the shared importer. */
 export function usePdfOpen(
   canOpen: boolean,
-  onFile: (file: File) => Promise<PdfOpenOutcome>,
+  onFile: (file: File, sourceId: string) => Promise<PdfOpenOutcome>,
   onError: (message: string) => void,
 ) {
   const current = useRef({ canOpen, onFile, onError });
@@ -24,7 +24,7 @@ export function usePdfOpen(
   useEffect(() => {
     const subscription = subscribePdfOpens({
       canOpen: () => current.current.canOpen,
-      onFile: (file) => current.current.onFile(file),
+      onFile: (file, id) => current.current.onFile(file, id),
       onError: (message) => current.current.onError(message),
     });
     controller.current = subscription;

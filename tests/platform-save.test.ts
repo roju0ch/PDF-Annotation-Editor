@@ -90,7 +90,7 @@ it("recognizes only native Android and transfers exact bytes as bounded ordered 
     async (command: string, args: Record<string, unknown>) => {
       if (command === prefix + "begin_pdf_save") {
         expect(args).toEqual({
-          fileName: "Plan__A.pdf",
+          fileName: "Plan__A.PDF",
           byteLength: bytes.length,
         });
         return { token };
@@ -116,6 +116,7 @@ it("recognizes only native Android and transfers exact bytes as bounded ordered 
   expect(await savePdf(bytes, "C:\\privat\\Plan?\nA.PDF")).toEqual({
     status: "saved",
     fileName: "Vom Benutzer gewählt.pdf",
+    sourceId: token,
   });
   expect(chunks).toHaveLength(3);
   expect(new Uint8Array(Buffer.concat(chunks))).toEqual(original);
@@ -125,13 +126,29 @@ it("recognizes only native Android and transfers exact bytes as bounded ordered 
   expect(browser.link.click).not.toHaveBeenCalled();
 });
 
+it("preserves a valid original basename and only sends an opaque origin to the native picker", async () => {
+  platform(true, "X11; Linux x86_64");
+  nativeReply(undefined, desktopPrefix);
+  const name = "Projet: " + "é".repeat(100) + ".PDF";
+  const sourceId = "70000000-0000-4000-8000-000000000002";
+  await savePdf(pdf(), name, sourceId);
+  expect(api.invoke).toHaveBeenCalledWith(desktopPrefix + "begin_pdf_save", {
+    fileName: name,
+    byteLength: 32,
+  });
+  expect(api.invoke).toHaveBeenCalledWith(desktopPrefix + "finish_pdf_save", {
+    token,
+    sourceId,
+  });
+});
+
 it("bounds suggested names without cutting a Unicode surrogate pair", async () => {
   platform();
   nativeReply();
   await savePdf(pdf(), "😀".repeat(200) + ".pdf");
   const suggestion = api.invoke.mock.calls[0][1].fileName as string;
-  expect(suggestion.length).toBeLessThanOrEqual(180);
-  expect(suggestion).toBe("😀".repeat(88) + ".pdf");
+  expect(suggestion.length).toBeLessThanOrEqual(255);
+  expect(suggestion).toBe("😀".repeat(125) + ".pdf");
 });
 
 it("returns cancellation without claiming a successful save or starting a browser download", async () => {
@@ -321,6 +338,7 @@ it.each(desktopPlatforms)(
     expect(await savePdf(bytes, "Plan.pdf")).toEqual({
       status: "saved",
       fileName: "Desktop-Plan.pdf",
+      sourceId: token,
     });
     expect(api.invoke.mock.calls.map(([command]) => command)).toEqual([
       desktopPrefix + "begin_pdf_save",
@@ -409,12 +427,12 @@ it("preserves browser downloads on every OS while describing only their start", 
       bytes = pdf();
     expect(isAndroidApp()).toBe(false);
     expect(usesNativeSave()).toBe(false);
-    expect(await savePdf(bytes, "Plan-annotiert.pdf")).toEqual({
+    expect(await savePdf(bytes, "Plan.pdf")).toEqual({
       status: "download-started",
     });
     expect(browser.link).toMatchObject({
       href: "blob:test-pdf",
-      download: "Plan-annotiert.pdf",
+      download: "Plan.pdf",
     });
     expect(browser.link.click).toHaveBeenCalledOnce();
     const blob = browser.create.mock.calls.at(-1)![0] as Blob;

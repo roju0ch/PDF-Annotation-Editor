@@ -11,6 +11,7 @@ export type NativeOpenRequest = {
   error?: { code: string; message: string };
 };
 type SaveTransaction = {
+  sourceId?: string;
   fileName: string;
   expected: number;
   received: number;
@@ -353,6 +354,7 @@ export async function nativeSaveBridge(
             }
             if (command === `plugin:${namespace}|finish_pdf_save`) {
               const transfer = state.transactions.at(-1)!;
+              transfer.sourceId = args.sourceId as string | undefined;
               if (transfer.received !== transfer.expected)
                 throw Error("Incomplete native upload");
               state.pendingFinish = true;
@@ -439,7 +441,7 @@ export async function transferredPdf(
   suffix: string,
 ) {
   const transfer = (await state(page)).transactions.at(-1)!;
-  expect(transfer.fileName).toBe("fixture-annotiert.pdf");
+  expect(transfer.fileName).toBe("fixture.pdf");
   const bytes = Buffer.concat(
     transfer.chunks.map((chunk) => Buffer.from(chunk, "base64")),
   );

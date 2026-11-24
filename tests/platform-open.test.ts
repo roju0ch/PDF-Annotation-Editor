@@ -141,6 +141,21 @@ it("subscribes before draining a cold-start PDF and preserves exact multi-chunk 
   expect(host.onError).not.toHaveBeenCalled();
 });
 
+it("retains only an accepted origin when two queued PDFs share a basename", async () => {
+  const host = native([entry(id), entry(secondId)]);
+  host.onFile.mockResolvedValueOnce("opened").mockResolvedValueOnce("handled");
+  host.subscribe();
+  await vi.waitFor(() => expect(host.finished).toEqual([id, secondId]));
+  expect(
+    api.invoke.mock.calls
+      .filter(([cmd]) => cmd === prefix + "finish_pdf_open")
+      .map(([, args]) => args),
+  ).toEqual([
+    { id, opened: true },
+    { id: secondId, opened: false },
+  ]);
+});
+
 it("does not poll an idle native queue when ordinary view renders resume readiness", async () => {
   const host = native();
   const subscription = host.subscribe();

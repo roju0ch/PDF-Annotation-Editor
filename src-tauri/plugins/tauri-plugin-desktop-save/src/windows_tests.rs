@@ -236,3 +236,43 @@ fn repeated_native_registration_keeps_the_current_upload_alive() {
     same.finish(&token, Some(&directory.path("a.pdf"))).unwrap();
     assert_eq!(fs::read(directory.path("a.pdf")).unwrap(), bytes);
 }
+
+#[test]
+fn dialog_directory_follows_only_this_windows_document_and_verified_save() {
+    let directory = Directory::new();
+    let mut windows = Windows::default();
+    let a = owner(&mut windows, "main");
+    let b = owner(&mut windows, "pdf-window-b");
+    let first = directory.path("first");
+    let second = directory.path("second");
+    fs::create_dir(&first).unwrap();
+    fs::create_dir(&second).unwrap();
+    let original = first.join("Plan.pdf");
+    let other = second.join("Plan.pdf");
+    fs::write(&original, b"original").unwrap();
+    fs::write(&other, b"other window").unwrap();
+    a.remember_location("open-a".into(), &original);
+    b.remember_location("open-b".into(), &other);
+    assert_eq!(a.initial_directory(Some("open-a")).as_ref(), Some(&first));
+    assert_eq!(b.initial_directory(Some("open-b")).as_ref(), Some(&second));
+    assert!(b.initial_directory(Some("open-a")).is_none());
+    assert!(a.initial_directory(None).is_none());
+
+    let bytes = pdf(7, 120);
+    let token = upload(&a, &directory, "Plan.pdf", &bytes);
+    assert!(a.finish(&token, None).unwrap().is_none());
+    assert_eq!(a.initial_directory(Some("open-a")).as_ref(), Some(&first));
+    let token = upload(&a, &directory, "Plan.pdf", &bytes);
+    let copy = second.join("Plan Kopie.pdf");
+    assert_eq!(
+        a.finish(&token, Some(&copy)).unwrap().as_deref(),
+        Some("Plan Kopie.pdf")
+    );
+    assert_eq!(fs::read(copy).unwrap(), bytes);
+    assert_eq!(fs::read(original).unwrap(), b"original");
+    assert_eq!(fs::read(other).unwrap(), b"other window");
+    assert_eq!(a.initial_directory(Some(&token)).as_ref(), Some(&second));
+    assert!(b.initial_directory(Some(&token)).is_none());
+    fs::remove_dir_all(second).unwrap();
+    assert!(a.initial_directory(Some(&token)).is_none());
+}

@@ -2,6 +2,12 @@ package io.github.roju0ch.pdfannotationeditor.androidbridge
 
 import android.app.Activity
 import android.content.ClipboardManager
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import android.os.Process
+import android.provider.DocumentsContract
 import android.content.Context
 import android.content.ActivityNotFoundException
 import android.view.View
@@ -36,6 +42,7 @@ class AppendPdfSaveArgs {
 @InvokeArg
 class PdfSaveTokenArgs {
     var token: String = ""
+    var initialUri: String? = null
 }
 
 @InvokeArg
@@ -179,6 +186,16 @@ class AndroidBridgePlugin(private val activity: Activity) : Plugin(activity) {
     fun finishPdfSave(invoke: Invoke) = saveTask(invoke) {
         val args = invoke.parseArgs(PdfSaveTokenArgs::class.java)
         val intent = pdfSaves.prepare(args.token)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val initial = args.initialUri?.let(Uri::parse)
+            if (initial?.scheme == "content" && runCatching {
+                DocumentsContract.isDocumentUri(activity, initial) &&
+                    activity.checkUriPermission(initial, Process.myPid(), Process.myUid(),
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION) == PackageManager.PERMISSION_GRANTED
+            }.getOrDefault(false)) {
+                intent.putExtra(DocumentsContract.EXTRA_INITIAL_URI, initial)
+            }
+        }
         val pending = PendingPdfSave(args.token, invoke)
         if (!pendingPdfSave.compareAndSet(null, pending)) {
             pdfSaves.abort(args.token)
@@ -213,7 +230,11 @@ class AndroidBridgePlugin(private val activity: Activity) : Plugin(activity) {
             val saved = pdfSaves.finish(pending.token, result.resultCode, result.data)
             invoke.resolve(JSObject().apply {
                 put("status", saved.status)
-                if (saved.fileName != null) put("fileName", saved.fileName)
+                if (saved.fileName != null) {
+                    put("fileName", saved.fileName)
+                    // Native Rust retains this picker hint and omits it from the WebView reply.
+                    put("uri", result.data?.data?.toString())
+                }
             })
         }
     }

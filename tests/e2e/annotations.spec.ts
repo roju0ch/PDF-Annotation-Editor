@@ -35,6 +35,9 @@ async function download(page: Page, file: string) {
     .getByRole("button", { name: "PDF herunterladen", exact: true })
     .click();
   const d = await waiting;
+  expect(d.suggestedFilename()).toBe(
+    await page.locator(".filename").innerText(),
+  );
   await d.saveAs(file);
   await expect(
     page.getByRole("status").filter({ hasText: "PDF-Download gestartet" }),
@@ -204,6 +207,7 @@ test("edit existing note, create Text and rotated FreeText, preserve originals a
   await page
     .getByLabel("PDF öffnen", { exact: true })
     .setInputFiles("artifacts/browser-annotations.pdf");
+  await respondToDocumentSwitch(page, true);
   await expect(page.getByLabel("PDF-Seite 1")).toHaveAttribute(
     "data-rendered",
     "true",

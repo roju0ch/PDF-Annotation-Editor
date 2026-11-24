@@ -14,6 +14,40 @@ use tauri::{WebviewUrl, WebviewWindowBuilder};
 const NEW_WINDOW: &str = "pdf-new-window";
 const WINDOW_ERROR: &str = "pdf-window-error";
 
+/// A user-selected file joins the calling window's existing bounded import queue.
+#[tauri::command]
+pub(super) async fn pick_pdf_open<R: Runtime>(
+    app: AppHandle<R>,
+    window: WebviewWindow<R>,
+) -> Result<(), OpenError> {
+    let session = state(&app).session(window.label())?;
+    let picker = on_ui(app.clone(), move |_| {
+        Ok(rfd::AsyncFileDialog::new()
+            .set_parent(&window)
+            .set_title("PDF öffnen")
+            .add_filter("PDF-Dokument", &["pdf"])
+            .pick_file())
+    })
+    .await?;
+    if let Some(file) = picker.await {
+        {
+            let mut backend = session
+                .backend
+                .lock()
+                .map_err(|_| OpenError::unavailable())?;
+            if backend.closed {
+                return Ok(());
+            }
+            backend
+                .queue
+                .push_picked(Source::Local(file.path().to_owned()), Instant::now());
+        }
+        let _ = app.emit_to(&session.label, AVAILABLE, ());
+        session.kick(&app);
+    }
+    Ok(())
+}
+
 pub(super) struct Windows {
     routes: Routes,
     sessions: BTreeMap<String, Session>,
