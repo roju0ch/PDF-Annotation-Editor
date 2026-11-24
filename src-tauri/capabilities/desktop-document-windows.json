@@ -10,6 +10,7 @@
     "pdf-open:allow-next-pdf-open",
     "pdf-open:allow-read-pdf-open",
     "pdf-open:allow-finish-pdf-open",
+    "pdf-open:allow-pick-pdf-open",
     "pdf-open:allow-new-pdf-window",
     "pdf-open:allow-report-window-state",
     "pdf-open:allow-close-pdf-window",

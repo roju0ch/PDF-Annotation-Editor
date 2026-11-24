@@ -258,13 +258,14 @@ class PdfSaveSession(cacheRoot: File, private val resolver: ContentResolver) : C
             value.none { Character.isISOControl(it) || it == '/' || it == '\\' }
 
         private fun suggestedName(value: String): String {
+            if (validDisplayName(value) && value.endsWith(".pdf", ignoreCase = true)) return value
             var name = value.substringAfterLast('/').substringAfterLast('\\')
                 .map { if (Character.isISOControl(it) || it in ":*?\"<>|") '_' else it }.joinToString("")
-                .trim().trim('.')
-            if (name.isBlank()) name = "Dokument-annotiert.pdf"
+                .trim().trimEnd('.')
+            if (name.isBlank()) name = "Dokument.pdf"
             if (!name.endsWith(".pdf", ignoreCase = true)) name += ".pdf"
-            if (name.length > 180) {
-                name = name.take(176).let { if (it.last().isHighSurrogate()) it.dropLast(1) else it } + ".pdf"
+            if (name.length > 255) {
+                name = name.take(251).let { if (it.last().isHighSurrogate()) it.dropLast(1) else it } + name.takeLast(4)
             }
             return name
         }

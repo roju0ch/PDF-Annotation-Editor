@@ -25,5 +25,9 @@ tauri-plugin-android-bridge = { path = "../tauri-plugin-android-bridge" }
 [target.'cfg(target_os = "ios")'.dependencies]
 tauri-plugin-ios-bridge = { path = "../tauri-plugin-ios-bridge" }
 
+[target.'cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))'.dependencies]
+tauri-plugin-desktop-save = { path = "../tauri-plugin-desktop-save" }
+rfd = { version = "=0.17.2", default-features = false, features = ["gtk3", "common-controls-v6"] }
+
 [build-dependencies]
 tauri-plugin = { version = "=2.7.2", features = ["build"] }

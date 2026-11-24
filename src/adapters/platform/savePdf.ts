@@ -1,7 +1,9 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 
+export type PdfFile = { fileName: string; sourceId?: string };
+
 export type SaveResult =
-  | { status: "saved"; fileName: string }
+  | ({ status: "saved" } & PdfFile)
   | { status: "cancelled" }
   | { status: "download-started" };
 
@@ -36,20 +38,29 @@ export function isAndroidApp() {
 }
 
 function suggestedFileName(value: string) {
+  // Keep legal basenames verbatim, including mixed-case extensions and characters
+  // such as ":" that are valid on Unix. The system picker makes the final choice.
+  if (
+    value.length <= 255 &&
+    /\.pdf$/i.test(value) &&
+    !/[\\/\p{Cc}]/u.test(value) &&
+    !(/^Win/i.test(navigator.platform) && /[<>:"|?*]/.test(value))
+  )
+    return value;
   const name = value
     .split(/[\\/]/)
     .at(-1)!
     .replace(/[\p{Cc}<>:"|?*]/gu, "_")
     .trim()
     .replace(/\.+$/, "");
-  const base = name.replace(/\.pdf$/i, "") || "Dokument-annotiert";
+  const base = name.replace(/\.pdf$/i, "") || "Dokument";
   let bounded = "";
-  // Keep the entire suggestion within 180 UTF-16 units, including its suffix.
+  // Keep the entire suggestion within 255 UTF-16 units, including its suffix.
   for (const character of base) {
-    if (bounded.length + character.length > 176) break;
+    if (bounded.length + character.length > 251) break;
     bounded += character;
   }
-  return bounded + ".pdf";
+  return bounded + (name.match(/\.pdf$/i)?.[0] ?? ".pdf");
 }
 
 function object(value: unknown): Record<string, unknown> | null {
@@ -81,6 +92,7 @@ function base64(bytes: Uint8Array<ArrayBuffer>) {
 export async function savePdf(
   bytes: Uint8Array<ArrayBuffer>,
   fileName: string,
+  sourceId?: string,
 ): Promise<SaveResult> {
   if (!supportsPdfSave()) throw new Error(PDF_SAVE_UNAVAILABLE);
   if (
@@ -142,7 +154,9 @@ export async function savePdf(
     }
     // A person may leave the system picker open indefinitely. A timer here
     // could falsely fail a legitimate selection or acknowledge an unfinished file.
-    const finished = object(await invoke(command("finish"), { token }));
+    const finished = object(
+      await invoke(command("finish"), { token, sourceId }),
+    );
     if (finished?.status === "cancelled") return { status: "cancelled" };
     if (
       finished?.status === "saved" &&
@@ -151,7 +165,7 @@ export async function savePdf(
       finished.fileName.length <= 255 &&
       !/[\\/\p{Cc}]/u.test(finished.fileName)
     )
-      return { status: "saved", fileName: finished.fileName };
+      return { status: "saved", fileName: finished.fileName, sourceId: token };
     throw new Error(
       "Die gespeicherte PDF wurde nicht bestätigt. Die Änderungen bleiben ungesichert.",
     );

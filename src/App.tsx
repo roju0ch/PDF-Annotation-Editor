@@ -12,7 +12,13 @@ import {
   AnnotationPanel,
   DirectTools,
 } from "./app/AnnotationToolbar";
-import { MenuHeading, Icon, useMenuKeyboard } from "./app/CompactMenu";
+import {
+  MenuHeading,
+  Icon,
+  useMenuKeyboard,
+  openControlSelector,
+  openMenuSelector,
+} from "./app/CompactMenu";
 import { AnnotationOverlay } from "./app/AnnotationOverlay";
 import {
   useCallback,
@@ -24,6 +30,7 @@ import {
 } from "react";
 import { PdfClient } from "./adapters/pdf/client";
 import {
+  type PdfFile,
   usesNativeSave,
   supportsPdfSave,
   PDF_SAVE_UNAVAILABLE,
@@ -31,6 +38,7 @@ import {
 import {
   PDF_OPEN_MESSAGES as messages,
   type PdfOpenOutcome,
+  pickDesktopPdf,
 } from "./adapters/platform/openPdf";
 import { usePdfOpen } from "./app/usePdfOpen";
 import { usePdfWindows } from "./app/usePdfWindows";
@@ -51,8 +59,6 @@ import {
 } from "./core/viewport";
 import "./style.css";
 const initial: View = { x: 24, y: 24, scale: 1 };
-const openMenuSelector = ".compact-menu:popover-open, .annotation-context-menu";
-const openControlSelector = `dialog[open], ${openMenuSelector}`;
 function inputTarget(target: EventTarget | null) {
   return (
     target instanceof HTMLElement &&
@@ -124,7 +130,7 @@ export default function App() {
     [],
   );
   const [pages, setPages] = useState<PageInfo[]>([]),
-    [name, setName] = useState(""),
+    [fileInfo, setFileInfo] = useState<PdfFile>({ fileName: "" }),
     [error, setError] = useState(""),
     [loading, setLoading] = useState(false);
   const [page, setPage] = useState(0),
@@ -183,10 +189,12 @@ export default function App() {
         fitted.scale;
     setView(fitted);
   }, []);
+  const name = fileInfo.fileName;
   const annotation = useAnnotations(
     client,
     { view, pages, tops, continuous, page, box },
-    name,
+    fileInfo,
+    setFileInfo,
     invalidate,
     setError,
     pagesChanged,
@@ -674,7 +682,7 @@ export default function App() {
     setPage(closest);
   }, [view, box, continuous, pages, tops, annotation.formDirty]);
   usePdfOpen(!annotation.busy && !loading, open, setError);
-  async function open(file: File): Promise<PdfOpenOutcome> {
+  async function open(file: File, sourceId?: string): Promise<PdfOpenOutcome> {
     if (opening.current || !annotation.beginDocumentChange()) {
       setError("Bitte warten, bis die PDF-Verarbeitung abgeschlossen ist.");
       return "deferred";
@@ -708,7 +716,7 @@ export default function App() {
       generation.current++;
       annotation.reset(result.editor!);
       setPages(infos);
-      setName(file.name);
+      setFileInfo({ fileName: file.name, sourceId });
       setPage(0);
       setContinuous(true);
       setRendering(false);
@@ -722,6 +730,7 @@ export default function App() {
       )
         stage.current?.focus({ preventScroll: true });
       previous?.dispose();
+      return "opened";
     } catch (e) {
       if (token === openSequence.current) {
         setError(
@@ -752,6 +761,13 @@ export default function App() {
               aria-label="PDF öffnen"
               type="file"
               accept="application/pdf,.pdf"
+              onClick={(event) => {
+                if (!multipleWindows) return;
+                event.preventDefault();
+                void pickDesktopPdf().catch((error: Error) =>
+                  setError(error.message),
+                );
+              }}
               onChange={(e) => {
                 const f = e.target.files?.[0];
                 if (f) void open(f);

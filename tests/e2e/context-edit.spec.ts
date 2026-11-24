@@ -1,3 +1,4 @@
+import { respondToDocumentSwitch } from "./documentSwitch";
 import { zoomWithWheel } from "./viewerInput";
 import { test, expect, type Page, type Locator } from "@playwright/test";
 import { readFile, writeFile } from "node:fs/promises";
@@ -313,6 +314,7 @@ for (const index of [0, 1]) {
       await page
         .getByLabel("PDF öffnen", { exact: true })
         .setInputFiles(redone.path);
+      await respondToDocumentSwitch(page, true);
       await expect(page.getByTestId("viewport")).toHaveAttribute(
         "aria-busy",
         "false",

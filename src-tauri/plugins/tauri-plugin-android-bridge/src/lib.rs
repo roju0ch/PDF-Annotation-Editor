@@ -8,6 +8,16 @@ use tauri::{
 
 struct AndroidBridge<R: Runtime>(PluginHandle<R>);
 
+// Android has one document window. Only a matching native ID may hint its provider.
+#[derive(Default)]
+struct DocumentLocation(std::sync::Mutex<Option<(String, String)>>);
+
+pub fn remember_open<R: Runtime>(app: &AppHandle<R>, id: String, uri: String) {
+    if let Ok(mut location) = app.state::<DocumentLocation>().0.lock() {
+        *location = Some((id, uri));
+    }
+}
+
 const MAX_PDF_BYTES: usize = 150 * 1024 * 1024;
 const MAX_PDF_CHUNK_BYTES: usize = 256 * 1024;
 const MAX_PDF_CHUNK_BASE64: usize = 4 * MAX_PDF_CHUNK_BYTES.div_ceil(3);
@@ -171,6 +181,13 @@ struct PdfSaveProgress {
 }
 
 #[derive(Serialize)]
+struct FinishPdfSave {
+    token: String,
+    #[serde(rename = "initialUri")]
+    initial_uri: Option<String>,
+}
+
+#[derive(Serialize)]
 struct PdfSaveToken {
     token: String,
 }
@@ -181,6 +198,8 @@ enum PdfSaveResult {
     Saved {
         #[serde(rename = "fileName")]
         file_name: String,
+        #[serde(rename = "uri", skip_serializing, default)]
+        uri: Option<String>,
     },
     Cancelled,
 }
@@ -318,15 +337,40 @@ async fn append_pdf_save<R: Runtime>(
 async fn finish_pdf_save<R: Runtime>(
     app: AppHandle<R>,
     token: String,
+    source_id: Option<String>,
 ) -> Result<PdfSaveResult, PdfSaveError> {
     require_pdf_token(&token)?;
-    app.state::<AndroidBridge<R>>()
+    let initial_uri = app
+        .state::<DocumentLocation>()
+        .0
+        .lock()
+        .ok()
+        .and_then(|location| {
+            location
+                .as_ref()
+                .filter(|(id, _)| Some(id.as_str()) == source_id.as_deref())
+                .map(|(_, uri)| uri.clone())
+        });
+    let result: PdfSaveResult = app
+        .state::<AndroidBridge<R>>()
         .0
         // The native promise stays pending while the user chooses a destination
         // and until ContentResolver write/close/readback verification completes.
-        .run_mobile_plugin_async("finishPdfSave", PdfSaveToken { token })
-        .await
-        .map_err(Into::into)
+        .run_mobile_plugin_async(
+            "finishPdfSave",
+            FinishPdfSave {
+                token: token.clone(),
+                initial_uri,
+            },
+        )
+        .await?;
+    if let PdfSaveResult::Saved {
+        uri: Some(ref uri), ..
+    } = result
+    {
+        remember_open(&app, token, uri.clone());
+    }
+    Ok(result)
 }
 
 #[tauri::command]
@@ -355,6 +399,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
                 "AndroidBridgePlugin",
             )?;
             app.manage(AndroidBridge(handle));
+            app.manage(DocumentLocation::default());
             Ok(())
         })
         .build()

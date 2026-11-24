@@ -207,6 +207,7 @@ test("append, keyboard move, invalid PDF rejection, and bounded thumbnails for l
   await page
     .getByLabel("PDF öffnen", { exact: true })
     .setInputFiles("artifacts/pages-many.pdf");
+  await respondToDocumentSwitch(page, true);
   await overview(page);
   await expect(page.locator("#pages-menu h2")).toHaveText("Seiten · 50");
   expect(await page.locator(".page-thumbnail canvas").count()).toBeLessThan(12);
@@ -449,6 +450,7 @@ for (const mobile of [false, true]) {
       doc.destroy();
     }
     await page.getByLabel("PDF öffnen", { exact: true }).setInputFiles(file);
+    await respondToDocumentSwitch(page, true);
     await expect.poll(dimensions).toEqual(["400px", "300px"]);
     await expect.poll(() => redAt(0.15, 0.5)).toEqual([255, 0, 0]);
   });

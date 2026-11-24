@@ -62,6 +62,20 @@ for (const platform of ["windows", "macos", "linux"] as const) {
       acknowledgements: 1,
       browserDownloads: 0,
     });
+    // A pathless WebView file starts without an origin. After Save As, the next
+    // picker may reuse only this window's verified destination.
+    expect(pending.transactions[0].sourceId).toBeUndefined();
+    await expect(page.locator(".filename")).toHaveText(savedName);
+    await saveButton(page).click();
+    await expect.poll(async () => (await state(page)).pendingFinish).toBe(true);
+    expect((await state(page)).transactions[1]).toMatchObject({
+      fileName: savedName,
+      sourceId: "00000000-0000-4000-8000-000000000001",
+    });
+    await page.evaluate(() =>
+      (globalThis as TestWindow).nativeSaveTest.release!("cancelled"),
+    );
+    await expect(saveButton(page)).toBeEnabled();
     await page.getByLabel("PDF öffnen", { exact: true }).setInputFiles(file);
     await expect(page.locator(".annotation-list")).toContainText(comment);
     expect(await readFile("artifacts/fixture.pdf")).toEqual(original);

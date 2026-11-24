@@ -18,7 +18,8 @@ import { documentSwitchDialog } from "./documentSwitch";
 // does not claim to exercise actual Finder routing or native macOS windows.
 const labelB = "pdf-00000000-0000-4000-8000-000000000002";
 const filenameA = "Grundriss A – Zürich.pdf";
-const filenameB = "Plan B – Räume.pdf";
+// Identical basenames in different windows must still resolve distinct origins.
+const filenameB = filenameA;
 let sourceA: Buffer;
 let sourceB: Buffer;
 test.beforeAll(async () => {
@@ -299,6 +300,14 @@ for (const platform of ["macos", "windows", "linux"] as const) {
     await expect
       .poll(async () => (await saveState(other)).pendingFinish)
       .toBe(true);
+    expect((await saveState(page)).transactions[0]).toMatchObject({
+      fileName: filenameA,
+      sourceId: incoming(1, filenameA, sourceA).id,
+    });
+    expect((await saveState(other)).transactions[0]).toMatchObject({
+      fileName: filenameB,
+      sourceId: incoming(2, filenameB, sourceB).id,
+    });
     const resultA = await exported(page),
       resultB = await exported(other);
     expect(resultA.pages).toBe(3);

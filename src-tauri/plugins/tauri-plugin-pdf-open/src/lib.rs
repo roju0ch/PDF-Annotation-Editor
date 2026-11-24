@@ -327,20 +327,37 @@ async fn finish_pdf_open<R: Runtime>(
     app: AppHandle<R>,
     window: WebviewWindow<R>,
     id: String,
+    opened: Option<bool>,
 ) -> Result<(), OpenError> {
     let state = state(&app).session(window.label())?;
     let waking = state.clone();
-    io(move || {
+    let request_id = id.clone();
+    let source = io(move || {
         state
             .backend
             .lock()
             .map_err(|_| OpenError::unavailable())?
             .queue
-            .finish(&id, Instant::now())
+            .finish(&request_id, Instant::now())
     })
     .await?;
     #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
-    desktop::release(&app, window.label());
+    {
+        if opened == Some(true) {
+            if let Some(Source::Local(path)) = source {
+                tauri_plugin_desktop_save::remember_open(&app, &window, id, path);
+            }
+        }
+        desktop::release(&app, window.label());
+    }
+    #[cfg(target_os = "android")]
+    if opened == Some(true) {
+        if let Some(Source::Mobile(uri)) = source {
+            tauri_plugin_android_bridge::remember_open(&app, id, uri);
+        }
+    }
+    #[cfg(target_os = "ios")]
+    let _ = (source, opened);
     let _ = app.emit_to(&waking.label, AVAILABLE, ());
     waking.kick(&app);
     Ok(())
@@ -354,6 +371,7 @@ pub fn init<R: Runtime>(queue: PdfOpen) -> TauriPlugin<R> {
         next_pdf_open,
         read_pdf_open,
         finish_pdf_open,
+        desktop::pick_pdf_open,
         desktop::new_pdf_window,
         desktop::report_window_state,
         desktop::close_pdf_window,
