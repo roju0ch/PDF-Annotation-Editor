@@ -230,3 +230,74 @@ test("touch marquee, group movement and second-finger cancellation", async ({
   await expect(page.getByTestId("selection-outline")).toHaveCount(3);
   await page.screenshot({ path: "artifacts/group-selection-mobile.png" });
 });
+
+for (const platform of ["Linux x86_64", "Win32", "MacIntel"]) {
+  test(`delete shortcut removes a group in one edit on ${platform}`, async ({
+    page,
+  }) => {
+    await page.addInitScript(
+      (value) => Object.defineProperty(navigator, "platform", { value }),
+      platform,
+    );
+    await open(page);
+    const undo = page.getByRole("button", { name: "Rückgängig", exact: true });
+    await page.keyboard.press("Delete");
+    await expect(undo).toBeDisabled();
+    await drag(page, await point(page, 90, 130), await point(page, 220, 215));
+    await page.mouse.up();
+    await expect(page.getByTestId("selection-outline")).toHaveCount(3);
+    await menu(page, "annotations");
+    await page.keyboard.press("Delete");
+    await page.keyboard.press("Backspace");
+    await expect(undo).toBeDisabled();
+    await closeMenu(page);
+    if (platform !== "MacIntel") {
+      await page.keyboard.press("Backspace");
+      await expect(undo).toBeDisabled();
+    }
+    await page.keyboard.press(platform === "MacIntel" ? "Backspace" : "Delete");
+    await expect(
+      page.getByText("3 Markierungen gelöscht.", { exact: true }),
+    ).toHaveCount(1);
+    await undo.click();
+    await expect(undo).toBeDisabled();
+    await menu(page, "annotations");
+    const items = page.locator(".annotation-list button");
+    const restored = await items.count();
+    expect(restored).toBeGreaterThanOrEqual(3);
+    await closeMenu(page);
+    await page
+      .getByRole("button", { name: "Wiederholen", exact: true })
+      .click();
+    await menu(page, "annotations");
+    await expect(items).toHaveCount(restored - 3);
+  });
+}
+
+test("Mac delete keys edit the property text and leave the selected annotation intact", async ({
+  page,
+}) => {
+  await page.addInitScript(() =>
+    Object.defineProperty(navigator, "platform", { value: "MacIntel" }),
+  );
+  await open(page);
+  await menu(page, "annotations");
+  await page
+    .locator(".annotation-list button")
+    .filter({ hasText: "Unverändert" })
+    .click();
+  const field = page.getByLabel("Annotationsinhalt");
+  await field.focus();
+  await field.press("Home");
+  await field.press("Delete");
+  await expect(field).toHaveValue("nverändert");
+  await field.press("End");
+  await field.press("Backspace");
+  await expect(field).toHaveValue("nveränder");
+  await expect(
+    page.locator(".annotation-list button[aria-pressed=true]"),
+  ).toContainText("Unverändert");
+  await expect(
+    page.getByRole("button", { name: "Rückgängig", exact: true }),
+  ).toBeDisabled();
+});

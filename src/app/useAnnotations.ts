@@ -1,3 +1,4 @@
+import { openControlSelector } from "./CompactMenu";
 import {
   FREE_TEXT_PREFERENCES_KEY,
   readFreeTextStyle,
@@ -711,7 +712,7 @@ export function useAnnotations(
     },
     [client, closeContext, invalidate, onError, showDraft],
   );
-  async function deleteSelection() {
+  const deleteSelection = useCallback(() => {
     const cur = current.current;
     if (
       lock.current ||
@@ -724,19 +725,21 @@ export function useAnnotations(
         ),
       )
     )
-      return;
+      return false;
     showDraft(null);
     closeContext();
-    const result = await edit({
+    void edit({
       action: "delete-many",
       page: cur.layout.page,
       ids: cur.selection,
+    }).then((result) => {
+      if (result)
+        setNotice(
+          `${cur.selection.length} ${cur.selection.length === 1 ? "Markierung" : "Markierungen"} gelöscht.`,
+        );
     });
-    if (result)
-      setNotice(
-        `${cur.selection.length} ${cur.selection.length === 1 ? "Markierung" : "Markierungen"} gelöscht.`,
-      );
-  }
+    return true;
+  }, [closeContext, edit, showDraft]);
   const selectAll = useCallback(() => {
     const cur = current.current;
     if (lock.current || cur.formDirty || cur.state.readOnly) return;
@@ -1027,18 +1030,29 @@ export function useAnnotations(
           e.preventDefault();
         return;
       }
+      if (
+        (e.key === "Delete" ||
+          (e.key === "Backspace" && /^Mac/i.test(navigator.platform))) &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.altKey &&
+        !e.shiftKey &&
+        !e.repeat &&
+        !e.isComposing &&
+        !typing(e.target) &&
+        !draftRef.current &&
+        !document.querySelector(openControlSelector) &&
+        deleteSelection()
+      )
+        e.preventDefault();
       if (!(e.ctrlKey || e.metaKey) || !client.current) return;
       if (e.key.toLowerCase() === "s") {
         e.preventDefault();
         void save();
       }
-      const typing =
-        e.target instanceof HTMLElement &&
-        !!e.target.closest(
-          "input:not([type=file]),textarea,select,[contenteditable]:not([contenteditable=false])",
-        );
+      const isTyping = typing(e.target);
       if (
-        !typing &&
+        !isTyping &&
         !e.altKey &&
         ["a", "c", "x", "v"].includes(e.key.toLowerCase())
       ) {
@@ -1056,7 +1070,7 @@ export function useAnnotations(
         return;
       }
       if (
-        !typing &&
+        !isTyping &&
         !current.current.formDirty &&
         ["z", "y"].includes(e.key.toLowerCase())
       ) {
@@ -1074,7 +1088,7 @@ export function useAnnotations(
       window.removeEventListener("keyup", keyup);
       window.removeEventListener("paste", nativePaste);
     };
-  }, [client, edit, save, onError]);
+  }, [client, deleteSelection, edit, save, onError]);
   function locate(p: Point, forcedPage?: number, clamp = true) {
     const { view, pages, tops, continuous, page } = current.current.layout,
       w = toWorld(p, view);

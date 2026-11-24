@@ -146,11 +146,16 @@ it("cuts the whole group as one undoable edit and rejects invalid groups without
     ).toThrow();
     expect(editor.list(0)).toEqual(original);
     const clip = editor.copy(0, ids);
+    const position = doc.getJournal().position;
     editor.apply({ action: "delete-many", page: 0, ids });
+    expect(doc.getJournal().position).toBe(position + 1);
     expect(editor.list(0)).toHaveLength(original.length - 3);
     editor.apply({ action: "undo" });
     expect(editor.list(0)).toEqual(original);
     editor.apply({ action: "redo" });
+    expect(editor.list(0)).toEqual(
+      original.filter((item) => !ids.includes(item.id)),
+    );
     editor.apply({
       action: "paste",
       page: 0,

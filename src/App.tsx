@@ -12,7 +12,13 @@ import {
   AnnotationPanel,
   DirectTools,
 } from "./app/AnnotationToolbar";
-import { MenuHeading, Icon, useMenuKeyboard } from "./app/CompactMenu";
+import {
+  MenuHeading,
+  Icon,
+  useMenuKeyboard,
+  openControlSelector,
+  openMenuSelector,
+} from "./app/CompactMenu";
 import { AnnotationOverlay } from "./app/AnnotationOverlay";
 import {
   useCallback,
@@ -51,8 +57,6 @@ import {
 } from "./core/viewport";
 import "./style.css";
 const initial: View = { x: 24, y: 24, scale: 1 };
-const openMenuSelector = ".compact-menu:popover-open, .annotation-context-menu";
-const openControlSelector = `dialog[open], ${openMenuSelector}`;
 function inputTarget(target: EventTarget | null) {
   return (
     target instanceof HTMLElement &&

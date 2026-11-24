@@ -9,6 +9,10 @@ import {
 
 import { safeViewport } from "../adapters/platform/safeArea";
 
+export const openMenuSelector =
+  ".compact-menu:popover-open, .annotation-context-menu";
+export const openControlSelector = `dialog[open], ${openMenuSelector}`;
+
 function dismissMenu(target: string) {
   document.getElementById(target)?.hidePopover();
   document
