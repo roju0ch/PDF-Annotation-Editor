@@ -32,7 +32,11 @@ async function fixture(path: string, labels: string[], form = false) {
 test.beforeAll(async () => {
   await fixture("artifacts/pages-main.pdf", ["A", "B", "C"]);
   await fixture("artifacts/pages-add.pdf", ["D", "E"]);
-  await fixture("artifacts/pages-form.pdf", ["Form"], true);
+  await fixture(
+    "artifacts/pages-form.pdf",
+    ["Form A", "Form B", "Form C"],
+    true,
+  );
   await fixture(
     "artifacts/pages-many.pdf",
     Array.from({ length: 50 }, (_, i) => `Page ${i + 1}`),
@@ -294,45 +298,59 @@ test("mobile long-press drag, scrolling and cancellation", async ({
   ).toBeDisabled();
 });
 
-test("drag autoscroll retains capture through virtual rows and reopening restores visible thumbnails", async ({
-  page,
-  browserName,
-}) => {
-  await open(page, "artifacts/pages-many.pdf");
-  await overview(page);
-  const first = (await page
-    .getByRole("button", { name: "Seite 1 anzeigen", exact: true })
-    .boundingBox())!;
-  const list = page.getByTestId("page-list"),
-    box = (await list.boundingBox())!;
-  await page.mouse.move(first.x + 50, first.y + 40);
-  await page.mouse.down();
-  await page.mouse.move(box.x + 70, box.y + box.height - 3, { steps: 6 });
-  await expect
-    .poll(
-      () =>
-        list.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop),
-      { timeout: 20000 },
-    )
-    .toBeLessThan(2);
-  await page.mouse.up();
-  await expect(
-    page.getByRole("button", { name: "Seite 50 anzeigen", exact: true }),
-  ).toHaveAttribute("aria-current", "page");
-  await closeMenu(page);
-  await overview(page);
-  await expect(
-    page.getByLabel("Miniatur Seite 50", { exact: true }),
-  ).toHaveAttribute("data-rendered", "true");
-  const saved = await download(
+for (const group of [false, true]) {
+  test(`drag autoscroll retains ${group ? "group" : "single-page"} capture through virtual rows`, async ({
     page,
-    `artifacts/pages-autoscroll-${browserName}.pdf`,
-  );
-  expect(saved.map((p) => p.text)).toEqual([
-    ...Array.from({ length: 49 }, (_, i) => `Page ${i + 2}`),
-    "Page 1",
-  ]);
-});
+    browserName,
+  }) => {
+    await open(page, "artifacts/pages-many.pdf");
+    await overview(page);
+    if (group)
+      await page
+        .getByRole("button", { name: "Seite 3 anzeigen", exact: true })
+        .click({ modifiers: ["Control"] });
+    const first = (await page
+      .getByRole("button", { name: "Seite 1 anzeigen", exact: true })
+      .boundingBox())!;
+    const list = page.getByTestId("page-list"),
+      box = (await list.boundingBox())!;
+    await page.mouse.move(first.x + 50, first.y + 40);
+    await page.mouse.down();
+    await page.mouse.move(box.x + 70, box.y + box.height - 3, { steps: 6 });
+    await expect
+      .poll(
+        () =>
+          list.evaluate(
+            (el) => el.scrollHeight - el.clientHeight - el.scrollTop,
+          ),
+        { timeout: 20000 },
+      )
+      .toBeLessThan(2);
+    await page.mouse.up();
+    await expect(
+      page.getByRole("button", {
+        name: group ? "Seite 49 anzeigen" : "Seite 50 anzeigen",
+        exact: true,
+      }),
+    ).toHaveAttribute("aria-current", "page");
+    await closeMenu(page);
+    await overview(page);
+    await expect(
+      page.getByLabel("Miniatur Seite 50", { exact: true }),
+    ).toHaveAttribute("data-rendered", "true");
+    const saved = await download(
+      page,
+      `artifacts/pages-autoscroll-${group ? "group-" : ""}${browserName}.pdf`,
+    );
+    expect(saved.map((p) => p.text)).toEqual([
+      ...Array.from({ length: 49 }, (_, i) => `Page ${i + 2}`).filter(
+        (p) => !group || p !== "Page 3",
+      ),
+      "Page 1",
+      ...(group ? ["Page 3"] : []),
+    ]);
+  });
+}
 
 for (const mobile of [false, true]) {
   test(`page rotation ${mobile ? "with touch" : "with mouse and continuous view"} preserves native comments and refreshes geometry`, async ({
@@ -455,3 +473,192 @@ for (const mobile of [false, true]) {
     await expect.poll(() => redAt(0.15, 0.5)).toEqual([255, 0, 0]);
   });
 }
+
+const card = (page: Page, number: number) =>
+  page.getByRole("button", { name: `Seite ${number} anzeigen`, exact: true });
+const removePages = (page: Page) =>
+  page.getByRole("button", { name: "Ausgewählte Seiten löschen" });
+const picked = (page: Page) =>
+  page
+    .locator('.page-card[aria-pressed="true"]')
+    .evaluateAll((els) => els.map((el) => el.getAttribute("data-page-id")));
+
+test("range and disjoint selection move together, keep their IDs and undo in one step", async ({
+  page,
+}) => {
+  await open(page);
+  await overview(page);
+  const original = await ids(page);
+  await card(page, 3).click();
+  await card(page, 1).click({ modifiers: ["Shift"] });
+  await expect.poll(() => picked(page)).toEqual(original);
+  await expect(card(page, 3)).toHaveAttribute("aria-current", "page");
+  await expect(removePages(page)).toBeDisabled();
+  await card(page, 2).click({ modifiers: ["Control"] });
+  await expect.poll(() => picked(page)).toEqual([original[0], original[2]]);
+  await card(page, 1).click({ modifiers: ["Meta"] });
+  await expect.poll(() => picked(page)).toEqual([original[2]]);
+  await card(page, 1).click({ modifiers: ["Control"] });
+  const first = (await card(page, 1).boundingBox())!,
+    third = (await card(page, 3).boundingBox())!;
+  await page.mouse.move(first.x + 40, first.y + 20);
+  await page.mouse.down();
+  await page.mouse.move(third.x + 40, third.y + third.height - 6, {
+    steps: 10,
+  });
+  await expect(page.getByTestId("page-insertion")).toBeVisible();
+  await expect(page.locator(".page-card.dragging")).toHaveCount(2);
+  await page.mouse.up();
+  await expect
+    .poll(() => ids(page))
+    .toEqual([original[1], original[0], original[2]]);
+  await expect.poll(() => picked(page)).toEqual([original[0], original[2]]);
+  await closeMenu(page);
+  await page.getByRole("button", { name: "Rückgängig", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Rückgängig", exact: true }),
+  ).toBeDisabled();
+  await overview(page);
+  await expect.poll(() => ids(page)).toEqual(original);
+  await page
+    .getByRole("button", { name: "Ausgewählte Seiten nach vorne verschieben" })
+    .press("Enter");
+  await expect
+    .poll(() => ids(page))
+    .toEqual([original[0], original[2], original[1]]);
+  await expect(card(page, 2)).toHaveAttribute("aria-current", "page");
+  await page.screenshot({ path: "artifacts/pages-group.png" });
+});
+
+test("confirms deletion count, keeps the next page active, undoes, redoes and reopens native pages", async ({
+  page,
+  browserName,
+}) => {
+  await open(page);
+  await add(page, "artifacts/pages-add.pdf");
+  await expect(page.locator("#pages-menu h2")).toHaveText("Seiten · 5");
+  const original = await ids(page);
+  await card(page, 3).click();
+  await card(page, 1).click({ modifiers: ["Control"] });
+  await card(page, 4).click({ modifiers: ["Control"] });
+  await removePages(page).click();
+  await expect(
+    page.getByRole("button", { name: "3 Seiten löschen", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Abbrechen", exact: true }).click();
+  await expect.poll(() => ids(page)).toEqual(original);
+  await removePages(page).click();
+  await page
+    .getByRole("button", { name: "3 Seiten löschen", exact: true })
+    .click();
+  await expect.poll(() => ids(page)).toEqual([original[1], original[4]]);
+  await expect(card(page, 2)).toHaveAttribute("aria-current", "page");
+  await expect.poll(() => picked(page)).toEqual([original[4]]);
+  await closeMenu(page);
+  await page.getByRole("button", { name: "Rückgängig", exact: true }).click();
+  await overview(page);
+  await expect.poll(() => ids(page)).toEqual(original);
+  await closeMenu(page);
+  await page.getByRole("button", { name: "Wiederholen", exact: true }).click();
+  const file = `artifacts/pages-group-delete-${browserName}.pdf`;
+  expect(await download(page, file)).toEqual([
+    { text: "B", comments: ["Note B"] },
+    { text: "E", comments: ["Note E"] },
+  ]);
+  await page.getByLabel("PDF öffnen", { exact: true }).setInputFiles(file);
+  await respondToDocumentSwitch(page, true);
+  await overview(page);
+  await expect(card(page, 1)).toHaveAttribute("aria-current", "page");
+  await removePages(page).click();
+  await page
+    .getByRole("button", { name: "1 Seite löschen", exact: true })
+    .click();
+  await expect(page.locator("#pages-menu h2")).toHaveText("Seiten · 1");
+  await expect(removePages(page)).toBeDisabled();
+});
+
+test("touch selection scrolls natively and drags the group by its grip", async ({
+  page,
+  context,
+  browserName,
+}) => {
+  test.skip(
+    browserName !== "chromium",
+    "Touch injection requires Chromium CDP.",
+  );
+  await page.setViewportSize({ width: 390, height: 844 });
+  await open(page, "artifacts/pages-many.pdf");
+  await overview(page);
+  const session = await context.newCDPSession(page);
+  const point = async (number: number, grip = false) => {
+    const button = card(page, number);
+    const b = (await (
+      grip ? button.locator(".page-grip") : button
+    ).boundingBox())!;
+    return { x: b.x + b.width / 2, y: b.y + b.height / 2, id: 1 };
+  };
+  const touch = (
+    type: "touchStart" | "touchMove" | "touchEnd",
+    p?: { x: number; y: number; id: number },
+  ) =>
+    session.send("Input.dispatchTouchEvent", {
+      type,
+      touchPoints: p ? [p] : [],
+    });
+  const mode = page.getByRole("button", {
+    name: "Mehrfachauswahl",
+    exact: true,
+  });
+  await mode.click();
+  const original = await ids(page);
+  await touch("touchStart", await point(2));
+  await touch("touchEnd");
+  await expect(page.getByText("2 ausgewählt", { exact: true })).toBeVisible();
+  await page.screenshot({ path: "artifacts/pages-touch-selection.png" });
+  const start = await point(2);
+  await touch("touchStart", start);
+  for (let dy = 20; dy <= 120; dy += 20)
+    await touch("touchMove", { ...start, y: start.y - dy });
+  await touch("touchEnd");
+  await expect
+    .poll(() => page.getByTestId("page-list").evaluate((el) => el.scrollTop))
+    .toBeGreaterThan(60);
+  await expect(page.getByTestId("page-insertion")).toHaveCount(0);
+  await expect(page.getByText("2 ausgewählt", { exact: true })).toBeVisible();
+  await closeMenu(page);
+  await overview(page);
+  const grip = await point(1, true);
+  const b = (await card(page, 3).boundingBox())!;
+  await touch("touchStart", grip);
+  await expect(page.getByTestId("page-insertion")).toBeVisible();
+  await touch("touchMove", { ...grip, y: b.y + b.height - 5 });
+  await touch("touchEnd");
+  await expect
+    .poll(async () => (await ids(page)).slice(0, 3))
+    .toEqual([original[2], original[0], original[1]]);
+  expect(await page.locator(".page-card").count()).toBeLessThan(12);
+  await closeMenu(page);
+  await page
+    .getByLabel("PDF öffnen", { exact: true })
+    .setInputFiles("artifacts/pages-main.pdf");
+  await respondToDocumentSwitch(page, true);
+  await overview(page);
+  await expect(mode).toHaveAttribute("aria-pressed", "false");
+  await expect(page.getByText("1 ausgewählt", { exact: true })).toBeVisible();
+});
+
+test("protected page structure allows selection but disables group edits", async ({
+  page,
+}) => {
+  await open(page, "artifacts/pages-form.pdf");
+  await overview(page);
+  await card(page, 2).click({ modifiers: ["Shift"] });
+  await expect(page.getByText("2 ausgewählt", { exact: true })).toBeVisible();
+  await expect(removePages(page)).toBeDisabled();
+  await expect(
+    page.getByRole("button", {
+      name: "Ausgewählte Seiten nach hinten verschieben",
+    }),
+  ).toBeDisabled();
+  await expect(page.locator("#pages-menu")).toContainText("Formular");
+});

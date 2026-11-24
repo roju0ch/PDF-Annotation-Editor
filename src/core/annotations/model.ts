@@ -36,6 +36,7 @@ export type AnnotationPatch = {
 export type PageCommand =
   | { action: "rotate-page"; page: number; degrees: -90 | 90 }
   | { action: "reorder-pages"; order: number[] }
+  | { action: "delete-pages"; indices: number[] }
   | {
       action: "insert-pdf";
       at: number;

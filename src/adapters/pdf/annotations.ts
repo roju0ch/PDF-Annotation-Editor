@@ -4,6 +4,8 @@ import {
   setLabels,
   prepareImport,
   importPages,
+  reorderPages,
+  planPageReferences,
 } from "./pages";
 import { imageInfo } from "../../core/annotations/image";
 import * as mupdf from "mupdf";
@@ -286,6 +288,7 @@ export class AnnotationEditor {
     }
     if (
       c.action === "reorder-pages" ||
+      c.action === "delete-pages" ||
       c.action === "insert-pdf" ||
       c.action === "rotate-page"
     )
@@ -691,6 +694,10 @@ export class AnnotationEditor {
     if (reason) throw new Error(reason);
     const count = this.doc.countPages();
     let source: mupdf.PDFDocument | undefined;
+    let targets: ReturnType<typeof planPageReferences> = [];
+    const removed = new Set<number>(
+      c.action === "delete-pages" ? c.indices : [],
+    );
     try {
       if (c.action === "rotate-page") {
         if (
@@ -708,6 +715,17 @@ export class AnnotationEditor {
         )
           throw new Error("Ungültige Seitenreihenfolge.");
         if (c.order.every((v, i) => v === i)) return null;
+        planPageReferences(this.doc, removed);
+      } else if (c.action === "delete-pages") {
+        if (
+          !removed.size ||
+          removed.size !== c.indices.length ||
+          c.indices.some((i) => !Number.isInteger(i) || i < 0 || i >= count)
+        )
+          throw new Error("Ungültige Seitenauswahl.");
+        if (removed.size === count)
+          throw new Error("Mindestens eine Seite muss im Dokument verbleiben.");
+        targets = planPageReferences(this.doc, removed);
       } else {
         if (!Number.isInteger(c.at) || c.at < 0 || c.at > count)
           throw new Error("Ungültige Einfügeposition.");
@@ -748,11 +766,21 @@ export class AnnotationEditor {
         let ids: number[] | null = null;
         if (c.action === "reorder-pages") {
           const labels = pageLabels(this.doc);
-          this.doc.rearrangePages(c.order);
+          reorderPages(this.doc, c.order);
           if (labels)
             setLabels(
               this.doc,
               c.order.map((i) => labels[i]),
+            );
+        } else if (c.action === "delete-pages") {
+          const labels = pageLabels(this.doc);
+          for (const { array, target } of targets) array.put(0, target);
+          for (const i of [...removed].sort((a, b) => b - a))
+            this.doc.deletePage(i);
+          if (labels)
+            setLabels(
+              this.doc,
+              labels.filter((_, i) => !removed.has(i)),
             );
         } else if (c.action === "rotate-page") {
           const page = this.doc.findPage(c.page);
@@ -786,10 +814,8 @@ export class AnnotationEditor {
     try {
       const replay = new AnnotationEditor(output, this.original);
       const ids = new Map<number, number>();
-      for (const operation of this.operations.slice(
-        0,
-        this.doc.getJournal().position,
-      )) {
+      const active = this.operations.slice(0, this.doc.getJournal().position);
+      for (const operation of active) {
         const command = structuredClone(operation.command);
         if ("id" in command) command.id = ids.get(command.id) ?? command.id;
         if (command.action === "move" || command.action === "delete-many")
@@ -802,7 +828,14 @@ export class AnnotationEditor {
           ids.set(originalId, created[index]);
         });
       }
-      buffer = output.saveToBuffer("incremental=yes,compress=yes");
+      // A deletion must also discard superseded revisions and unreachable page
+      // objects from the exported file. Keep the normal incremental path otherwise.
+      const deleted = active.some(
+        ({ command }) => command.action === "delete-pages",
+      );
+      buffer = output.saveToBuffer(
+        deleted ? "garbage=1,compress=yes" : "incremental=yes,compress=yes",
+      );
       const bytes = new Uint8Array(buffer.asUint8Array());
       if (bytes.length > 150 * 1024 * 1024)
         throw new Error("Die exportierte PDF überschreitet 150 MB.");
