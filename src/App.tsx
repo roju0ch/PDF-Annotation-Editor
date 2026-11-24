@@ -856,7 +856,7 @@ export default function App() {
                   ),
                 );
               }}
-              title="Neues PDF-Fenster (⌘N)"
+              title="Neues PDF-Fenster"
             >
               Neues Fenster
             </button>

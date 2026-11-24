@@ -84,7 +84,7 @@ jobs:
           cache: npm
       - name: Linux package prerequisites
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential libxdo-dev libssl-dev librsvg2-dev libayatana-appindicator3-dev libfuse2 patchelf file desktop-file-utils xdg-utils
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential libxdo-dev libssl-dev librsvg2-dev libayatana-appindicator3-dev libfuse2 patchelf file desktop-file-utils xdg-utils xvfb xauth dbus-x11
       - run: rustup toolchain install stable --profile minimal
       - run: rustup default stable
       - run: rustup target add ${{ matrix.target }}
@@ -159,8 +159,20 @@ jobs:
       - name: Open two real PDFs through macOS LaunchServices
         if: runner.os == 'macOS' && !inputs.sign_macos
         run: |
-          python3 scripts/release/test-macos-windows.py "src-tauri/target/${{ matrix.target }}/release/bundle/macos/PDF Viewer.app"
+          python3 scripts/release/test-desktop-windows.py "src-tauri/target/${{ matrix.target }}/release/bundle/macos/PDF Viewer.app"
           shasum -a 256 -c "$RUNNER_TEMP/installer-before-probe-${{ matrix.label }}.sha256"
+      - name: Build separate Windows or Linux runtime probe
+        if: runner.os == 'Linux' || (runner.os == 'Windows' && !inputs.sign_windows)
+        run: |
+          node scripts/fixtures.mjs
+          node scripts/release/run.mjs node node_modules/@tauri-apps/cli/tauri.js build --target ${{ matrix.target }} --no-bundle --features native-window-tests -- --locked
+      - name: Open two real PDFs through Windows single-instance forwarding
+        if: runner.os == 'Windows' && !inputs.sign_windows
+        shell: pwsh
+        run: python scripts/release/test-desktop-windows.py "src-tauri/target/${{ matrix.target }}/release/pdf-annotation-editor.exe"
+      - name: Open two real PDFs through Linux single-instance forwarding
+        if: runner.os == 'Linux'
+        run: xvfb-run -a dbus-run-session -- python3 scripts/release/test-desktop-windows.py "src-tauri/target/${{ matrix.target }}/release/pdf-annotation-editor"
       - name: Collect packages and checksums
         env:
           PACKAGE_SIGNING: ${{ (runner.os == 'Windows' && inputs.sign_windows && 'authenticode') || (runner.os == 'macOS' && inputs.sign_macos && 'developer-id-notarized') || 'unsigned-or-ad-hoc' }}

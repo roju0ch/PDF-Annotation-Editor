@@ -1,16 +1,16 @@
-# Mehrere PDF-Fenster auf macOS
+# Mehrere PDF-Fenster auf dem Desktop
 
-Auf dem Mac kann dieselbe App mehrere unabhängige PDF-Fenster öffnen. Eine zweite App-Instanz ist dafür nicht nötig. Windows, Linux, Android, iOS und die Browser-Vorschau behalten in diesem Schritt ihr bisheriges Verhalten; die gemeinsame Fenster-/Speichertrennung ist für weitere Desktop-Plattformen vorbereitet.
+Unter Windows, macOS und Linux öffnet die laufende App mehrere unabhängige PDF-Fenster. Windows und Linux leiten Dateimanager-Aufrufe per Single-Instance-Plugin weiter. Auf Linux setzt die Weiterleitung einen D-Bus-Sitzungsdienst voraus. Android, iOS und die Browser-Vorschau verwenden weiterhin ihre jeweilige Einzelfenster-Bedienung.
 
 ## Bedienung
 
-- **Weitere PDF aus dem Finder:** Eine andere PDF doppelklicken oder über **Öffnen mit → PDF Viewer** öffnen. Eine bereits geöffnete PDF bleibt mit ihren Änderungen im bisherigen Fenster. Für die neue Datei wird ein eigenes Fenster geöffnet; ein noch unbenutztes leeres Fenster kann übernommen werden.
-- **Leeres Fenster:** In der macOS-Menüleiste **Datei → Neues Fenster** beziehungsweise **⌘N** verwenden. Zusätzlich bietet das vorhandene Ansichtsmenü der App **Neues Fenster**. Dort anschließend **PDF öffnen** wählen oder eine Datei ablegen.
-- **Zwischen Fenstern wechseln:** Die Dokumentnamen in Fenstertitel und macOS-Fenstermenü helfen bei der Auswahl. Ein Klick auf das Dock-Symbol aktiviert die laufende App; er muss keine zweite Programminstanz starten.
-- **PDF im selben Fenster austauschen:** Der vorhandene Knopf **PDF öffnen** beziehungsweise Ablegen einer Datei ersetzt weiterhin das Dokument dieses Fensters. Bei ungesicherten Änderungen erscheint die Bestätigung. Das ist vom Öffnen einer weiteren Datei aus dem Finder zu unterscheiden.
-- **Speichern:** **⌘S / PDF speichern unter …** exportiert nur das Dokument des jeweiligen Fensters. Dateidialog, Datenblöcke, Erfolgsmeldung und ungesicherter Zustand gehören zu diesem Fenster. Abbrechen in einem Fenster speichert keine andere PDF.
-- **Fenster schließen:** Rote Schließtaste beziehungsweise **⌘W** betreffen dieses Fenster. Ungesicherte Änderungen benötigen **Verwerfen und schließen**; **Abbrechen** und Escape lassen das Dokument offen. Während einer laufenden Dateioperation erst deren Ende abwarten.
-- **App beenden:** **⌘Q** fragt die betroffenen Fenster über denselben geschützten Schließablauf ab. Ein abgebrochener Schließvorgang lässt die noch offenen Dokumente in der App.
+- **Weitere PDF aus dem Dateimanager:** Eine andere PDF doppelklicken, wenn PDF Viewer als Standard-App gewählt ist, oder über **Öffnen mit → PDF Viewer** öffnen. Eine bereits geöffnete PDF bleibt mit ihren Änderungen im bisherigen Fenster. Für die neue Datei wird ein eigenes Fenster geöffnet; ein noch unbenutztes leeres Fenster kann übernommen werden.
+- **Leeres Fenster:** **Neues Fenster** im Ansichtsmenü wählen. Auf macOS steht zusätzlich **Datei → Neues Fenster / ⌘N** zur Verfügung. Anschließend **PDF öffnen** wählen oder eine Datei ablegen.
+- **Zwischen Fenstern wechseln:** Die Dokumentnamen stehen in den Fenstertiteln. Zum Wechseln die Fensterübersicht des Betriebssystems oder auf macOS das Fenstermenü verwenden.
+- **PDF im selben Fenster austauschen:** Der vorhandene Knopf **PDF öffnen** beziehungsweise Ablegen einer Datei ersetzt weiterhin das Dokument dieses Fensters. Bei ungesicherten Änderungen erscheint die Bestätigung. Das ist vom Öffnen einer weiteren Datei aus dem Dateimanager zu unterscheiden.
+- **Speichern:** **Strg+S**, auf dem Mac **⌘S**, oder **PDF speichern unter …** exportiert nur das Dokument des jeweiligen Fensters. Dateidialog, Datenblöcke, Erfolgsmeldung und ungesicherter Zustand gehören zu diesem Fenster. Abbrechen in einem Fenster speichert keine andere PDF.
+- **Fenster schließen:** Die Schließtaste schließt das jeweilige Fenster. Auf macOS steht auch **⌘W** zur Verfügung. Ungesicherte Änderungen benötigen **Verwerfen und schließen**; **Abbrechen** und Escape lassen das Dokument offen. Während einer laufenden Dateioperation erst deren Ende abwarten.
+- **App auf macOS beenden:** **⌘Q** fragt die betroffenen Fenster über denselben geschützten Schließablauf ab. Ein abgebrochener Schließvorgang lässt die noch offenen Dokumente in der App.
 
 ## Getrennte Dokumente
 
@@ -30,17 +30,15 @@ PDF-Inhalte werden unverändert lokal verarbeitet. Es gibt keine neue Netzwerkve
 
 Automatisierte Browser-Tests verwenden unabhängige Seiten mit echten PDF-Workern und kontrollierter nativer IPC. Sie prüfen verschiedene Dokumente, eigene Änderungen/Undo, unverwechselbare Exportbytes, Abbruch, Schließen und Verhalten ohne Mac-Fensterfähigkeit. Native Rust-Tests prüfen zusätzlich die tatsächlichen Dateitransaktionen, Fensterzuordnung und verspätete Antworten nach dem Schließen.
 
-Die macOS-CI baut zunächst das reguläre DMG. Ein separat mit einer Testfunktion gebauter App-Bundle dient danach dem echten macOS-Fenstertest: Zwei synthetische PDFs werden über Launch Services geöffnet; dieselbe App muss zwei tatsächliche WebViews mit den richtigen, vom PDF-Worker gelesenen Dokumenten melden. Die ausschließlich dafür kompilierte lokale Diagnosefunktion gehört nicht zum ausgelieferten DMG. Signierte Release-Probeläufe verwenden diese Diagnose-App nicht. Tatsächliche Ergebnisse und Paket-Links stehen im Pull Request.
+Die Desktop-CI baut zuerst die regulären Installer. Eine separate Diagnose-App öffnet danach zwei synthetische PDFs und prüft die sichtbaren Fenster, ihre Titel, die Seitenzahlen und die gemeinsame Prozess-ID. macOS verwendet dafür Launch Services. Windows und Linux starten die App mit denselben Dateipfad-Argumenten wie die Dateizuordnung und prüfen die Weiterleitung an den ersten Prozess. Linux läuft dafür in einer eigenen Xvfb- und D-Bus-Sitzung. Die Testergebnisse und Installer-Artefakte stehen im Pull Request.
 
 Intel wird auf macOS 15, Apple Silicon auf macOS 26 geprüft. Der ARM-Runner wurde nach kapazitätsbedingten Abbrüchen im älteren GitHub-Pool aktualisiert; auch der bestehende iOS-Simulator-Build verwendet das aktuelle ARM-Image. Das ändert nicht die konfigurierte Mindestversion der installierten App. Die Diagnose liest native Fenstertitel nach deren asynchroner Cocoa-Aktualisierung erneut; sie setzt keine Titel selbst und schwächt die externen Prüfkriterien nicht ab.
 
-Auf einem echten Mac zusätzlich prüfen:
+Auf echten Desktop-Systemen zusätzlich prüfen:
 
-1. Zwei unterschiedliche PDFs aus dem Finder öffnen und beide gleichzeitig sehen.
+1. Zwei unterschiedliche PDFs aus dem Dateimanager öffnen und beide gleichzeitig sehen.
 2. In beiden Fenstern eine andere Markierung zeichnen. Zoomen/Seitenwechsel in A dürfen B nicht verändern.
 3. Beide unter verschiedenen Namen speichern, in einem anderen Viewer öffnen und wieder laden. Abbrechen eines Dateidialogs darf das andere Dokument nicht beeinflussen.
-4. **⌘N**, Fenstermenü, Dock-Aktivierung und **⌘W** prüfen. Bei ungesicherten Änderungen erst abbrechen, danach ausdrücklich verwerfen.
+4. **Neues Fenster** und die Schließtaste prüfen. Auf macOS auch **⌘N**, Fenstermenü, Dock-Aktivierung und **⌘W** prüfen. Bei ungesicherten Änderungen erst abbrechen, danach ausdrücklich verwerfen.
 5. Einen offenen Textentwurf bei externem Dateiöffnen/Schließen abbrechen; Text und Fokus müssen erhalten bleiben. **⌘Q** mit mehreren ungesicherten Fenstern prüfen.
 6. Mehrere große Pläne verwenden und den Ressourcenverbrauch beobachten. Synthetische oder freigegebene Dateien verwenden; private Pläne gehören nicht in das Repository oder die Testartefakte.
-
-Die Umstellung von Windows/Linux auf dasselbe Mehrfenster-Verhalten ist ein weiterer Schritt. Mobile Plattformen benötigen eine eigene Bedienentscheidung, etwa Dokumentreiter oder unterstützte Betriebssystemfenster; Desktop-Fenster werden dort nicht ungeprüft aktiviert.

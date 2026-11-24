@@ -6,15 +6,9 @@ pub fn run() {
     // arguments into this already-created queue and exits before other setup.
     #[cfg(any(target_os = "windows", target_os = "linux"))]
     let builder = {
-        use tauri::Manager;
         let forwarding = pdf_open.clone();
         builder.plugin(tauri_plugin_single_instance::init(move |app, args, cwd| {
             forwarding.arguments(app, args, std::path::Path::new(&cwd));
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.unminimize();
-                let _ = window.show();
-                let _ = window.set_focus();
-            }
         }))
     };
     #[cfg(target_os = "android")]

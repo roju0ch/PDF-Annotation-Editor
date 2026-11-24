@@ -1,10 +1,13 @@
 mod cache;
+#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+mod desktop;
 mod intake;
-#[cfg(target_os = "macos")]
-mod macos;
-#[cfg(all(target_os = "macos", feature = "native-window-tests"))]
+#[cfg(all(
+    any(target_os = "windows", target_os = "macos", target_os = "linux"),
+    feature = "native-window-tests"
+))]
 mod probe;
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux", test))]
 mod routing;
 
 use base64::{engine::general_purpose::STANDARD, Engine};
@@ -99,21 +102,23 @@ impl Session {
 }
 
 /// Created before single-instance setup, so an extremely early second launch
-/// can enqueue documents before the main WebView exists. Each macOS document
-/// owns its own Session; the other platforms keep their existing main session.
+/// can enqueue documents before the main WebView exists. Each desktop
+/// document owns a session. Mobile hands documents to the main session.
 #[derive(Clone)]
 pub struct PdfOpen {
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
     main: Session,
-    #[cfg(target_os = "macos")]
-    windows: Arc<Mutex<macos::Windows>>,
+    #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+    windows: Arc<Mutex<desktop::Windows>>,
 }
 
 impl Default for PdfOpen {
     fn default() -> Self {
         let main = Session::new("main");
         Self {
-            #[cfg(target_os = "macos")]
-            windows: Arc::new(Mutex::new(macos::Windows::new(main.clone()))),
+            #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+            windows: Arc::new(Mutex::new(desktop::Windows::new(main))),
+            #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
             main,
         }
     }
@@ -121,14 +126,14 @@ impl Default for PdfOpen {
 
 impl PdfOpen {
     fn session(&self, label: &str) -> Result<Session, OpenError> {
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
         {
             self.windows
                 .lock()
                 .map_err(|_| OpenError::unavailable())?
                 .session(label)
         }
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
         {
             if label == "main" {
                 Ok(self.main.clone())
@@ -146,17 +151,7 @@ impl PdfOpen {
         arguments: impl IntoIterator<Item = String>,
         cwd: &Path,
     ) {
-        let mut positional = false;
-        for argument in arguments.into_iter().skip(1) {
-            if !positional && argument == "--" {
-                positional = true;
-                continue;
-            }
-            if !positional && argument.starts_with('-') {
-                continue;
-            }
-            self.main.push(app, Source::from_argument(&argument, cwd));
-        }
+        desktop::arguments(app, self, arguments, cwd);
     }
 
     #[cfg(any(target_os = "android", target_os = "ios"))]
@@ -344,8 +339,8 @@ async fn finish_pdf_open<R: Runtime>(
             .finish(&id, Instant::now())
     })
     .await?;
-    #[cfg(target_os = "macos")]
-    macos::release(&app, window.label());
+    #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+    desktop::release(&app, window.label());
     let _ = app.emit_to(&waking.label, AVAILABLE, ());
     waking.kick(&app);
     Ok(())
@@ -354,17 +349,17 @@ async fn finish_pdf_open<R: Runtime>(
 pub fn init<R: Runtime>(queue: PdfOpen) -> TauriPlugin<R> {
     let setup_queue = queue.clone();
     let builder = Builder::new("pdf-open");
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
     let builder = builder.invoke_handler(tauri::generate_handler![
         next_pdf_open,
         read_pdf_open,
         finish_pdf_open,
-        macos::new_pdf_window,
-        macos::report_window_state,
-        macos::close_pdf_window,
-        macos::cancel_window_close,
+        desktop::new_pdf_window,
+        desktop::report_window_state,
+        desktop::close_pdf_window,
+        desktop::cancel_window_close,
     ]);
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
     let builder = builder.invoke_handler(tauri::generate_handler![
         next_pdf_open,
         read_pdf_open,
@@ -374,28 +369,28 @@ pub fn init<R: Runtime>(queue: PdfOpen) -> TauriPlugin<R> {
         .setup(move |app, _| {
             app.manage(setup_queue.clone());
             #[cfg(target_os = "macos")]
-            macos::setup(app)?;
-            #[cfg(any(target_os = "windows", target_os = "linux"))]
-            setup_queue.arguments(
-                app,
-                std::env::args_os().map(|arg| arg.to_string_lossy().into_owned()),
-                &std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
-            );
+            desktop::setup(app)?;
             Ok(())
         })
         .on_event(move |app, event| {
-            #[cfg(target_os = "macos")]
-            macos::on_event(app, &queue, event);
+            #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+            desktop::on_event(app, &queue, event);
             #[cfg(any(target_os = "android", target_os = "ios"))]
             if let tauri::RunEvent::Opened { urls } = event {
                 queue.urls(app, urls);
             }
-            #[cfg(not(any(target_os = "macos", target_os = "android", target_os = "ios")))]
+            #[cfg(not(any(
+                target_os = "windows",
+                target_os = "macos",
+                target_os = "linux",
+                target_os = "android",
+                target_os = "ios"
+            )))]
             let _ = (app, event, &queue);
         });
     #[cfg(target_os = "ios")]
     let builder = builder.js_init_script("Object.defineProperty(window, '__PDF_IOS_IMPORT_ONLY__', { value: true, writable: false, configurable: false });");
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
     let builder = builder.js_init_script("Object.defineProperty(window, '__PDF_MULTI_WINDOW__', { value: true, writable: false, configurable: false });");
     builder.build()
 }

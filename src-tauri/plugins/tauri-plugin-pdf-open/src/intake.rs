@@ -12,7 +12,7 @@ use uuid::Uuid;
 pub const MAX_PDF_BYTES: usize = 100 * 1024 * 1024;
 pub const CHUNK_BYTES: usize = 256 * 1024;
 pub const MAX_STAGED_BYTES: usize = 200 * 1024 * 1024;
-const MAX_PENDING: usize = 32;
+pub(crate) const MAX_PENDING: usize = 32;
 const RECENT_WINDOW: Duration = Duration::from_secs(2);
 
 #[derive(Clone, Debug, Serialize)]

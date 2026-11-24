@@ -171,7 +171,7 @@ impl Routes {
     }
 
     /// Mark an approved close before the UI-thread destruction is scheduled.
-    /// Incoming Finder events must not reserve a window that is about to leave.
+    /// Incoming file opens must not reserve a window that is about to leave.
     pub fn begin_close(&mut self, label: &str) -> Result<(), OpenError> {
         let record = self.windows.get_mut(label).ok_or_else(OpenError::invalid)?;
         if record.closing {
