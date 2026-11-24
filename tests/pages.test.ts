@@ -791,3 +791,56 @@ it("retargets a shared indirect destination at the end and restores the named li
     doc.destroy();
   }
 });
+
+it("restores a redo branch with imported annotation IDs and the saved revision after native rollback", () => {
+  const original = input(),
+    doc = new m.PDFDocument(original);
+  try {
+    const editor = new AnnotationEditor(doc, original);
+    editor.apply({ action: "rotate-page", page: 2, degrees: 90 });
+    const before = pageInfos(doc);
+    editor.apply({
+      action: "insert-pdf",
+      at: 1,
+      bytes: input(),
+      name: "History.pdf",
+    });
+    const note = editor.list(1)[0];
+    editor.apply({
+      action: "update",
+      id: note.id,
+      page: 1,
+      patch: { contents: "Restored redo" },
+    });
+    editor.apply({ action: "delete-pages", indices: [4, 5] });
+    editor.acknowledgeExport(editor.state().revision);
+    const saved = editor.state();
+    for (let i = 0; i < 3; i++) editor.apply({ action: "undo" });
+    const prior = editor.state();
+    const nativeDelete = doc.deletePage.bind(doc);
+    vi.spyOn(doc, "deletePage")
+      .mockImplementationOnce(nativeDelete)
+      .mockImplementationOnce(() => {
+        throw new Error("Synthetic failure");
+      });
+    expect(() =>
+      editor.apply({ action: "delete-pages", indices: [0, 1] }),
+    ).toThrow("Synthetic failure");
+    expect(pageInfos(doc)).toEqual(before);
+    expect(editor.state()).toEqual(prior);
+    for (let i = 0; i < 3; i++) editor.apply({ action: "redo" });
+    expect(editor.state()).toEqual(saved);
+    const data = editor.export(),
+      out = new m.PDFDocument(data);
+    try {
+      expect(out.countPages()).toBe(4);
+      expect(new AnnotationEditor(out, data).list(1)[0].contents).toBe(
+        "Restored redo",
+      );
+    } finally {
+      out.destroy();
+    }
+  } finally {
+    doc.destroy();
+  }
+});

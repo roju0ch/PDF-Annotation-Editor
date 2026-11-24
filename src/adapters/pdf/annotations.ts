@@ -127,15 +127,16 @@ function updateAnnotation(a: mupdf.PDFAnnotation, doc: mupdf.PDFDocument) {
   }
   a.update();
 }
+type RecordedOperation = {
+  command: AnnotationCommand;
+  createdIds: number[];
+};
 export class AnnotationEditor {
   readonly readOnly: string | null;
   private sequence = 0;
   private history = [0];
   private saved = 0;
-  private operations: {
-    command: AnnotationCommand;
-    createdIds: number[];
-  }[] = [];
+  private operations: RecordedOperation[] = [];
   constructor(
     private doc: mupdf.PDFDocument,
     private original: Uint8Array<ArrayBuffer>,
@@ -761,6 +762,7 @@ export class AnnotationEditor {
         prepareImport(source);
       }
       const before = this.doc.getJournal().position;
+      const hadRedo = this.doc.canRedo();
       this.doc.beginOperation(c.action);
       try {
         let ids: number[] | null = null;
@@ -794,10 +796,42 @@ export class AnnotationEditor {
         return ids;
       } catch (error) {
         this.doc.abandonOperation();
+        if (hadRedo && !this.doc.canRedo()) this.restoreRedo(before);
         throw error;
       }
     } finally {
       source?.destroy();
+    }
+  }
+  private replayOperation(
+    operation: RecordedOperation,
+    ids: Map<number, number>,
+  ) {
+    const command = structuredClone(operation.command);
+    if ("id" in command) command.id = ids.get(command.id) ?? command.id;
+    if (command.action === "move" || command.action === "delete-many")
+      command.ids = command.ids.map((id) => ids.get(id) ?? id);
+    const id = this.apply(command);
+    const created = Array.isArray(id) ? id : id === null ? [] : [id];
+    operation.createdIds.forEach((originalId, index) => {
+      if (created[index] === undefined)
+        throw new Error("PDF-Objektzuordnung beim Wiederholen fehlgeschlagen.");
+      ids.set(originalId, created[index]);
+    });
+  }
+  // MuPDF abandons the writes but discards any native redo tail on the first
+  // mutation. Rebuild that tail with the same ID mapping used by export.
+  private restoreRedo(position: number) {
+    const pending = this.operations.slice(position);
+    const revisions = this.history.slice(position + 1);
+    const ids = new Map<number, number>();
+    try {
+      for (const [i, operation] of pending.entries()) {
+        this.replayOperation(operation, ids);
+        this.history[position + i + 1] = revisions[i];
+      }
+    } finally {
+      while (this.doc.getJournal().position > position) this.doc.undo();
     }
   }
   export(): Uint8Array<ArrayBuffer> {
@@ -815,19 +849,7 @@ export class AnnotationEditor {
       const replay = new AnnotationEditor(output, this.original);
       const ids = new Map<number, number>();
       const active = this.operations.slice(0, this.doc.getJournal().position);
-      for (const operation of active) {
-        const command = structuredClone(operation.command);
-        if ("id" in command) command.id = ids.get(command.id) ?? command.id;
-        if (command.action === "move" || command.action === "delete-many")
-          command.ids = command.ids.map((id) => ids.get(id) ?? id);
-        const id = replay.apply(command);
-        const created = Array.isArray(id) ? id : id === null ? [] : [id];
-        operation.createdIds.forEach((originalId, index) => {
-          if (created[index] === undefined)
-            throw new Error("Export-ID-Zuordnung fehlgeschlagen.");
-          ids.set(originalId, created[index]);
-        });
-      }
+      for (const operation of active) replay.replayOperation(operation, ids);
       // A deletion must also discard superseded revisions and unreachable page
       // objects from the exported file. Keep the normal incremental path otherwise.
       const deleted = active.some(
