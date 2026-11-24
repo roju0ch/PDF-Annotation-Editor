@@ -66,6 +66,7 @@ self.onmessage = ({ data: r }: MessageEvent<Request>) => {
       const structural = [
         "rotate-page",
         "reorder-pages",
+        "delete-pages",
         "insert-pdf",
         "undo",
         "redo",

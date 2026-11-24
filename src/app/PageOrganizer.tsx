@@ -1,9 +1,12 @@
 import {
   useEffect,
+  useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type RefObject,
   type PointerEvent,
+  type MouseEvent,
 } from "react";
 import type { PdfClient } from "../adapters/pdf/client";
 import type { PageInfo } from "../adapters/pdf/types";
@@ -63,6 +66,7 @@ function Thumbnail({
 }
 type Gesture = {
   from: number;
+  indices: number[];
   pointer: number;
   x: number;
   y: number;
@@ -100,7 +104,24 @@ export function PageOrganizer({
   const [open, setOpen] = useState(false),
     [scroll, setScroll] = useState(0),
     [height, setHeight] = useState(400);
-  const [drag, setDrag] = useState<{ from: number; slot: number } | null>(null);
+  const [dragSlot, setDragSlot] = useState<number | null>(null);
+  // null follows ordinary viewer navigation. An explicit (possibly empty)
+  // selection belongs to this keyed document and uses native page object IDs.
+  const [selection, setSelection] = useState<Set<number> | null>(null);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const anchor = useRef<number | undefined>(undefined);
+  const selected = useMemo(
+    () => selection ?? new Set(pages[page] ? [pages[page].id] : []),
+    [selection, pages, page],
+  );
+  const indices = useMemo(
+    () => pages.flatMap((p, i) => (selected.has(p.id) ? [i] : [])),
+    [pages, selected],
+  );
+  const first = indices[0],
+    last = indices[indices.length - 1];
+  const contiguous = indices.length === last - first + 1;
   const [insertion, setInsertion] = useState("end");
   const blocked =
     editor.busy ||
@@ -110,8 +131,25 @@ export function PageOrganizer({
   const cancel = () => {
     if (gesture.current) clearTimeout(gesture.current.timer);
     gesture.current = null;
-    setDrag(null);
+    setDragSlot(null);
   };
+  useLayoutEffect(() => {
+    if (gesture.current) {
+      suppressClick.current = true;
+      cancel();
+    }
+    setConfirmDelete(false);
+  }, [pages, blocked, editor.state.revision, page]);
+  useLayoutEffect(() => {
+    const live = new Set(pages.map((p) => p.id));
+    if (anchor.current !== undefined && !live.has(anchor.current))
+      anchor.current = undefined;
+    setSelection((old) => {
+      if (!old) return null;
+      const kept = new Set([...old].filter((id) => live.has(id)));
+      return kept.size === old.size ? old : kept.size ? kept : null;
+    });
+  }, [pages]);
   useEffect(() => {
     if (!open) return;
     const el = list.current!;
@@ -133,9 +171,12 @@ export function PageOrganizer({
   }, [open, page, pages]);
   useEffect(() => {
     const stop = () => {
-      if (gesture.current) clearTimeout(gesture.current.timer);
+      if (gesture.current) {
+        suppressClick.current = true;
+        clearTimeout(gesture.current.timer);
+      }
       gesture.current = null;
-      setDrag(null);
+      setDragSlot(null);
     };
     window.addEventListener("blur", stop);
     return () => {
@@ -156,7 +197,7 @@ export function PageOrganizer({
     );
   };
   // Autoscroll keeps long documents reachable while dragging through virtual rows.
-  const dragging = drag !== null;
+  const dragging = dragSlot !== null;
   useEffect(() => {
     if (!dragging) return;
     let frame: number;
@@ -176,23 +217,59 @@ export function PageOrganizer({
             Math.floor((g.lastY - b.top + el.scrollTop + ROW / 2) / ROW),
           ),
         );
-        setDrag((prev) =>
-          prev?.slot === slot ? prev : { from: g.from, slot },
-        );
+        setDragSlot(slot);
       }
       frame = requestAnimationFrame(tick);
     };
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
   }, [dragging, pages.length]);
-  const move = async (from: number, slot: number) => {
-    if (blocked) return;
+  const move = async (group: number[], slot: number) => {
+    if (blocked || !group.length) return;
     cancel();
-    const result = await editor.edit({
-      action: "reorder-pages",
-      order: movePageOrder(pages.length, from, slot),
-    });
+    const order = movePageOrder(pages.length, group, slot);
+    if (order.every((value, i) => value === i)) return;
+    const result = await editor.edit({ action: "reorder-pages", order });
     if (!result) panel.current?.hidePopover();
+  };
+  const choose = (e: MouseEvent<HTMLButtonElement>, index: number) => {
+    if (suppressClick.current && e.detail !== 0) {
+      suppressClick.current = false;
+      return;
+    }
+    cancel();
+    setConfirmDelete(false);
+    const id = pages[index].id;
+    if (e.shiftKey) {
+      const found = pages.findIndex((p) => p.id === anchor.current);
+      const start = found >= 0 ? found : page;
+      anchor.current = pages[start].id;
+      setSelection(
+        new Set(
+          pages
+            .slice(Math.min(start, index), Math.max(start, index) + 1)
+            .map((p) => p.id),
+        ),
+      );
+    } else if (selectionMode || e.ctrlKey || e.metaKey) {
+      const next = new Set(selected);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      setSelection(next);
+      anchor.current = id;
+    } else {
+      anchor.current = id;
+      setSelection(null);
+      navigate(index);
+    }
+  };
+  const beginDrag = (g: Gesture) => {
+    g.mode = "drag";
+    setConfirmDelete(false);
+    if (!selected.has(pages[g.from].id)) {
+      setSelection(new Set([pages[g.from].id]));
+      anchor.current = pages[g.from].id;
+    }
   };
   const down = (e: PointerEvent<HTMLButtonElement>, index: number) => {
     if (editor.busy || editor.formDirty || e.button !== 0) return;
@@ -202,8 +279,17 @@ export function PageOrganizer({
       return;
     }
     suppressClick.current = false;
+    // In selection mode the card uses native touch panning. Its grip retains
+    // long-press dragging, even when the virtual list scrolls beneath it.
+    if (
+      e.pointerType === "touch" &&
+      selectionMode &&
+      !(e.target as Element).closest(".page-grip")
+    )
+      return;
     const g: Gesture = {
       from: index,
+      indices: selected.has(pages[index].id) ? indices : [index],
       pointer: e.pointerId,
       x: e.clientX,
       y: e.clientY,
@@ -215,8 +301,8 @@ export function PageOrganizer({
     if (e.pointerType === "touch" && !blocked)
       g.timer = setTimeout(() => {
         if (gesture.current === g && g.mode === "pending") {
-          g.mode = "drag";
-          setDrag({ from: index, slot: index });
+          beginDrag(g);
+          setDragSlot(index);
         }
       }, 400);
   };
@@ -228,10 +314,11 @@ export function PageOrganizer({
       Math.hypot(e.clientX - g.x, e.clientY - g.y) > 6
     ) {
       clearTimeout(g.timer);
-      g.mode = e.pointerType === "touch" || blocked ? "scroll" : "drag";
+      if (e.pointerType === "touch" || blocked) g.mode = "scroll";
+      else beginDrag(g);
     }
     if (g.mode === "scroll") list.current!.scrollTop -= e.clientY - g.lastY;
-    if (g.mode === "drag") setDrag({ from: g.from, slot: slotAt(e.clientY) });
+    if (g.mode === "drag") setDragSlot(slotAt(e.clientY));
     g.lastY = e.clientY;
   };
   const up = (e: PointerEvent<HTMLButtonElement>) => {
@@ -239,13 +326,14 @@ export function PageOrganizer({
     if (!g || g.pointer !== e.pointerId) return;
     const mode = g.mode,
       slot = slotAt(e.clientY),
-      from = g.from;
+      group = g.indices;
     cancel();
     if (mode !== "pending") {
       suppressClick.current = true;
       e.preventDefault();
     }
-    if (mode === "drag") void move(from, slot);
+    if (mode === "drag" && Math.hypot(e.clientX - g.x, e.clientY - g.y) > 6)
+      void move(group, slot);
   };
   const start = Math.max(0, Math.floor(scroll / ROW) - 2),
     end = Math.min(pages.length, start + Math.ceil(height / ROW) + 5);
@@ -254,7 +342,11 @@ export function PageOrganizer({
     (_, i) => start + i,
   );
   const captured = gesture.current?.from;
-  if (captured !== undefined && !visibleIndices.includes(captured))
+  if (
+    captured !== undefined &&
+    captured < pages.length &&
+    !visibleIndices.includes(captured)
+  )
     visibleIndices.push(captured);
   // Keep the captured row in DOM order: moving its node would release capture.
   visibleIndices.sort((a, b) => a - b);
@@ -268,26 +360,59 @@ export function PageOrganizer({
       onToggle={(e) => {
         const shown = e.currentTarget.matches(":popover-open");
         setOpen(shown);
-        if (!shown) cancel();
+        if (!shown) {
+          cancel();
+          setConfirmDelete(false);
+        }
       }}
     >
       <MenuHeading target="pages-menu">Seiten · {pages.length}</MenuHeading>
       <div className="page-organizer-actions">
         <button
-          disabled={blocked || page === 0}
-          aria-label="Seite nach vorne verschieben"
-          onClick={() => void move(page, page - 1)}
+          aria-pressed={selectionMode}
+          disabled={editor.busy || editor.formDirty}
+          onClick={() => {
+            cancel();
+            setConfirmDelete(false);
+            setSelectionMode(!selectionMode);
+            if (selectionMode) {
+              setSelection(null);
+              anchor.current = undefined;
+            }
+          }}
+        >
+          Mehrfachauswahl
+        </button>
+        <span role="status">{indices.length} ausgewählt</span>
+      </div>
+      <div className="page-organizer-actions">
+        <button
+          disabled={blocked || !indices.length || (contiguous && first === 0)}
+          aria-label={
+            indices.length > 1
+              ? "Ausgewählte Seiten nach vorne verschieben"
+              : "Seite nach vorne verschieben"
+          }
+          onClick={() => void move(indices, Math.max(0, first - 1))}
         >
           ↑ Vorher
         </button>
         <button
-          disabled={blocked || page >= pages.length - 1}
-          aria-label="Seite nach hinten verschieben"
-          onClick={() => void move(page, page + 2)}
+          disabled={
+            blocked ||
+            !indices.length ||
+            (contiguous && last === pages.length - 1)
+          }
+          aria-label={
+            indices.length > 1
+              ? "Ausgewählte Seiten nach hinten verschieben"
+              : "Seite nach hinten verschieben"
+          }
+          onClick={() => void move(indices, Math.min(pages.length, last + 2))}
         >
           ↓ Nachher
         </button>
-        <span>Seite {page + 1}</span>
+        <span>Angezeigt · Seite {page + 1}</span>
       </div>
       <div
         className="page-organizer-actions"
@@ -313,6 +438,47 @@ export function PageOrganizer({
           </button>
         ))}
       </div>
+      {confirmDelete ? (
+        <div
+          role="group"
+          aria-label="Löschen bestätigen"
+          className="page-organizer-actions"
+        >
+          <button autoFocus onClick={() => setConfirmDelete(false)}>
+            Abbrechen
+          </button>
+          <button
+            disabled={blocked}
+            onClick={() => {
+              setConfirmDelete(false);
+              void editor
+                .edit({ action: "delete-pages", indices })
+                .then((result) => {
+                  if (!result) panel.current?.hidePopover();
+                });
+            }}
+          >
+            {indices.length} {indices.length === 1 ? "Seite" : "Seiten"} löschen
+          </button>
+        </div>
+      ) : (
+        <button
+          disabled={
+            blocked || !indices.length || indices.length === pages.length
+          }
+          title={
+            indices.length === pages.length
+              ? "Mindestens eine Seite muss verbleiben."
+              : undefined
+          }
+          onClick={() => {
+            cancel();
+            setConfirmDelete(true);
+          }}
+        >
+          Ausgewählte Seiten löschen
+        </button>
+      )}
       <div className="page-import">
         <select
           aria-label="PDF einfügen"
@@ -366,14 +532,18 @@ export function PageOrganizer({
       </div>
       <p className="small">
         {editor.state.pageReadOnly ||
-          (editor.formDirty
-            ? "Eigenschaften zuerst übernehmen oder verwerfen."
-            : "Miniatur ziehen. Bei Touch kurz halten und ziehen; direktes Wischen scrollt. Alternativ Vorher/Nachher verwenden.")}
+          (confirmDelete
+            ? "Verweise auf gelöschte Seiten wechseln zur nächsten verbleibenden Seite, am Ende zur vorherigen."
+            : editor.formDirty
+              ? "Eigenschaften zuerst übernehmen oder verwerfen."
+              : selectionMode
+                ? "Miniaturen antippen zum Auswählen. Zum Verschieben den Griff halten und ziehen."
+                : "Strg/⌘-Klick wählt einzelne Seiten, Umschalt-Klick einen Bereich. Bei Touch zum Ziehen kurz halten.")}
       </p>
       {open && (
         <div
           ref={list}
-          className="page-list"
+          className={selectionMode ? "page-list selecting-pages" : "page-list"}
           data-testid="page-list"
           onScroll={(e) => setScroll(e.currentTarget.scrollTop)}
         >
@@ -386,11 +556,12 @@ export function PageOrganizer({
               return (
                 <button
                   key={info.id}
-                  className={`page-card${drag?.from === index ? " dragging" : ""}`}
+                  className={`page-card${dragging && selected.has(info.id) ? " dragging" : ""}`}
                   style={{ top: index * ROW, height: ROW - 8 }}
                   data-page-id={info.id}
                   data-page-index={index}
                   aria-label={`Seite ${index + 1} anzeigen`}
+                  aria-pressed={selected.has(info.id)}
                   aria-current={page === index ? "page" : undefined}
                   disabled={editor.busy || editor.formDirty}
                   onPointerDown={(e) => down(e, index)}
@@ -400,16 +571,13 @@ export function PageOrganizer({
                     suppressClick.current = true;
                     cancel();
                   }}
-                  onLostPointerCapture={() => {
-                    if (gesture.current) cancel();
-                  }}
-                  onClick={() => {
-                    if (suppressClick.current) {
-                      suppressClick.current = false;
-                      return;
+                  onLostPointerCapture={(e) => {
+                    if (gesture.current?.pointer === e.pointerId) {
+                      suppressClick.current = true;
+                      cancel();
                     }
-                    navigate(index);
                   }}
+                  onClick={(e) => choose(e, index)}
                 >
                   <Thumbnail
                     client={client}
@@ -418,6 +586,9 @@ export function PageOrganizer({
                     revision={editor.state.revision}
                   />
                   <span className="page-card-label">
+                    {selected.has(info.id) && (
+                      <span aria-hidden="true">✓ </span>
+                    )}
                     Seite {index + 1}
                     <small>
                       {Math.round(info.width)} × {Math.round(info.height)} pt
@@ -429,19 +600,26 @@ export function PageOrganizer({
                 </button>
               );
             })}
-            {drag && (
+            {dragSlot !== null && (
               <div
                 className="page-insertion"
                 data-testid="page-insertion"
-                style={{ top: drag.slot * ROW - 3 }}
+                style={{
+                  top: Math.max(
+                    0,
+                    Math.min(dragSlot * ROW - 2, pages.length * ROW - 4),
+                  ),
+                }}
               />
             )}
           </div>
         </div>
       )}
-      {drag && (
+      {dragSlot !== null && (
         <span role="status" className="small">
-          Seite {drag.from + 1} vor Position {drag.slot + 1} ablegen
+          {indices.length} {indices.length === 1 ? "Seite" : "Seiten"}{" "}
+          {dragSlot === pages.length ? "am Ende" : `vor Seite ${dragSlot + 1}`}{" "}
+          ablegen
         </span>
       )}
     </section>

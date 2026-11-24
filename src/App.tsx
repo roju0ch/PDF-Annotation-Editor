@@ -176,10 +176,13 @@ export default function App() {
   }, [pages, page, continuous, box]);
   const pagesChanged = useCallback((next: PageInfo[], focusPage?: number) => {
     const cur = pageContext.current;
-    const retained = next.findIndex((p) => p.id === cur.pages[cur.page]?.id);
+    const positions = new Map(next.map((p, i) => [p.id, i]));
+    // Keep the current page, or its first surviving successor after deletion.
+    const successor = cur.pages
+      .slice(cur.page)
+      .find((p) => positions.has(p.id));
     const index =
-      focusPage ??
-      (retained >= 0 ? retained : Math.min(cur.page, next.length - 1));
+      focusPage ?? (successor ? positions.get(successor.id)! : next.length - 1);
     setPages(next);
     setPage(index);
     const fitted = fit(next[index].width, next[index].height, cur.box);
