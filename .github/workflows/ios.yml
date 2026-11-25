@@ -48,7 +48,9 @@ jobs:
           xcodebuild -version
       - run: npm ci
       - name: Test secure iOS import, export and replacement with real files
+        id: swift-files
         if: matrix.target == 'aarch64-sim'
+        continue-on-error: true
         run: node scripts/release/test-ios-staging.mjs
       - name: Generate iOS launcher icons
         run: |
@@ -94,6 +96,9 @@ jobs:
           if-no-files-found: error
           compression-level: 0
           retention-days: 14
+      - name: Require passing Swift tests
+        if: always() && steps.swift-files.outcome == 'failure'
+        run: exit 1
   signed-device:
     if: github.event_name == 'workflow_dispatch' && inputs.sign_device == true
     runs-on: macos-26

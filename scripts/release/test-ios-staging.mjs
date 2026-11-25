@@ -17,7 +17,13 @@ const passed = Math.max(
     .map((match) => Number(match[1])),
 );
 if (result.error || result.status !== 0 || passed === 0) {
-  const detail = String(result.error?.message || output.slice(-12000))
+  const failures = output
+    .split(/\r?\n/)
+    .filter((line) => /error:|failed|with [1-9]\d* failures/i.test(line))
+    .slice(-12)
+    .join("\n");
+  const detail = String(result.error?.message || failures || output.slice(-3500))
+    .slice(0, 3500)
     .replaceAll("%", "%25")
     .replaceAll("\r", "%0D")
     .replaceAll("\n", "%0A");
