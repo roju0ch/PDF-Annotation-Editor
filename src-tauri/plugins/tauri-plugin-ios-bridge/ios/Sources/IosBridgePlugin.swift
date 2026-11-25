@@ -265,6 +265,10 @@ final class IosBridgePlugin: Plugin {
                 if let original {
                     try PdfSaveTransaction.replace(target, with: staged, original: original.fingerprint, expected: expected)
                 } else {
+                    // A picker response that only refers back to our staging
+                    // file cannot prove that the provider wrote a copy.
+                    guard target.resolvingSymlinksInPath().standardizedFileURL != staged.resolvingSymlinksInPath().standardizedFileURL
+                    else { throw PdfSaveError.unverified }
                     try PdfSaveTransaction.verifyExport(target, expected: expected)
                 }
                 self.remember(token, Original(name: name, fingerprint: expected, directory: target.deletingLastPathComponent()))

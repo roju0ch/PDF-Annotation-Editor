@@ -1,5 +1,8 @@
 #![cfg(target_os = "ios")]
 
+mod save_request;
+
+use save_request::{valid_append, valid_begin, valid_id};
 use serde::{Deserialize, Serialize};
 use tauri::{
     plugin::{mobile::PluginInvokeError, Builder, PluginHandle, TauriPlugin},
@@ -90,98 +93,151 @@ struct PickedPdf {
     token: Option<String>,
 }
 
-pub async fn pick_incoming_pdf<R: Runtime>(app: &AppHandle<R>) -> Result<Option<String>, PdfImportError> {
-    let picked: PickedPdf = app.state::<IosBridge<R>>().0
+pub async fn pick_incoming_pdf<R: Runtime>(
+    app: &AppHandle<R>,
+) -> Result<Option<String>, PdfImportError> {
+    let picked: PickedPdf = app
+        .state::<IosBridge<R>>()
+        .0
         .run_mobile_plugin_async("pickIncomingPdf", ())
         .await?;
     Ok(picked.token)
 }
 
-const MAX_BYTES: usize = 150 * 1024 * 1024;
-const CHUNK_BYTES: usize = 256 * 1024;
 const INVALID: &str = "Die native PDF-Speicheranfrage ist ungültig.";
-
-fn valid_id(value: &str) -> bool {
-    value.len() == 36 && value.bytes().enumerate().all(|(index, byte)| {
-        if [8, 13, 18, 23].contains(&index) { byte == b'-' } else { byte.is_ascii_hexdigit() }
-    })
-}
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct BeginSave { file_name: String, byte_length: usize }
+struct BeginSave {
+    file_name: String,
+    byte_length: usize,
+}
 
 #[derive(Deserialize, Serialize)]
-struct Begun { token: String }
+struct Begun {
+    token: String,
+}
 
 #[tauri::command]
 async fn begin_pdf_save<R: Runtime>(
-    app: AppHandle<R>, file_name: String, byte_length: usize,
+    app: AppHandle<R>,
+    file_name: String,
+    byte_length: usize,
 ) -> Result<Begun, String> {
-    if !(5..=MAX_BYTES).contains(&byte_length) || file_name.len() > 1024 {
+    if !valid_begin(&file_name, byte_length) {
         return Err(INVALID.into());
     }
-    app.state::<IosBridge<R>>().0
-        .run_mobile_plugin_async("beginPdfSave", BeginSave { file_name, byte_length })
-        .await.map_err(save_error)
+    app.state::<IosBridge<R>>()
+        .0
+        .run_mobile_plugin_async(
+            "beginPdfSave",
+            BeginSave {
+                file_name,
+                byte_length,
+            },
+        )
+        .await
+        .map_err(save_error)
 }
 
 #[derive(Serialize)]
-struct AppendSave { token: String, offset: usize, base64: String }
+struct AppendSave {
+    token: String,
+    offset: usize,
+    base64: String,
+}
 
 #[derive(Deserialize, Serialize)]
-struct Appended { received: usize }
+struct Appended {
+    received: usize,
+}
 
 #[tauri::command]
 async fn append_pdf_save<R: Runtime>(
-    app: AppHandle<R>, token: String, offset: usize, base64: String,
+    app: AppHandle<R>,
+    token: String,
+    offset: usize,
+    base64: String,
 ) -> Result<Appended, String> {
-    if !valid_id(&token) || offset >= MAX_BYTES || base64.is_empty() || base64.len() > 4 * CHUNK_BYTES.div_ceil(3) {
+    if !valid_append(&token, offset, base64.len()) {
         return Err(INVALID.into());
     }
-    app.state::<IosBridge<R>>().0
-        .run_mobile_plugin_async("appendPdfSave", AppendSave { token, offset, base64 })
-        .await.map_err(save_error)
+    app.state::<IosBridge<R>>()
+        .0
+        .run_mobile_plugin_async(
+            "appendPdfSave",
+            AppendSave {
+                token,
+                offset,
+                base64,
+            },
+        )
+        .await
+        .map_err(save_error)
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct FinishSave { token: String, source_id: Option<String>, replace_original: bool }
+struct FinishSave {
+    token: String,
+    source_id: Option<String>,
+    replace_original: bool,
+}
 
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct Finished { status: String, file_name: Option<String> }
+struct Finished {
+    status: String,
+    file_name: Option<String>,
+}
 
 #[tauri::command]
 async fn finish_pdf_save<R: Runtime>(
-    app: AppHandle<R>, token: String, source_id: Option<String>, replace_original: Option<bool>,
+    app: AppHandle<R>,
+    token: String,
+    source_id: Option<String>,
+    replace_original: Option<bool>,
 ) -> Result<Finished, String> {
     if !valid_id(&token) || source_id.as_deref().is_some_and(|id| !valid_id(id)) {
         return Err(INVALID.into());
     }
-    app.state::<IosBridge<R>>().0
-        .run_mobile_plugin_async("finishPdfSave", FinishSave { token, source_id, replace_original: replace_original.unwrap_or(false) })
-        .await.map_err(save_error)
+    app.state::<IosBridge<R>>()
+        .0
+        .run_mobile_plugin_async(
+            "finishPdfSave",
+            FinishSave {
+                token,
+                source_id,
+                replace_original: replace_original.unwrap_or(false),
+            },
+        )
+        .await
+        .map_err(save_error)
 }
 
 #[derive(Serialize)]
-struct AbortSave { token: String }
+struct AbortSave {
+    token: String,
+}
 
 #[tauri::command]
 async fn abort_pdf_save<R: Runtime>(app: AppHandle<R>, token: String) -> Result<(), String> {
     if !valid_id(&token) {
         return Err(INVALID.into());
     }
-    app.state::<IosBridge<R>>().0
+    app.state::<IosBridge<R>>()
+        .0
         .run_mobile_plugin_async("abortPdfSave", AbortSave { token })
-        .await.map_err(save_error)
+        .await
+        .map_err(save_error)
 }
 
 fn save_error(error: PluginInvokeError) -> String {
     match error {
         PluginInvokeError::InvokeRejected(response) => response.message,
         _ => None,
-    }.unwrap_or_else(|| "iPadOS konnte die PDF-Speicherung nicht bestätigen.".into())
+    }
+    .unwrap_or_else(|| "iPadOS konnte die PDF-Speicherung nicht bestätigen.".into())
 }
 
 pub fn init<R: Runtime>() -> TauriPlugin<R> {

@@ -10,6 +10,7 @@ on:
       - src-tauri/plugins/tauri-plugin-ios-bridge/**
       - src-tauri/plugins/tauri-plugin-pdf-open/**
       - src-tauri/capabilities/ios-pdf-files.json
+      - src/adapters/platform/ios.ts
   workflow_dispatch:
     inputs:
       sign_device:
@@ -47,6 +48,11 @@ jobs:
           command -v xcodegen >/dev/null || brew install xcodegen
           xcodebuild -version
       - run: npm ci
+      - name: Test Rust PDF-save request limits
+        if: matrix.target == 'aarch64-sim'
+        run: |
+          rustc --edition 2021 --test src-tauri/plugins/tauri-plugin-ios-bridge/src/save_request.rs -o "$RUNNER_TEMP/ios-save-request-tests"
+          "$RUNNER_TEMP/ios-save-request-tests"
       - name: Test secure iOS import, export and replacement with real files
         id: swift-files
         if: matrix.target == 'aarch64-sim'

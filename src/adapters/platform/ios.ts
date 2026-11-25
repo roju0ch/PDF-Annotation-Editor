@@ -6,7 +6,23 @@ declare global {
   }
 }
 
-export const fingerInkKey = "ios-finger-ink";
+const fingerInkKey = "ios-finger-ink";
+
+export function readFingerInkPreference() {
+  try {
+    return localStorage.getItem(fingerInkKey) === "true";
+  } catch {
+    return false;
+  }
+}
+
+export function writeFingerInkPreference(enabled: boolean) {
+  try {
+    localStorage.setItem(fingerInkKey, String(enabled));
+  } catch {
+    // WKWebView may restrict persistent storage. The choice still applies to this session.
+  }
+}
 
 export function isIosApp() {
   return (

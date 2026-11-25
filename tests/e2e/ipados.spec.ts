@@ -182,8 +182,27 @@ test("iPad fingers navigate with Ink selected and can opt into drawing in landsc
     browserName !== "chromium",
     "Touch is simulated through Chromium CDP.",
   );
+  await page.addInitScript(() => {
+    const read = Storage.prototype.getItem;
+    const write = Storage.prototype.setItem;
+    Storage.prototype.getItem = function (key) {
+      if (key === "ios-finger-ink")
+        throw new DOMException("Storage unavailable", "SecurityError");
+      return read.call(this, key);
+    };
+    Storage.prototype.setItem = function (key, value) {
+      if (key === "ios-finger-ink")
+        throw new DOMException("Storage unavailable", "SecurityError");
+      write.call(this, key, value);
+    };
+  });
   await open(page);
   const cdp = await context.newCDPSession(page);
+  const penButton = page.getByRole("button", { name: "Freihand", exact: true });
+  expect(await penButton.boundingBox()).toMatchObject({
+    width: 44,
+    height: 44,
+  });
   const touch = (
     type: "touchStart" | "touchMove" | "touchEnd",
     touchPoints: { x: number; y: number; id: number }[],
@@ -214,6 +233,10 @@ test("iPad fingers navigate with Ink selected and can opt into drawing in landsc
   expect((await state(page)).workerDirty).toBe(false);
 
   await page.setViewportSize({ width: 1133, height: 744 });
+  expect(await penButton.boundingBox()).toMatchObject({
+    width: 44,
+    height: 44,
+  });
   await viewAction(page, "Seite einpassen");
   await menu(page, "view");
   await page.getByRole("checkbox", { name: "Mit Finger zeichnen" }).check();

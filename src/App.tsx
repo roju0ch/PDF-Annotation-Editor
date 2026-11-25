@@ -30,7 +30,11 @@ import {
 } from "react";
 import { PdfClient } from "./adapters/pdf/client";
 import { type PdfFile, usesNativeSave } from "./adapters/platform/savePdf";
-import { fingerInkKey, isIosApp } from "./adapters/platform/ios";
+import {
+  isIosApp,
+  readFingerInkPreference,
+  writeFingerInkPreference,
+} from "./adapters/platform/ios";
 import {
   PDF_OPEN_MESSAGES as messages,
   type PdfOpenOutcome,
@@ -108,7 +112,7 @@ export default function App() {
       ? "PDF speichern unter …"
       : "PDF herunterladen";
   const [fingerInk, setFingerInk] = useState(
-    () => ios && localStorage.getItem(fingerInkKey) === "true",
+    () => ios && readFingerInkPreference(),
   );
   const fingerInkEnabled = useRef(fingerInk);
   const stage = useRef<HTMLDivElement>(null),
@@ -1010,7 +1014,7 @@ export default function App() {
                 const enabled = event.target.checked;
                 fingerInkEnabled.current = enabled;
                 setFingerInk(enabled);
-                localStorage.setItem(fingerInkKey, String(enabled));
+                writeFingerInkPreference(enabled);
               }}
             />
             Mit Finger zeichnen
