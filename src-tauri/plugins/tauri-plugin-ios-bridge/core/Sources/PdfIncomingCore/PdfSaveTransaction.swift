@@ -128,8 +128,12 @@ public final class PdfSaveTransaction {
         guard (try? PdfFingerprint.read(file)) == expected else { throw PdfSaveError.unverified }
     }
 
-    public static func verifyExport(_ url: URL, expected: PdfFingerprint) throws {
-        try withAccess(url) {
+    public static func verifyExport(
+        _ url: URL, expected: PdfFingerprint,
+        scope: PdfSecurityScope = SystemPdfSecurityScope(),
+        container: URL = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+    ) throws {
+        try withAccess(url, scope: scope, container: container) {
             let coordinator = NSFileCoordinator(filePresenter: nil)
             var error: NSError?
             var result: Result<Void, Error>?
@@ -176,11 +180,15 @@ public final class PdfSaveTransaction {
         }
     }
 
-    private static func withAccess<T>(_ url: URL, _ work: () throws -> T) throws -> T {
+    private static func withAccess<T>(
+        _ url: URL, scope: PdfSecurityScope = SystemPdfSecurityScope(),
+        container: URL = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true),
+        _ work: () throws -> T
+    ) throws -> T {
         guard url.isFileURL else { throw PdfSaveError.inaccessible }
-        let scoped = url.startAccessingSecurityScopedResource()
-        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-        let root = URL(fileURLWithPath: NSHomeDirectory()).resolvingSymlinksInPath().path
+        let scoped = scope.start(url)
+        defer { if scoped { scope.stop(url) } }
+        let root = container.resolvingSymlinksInPath().path
         guard scoped || url.resolvingSymlinksInPath().path.hasPrefix(root + "/") else {
             throw PdfSaveError.inaccessible
         }

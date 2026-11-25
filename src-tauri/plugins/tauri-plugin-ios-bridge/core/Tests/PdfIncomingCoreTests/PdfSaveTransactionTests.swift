@@ -2,6 +2,11 @@ import Foundation
 import XCTest
 @testable import PdfIncomingCore
 
+private struct DeniedSaveScope: PdfSecurityScope {
+    func start(_ url: URL) -> Bool { false }
+    func stop(_ url: URL) { XCTFail("No scope was acquired.") }
+}
+
 final class PdfSaveTransactionTests: XCTestCase {
     private var directory: URL!
     private let bytes = Data("%PDF-1.7\nsynthetic test\n%%EOF\n".utf8)
@@ -58,10 +63,13 @@ final class PdfSaveTransactionTests: XCTestCase {
         XCTAssertThrowsError(try PdfSaveTransaction.verifyExport(local, expected: fingerprint)) {
             XCTAssertEqual($0 as? PdfSaveError, .unverified)
         }
-        let outside = FileManager.default.temporaryDirectory.appendingPathComponent("pdf-test-\(UUID().uuidString).pdf")
+        let container = directory.appendingPathComponent("sandbox", isDirectory: true)
+        try FileManager.default.createDirectory(at: container, withIntermediateDirectories: false)
+        let outside = directory.appendingPathComponent("External.pdf")
         try bytes.write(to: outside)
-        defer { try? FileManager.default.removeItem(at: outside) }
-        XCTAssertThrowsError(try PdfSaveTransaction.verifyExport(outside, expected: fingerprint)) {
+        XCTAssertThrowsError(try PdfSaveTransaction.verifyExport(
+            outside, expected: fingerprint, scope: DeniedSaveScope(), container: container
+        )) {
             XCTAssertEqual($0 as? PdfSaveError, .inaccessible)
         }
     }
