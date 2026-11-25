@@ -175,6 +175,54 @@ test("wheel scrolls on both axes regardless of the old profile, and replacement 
   );
 });
 
+test("one finger scrolls from both the current page and a visible following page", async ({
+  page,
+  context,
+  browserName,
+}) => {
+  test.skip(browserName !== "chromium", "Touch events use Chromium CDP");
+  await page.setViewportSize({ width: 390, height: 844 });
+  const session = await context.newCDPSession(page);
+  for (const index of [0, 1]) {
+    await open(page);
+    await expect(page.getByLabel("Seite", { exact: true })).toHaveValue("1");
+    const stage = (await page.getByTestId("viewport").boundingBox())!;
+    const sheet = (await page.getByTestId(`page-${index}`).boundingBox())!;
+    const start = {
+      x: sheet.x + 63,
+      y: Math.min(sheet.y + sheet.height / 2, stage.y + stage.height - 32),
+      id: 1,
+    };
+    expect(start.y).toBeGreaterThan(sheet.y);
+    const before = await geometry(page);
+    await session.send("Input.dispatchTouchEvent", {
+      type: "touchStart",
+      touchPoints: [start],
+    });
+    await session.send("Input.dispatchTouchEvent", {
+      type: "touchMove",
+      touchPoints: [{ ...start, y: start.y - 4 }],
+    });
+    expect(await geometry(page)).toEqual(before);
+    await session.send("Input.dispatchTouchEvent", {
+      type: "touchMove",
+      touchPoints: [{ ...start, y: start.y - 100 }],
+    });
+    await expect(page.getByTestId("selection-marquee")).toHaveCount(0);
+    await session.send("Input.dispatchTouchEvent", {
+      type: "touchEnd",
+      touchPoints: [],
+    });
+    await expect
+      .poll(async () => (await geometry(page)).y)
+      .toBeCloseTo(before.y - 100, 1);
+    await expect(page.getByTestId("selection-outline")).toHaveCount(0);
+    await expect(
+      page.getByRole("menu", { name: "Annotationsaktionen" }),
+    ).toHaveCount(0);
+  }
+});
+
 test("touch pinch, fit controls and repeated page cache reuse", async ({
   page,
   context,

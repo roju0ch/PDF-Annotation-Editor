@@ -4,6 +4,7 @@ import { MenuHeading, ToolButton } from "./CompactMenu";
 import { useState } from "react";
 export const toolNames: Record<Tool, string> = {
   select: "Auswählen / Verschieben",
+  marquee: "Bereich auswählen",
   Ink: "Freihand",
   Text: "Notiz",
   FreeText: "Textfeld",
@@ -97,9 +98,16 @@ export function DirectTools({
         onClick={() => choose("erase")}
       />
       <ToolButton
+        icon="marquee"
+        label={toolNames.marquee}
+        pressed={e.tool === "marquee"}
+        disabled={blocked}
+        onClick={() => choose("marquee")}
+      />
+      <ToolButton
         icon="settings"
         label="Werkzeugeigenschaften"
-        disabled={blocked || e.tool === "select"}
+        disabled={blocked || e.tool === "select" || e.tool === "marquee"}
         popoverTarget="tools-menu"
         onClick={e.closeContext}
       />
@@ -124,7 +132,7 @@ export function AnnotationToolbar({
       <MenuHeading target="tools-menu">
         {toolNames[e.tool]} · Eigenschaften
       </MenuHeading>
-      {e.tool !== "select" && e.tool !== "erase" && (
+      {(e.tool === "Ink" || e.tool === "Text" || e.tool === "FreeText") && (
         <label>
           Farbe{" "}
           <input

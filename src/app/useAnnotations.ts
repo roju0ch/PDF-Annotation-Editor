@@ -51,11 +51,11 @@ import type {
   EditorState,
   PdfRect,
 } from "../core/annotations/model";
-export type Tool = "select" | "Ink" | "Text" | "FreeText" | "erase";
+export type Tool = "select" | "marquee" | "Ink" | "Text" | "FreeText" | "erase";
 export type Draft = {
   page: number;
   points: Point[];
-  kind: Tool | "marquee" | "resize";
+  kind: Tool | "resize";
   corner?: number;
   ids?: number[];
   annotation?: Annotation;
@@ -910,18 +910,6 @@ export function useAnnotations(
       point.y <= bounds[3]
     );
   }
-  function selectionContextAt(p: Point) {
-    const cur = current.current,
-      at = locate(p);
-    return (
-      cur.tool === "select" &&
-      !cur.formDirty &&
-      !cur.state.readOnly &&
-      !!at &&
-      at.page === cur.layout.page &&
-      selectionContains(at.point, at.page)
-    );
-  }
   function openContext(p: Point, screen: Point) {
     const cur = current.current,
       at = locate(p);
@@ -1130,7 +1118,7 @@ export function useAnnotations(
           ]),
       );
   }
-  function begin(p: Point) {
+  function begin(p: Point, touchSelect?: "tap" | "drag") {
     const cur = current.current;
     if (
       lock.current ||
@@ -1139,13 +1127,16 @@ export function useAnnotations(
       freeTextRef.current
     )
       return false;
+    const canStartOutside =
+      cur.tool === "marquee" || (cur.tool === "select" && !touchSelect);
     const at =
-      locate(p) ??
-      (cur.tool === "select" ? locate(p, cur.layout.page, false) : null);
-    if (!at) return false;
+      locate(p) ?? (canStartOutside ? locate(p, cur.layout.page, false) : null);
     // Editing applies to the active page; navigation and other visible pages remain unaffected.
-    if (at.page !== cur.layout.page) return false;
-    const a = hit(at.point, at.page);
+    if (!at || at.page !== cur.layout.page) return false;
+    if (cur.tool === "marquee") {
+      showDraft({ page: at.page, points: [at.point], kind: "marquee" });
+      return true;
+    }
     if (cur.tool === "select") {
       const image =
         cur.selection.length === 1
@@ -1162,6 +1153,7 @@ export function useAnnotations(
             14,
         );
         if (corner >= 0) {
+          if (touchSelect === "tap") return false;
           showDraft({
             page: at.page,
             points: [at.point],
@@ -1172,6 +1164,13 @@ export function useAnnotations(
           return true;
         }
       }
+      const a = hit(at.point, at.page);
+      if (touchSelect === "tap") {
+        if (!a) setSelection([]);
+        else if (!cur.selection.includes(a.id)) setSelection([a.id]);
+        return false;
+      }
+      if (touchSelect === "drag" && !a?.editable) return false;
       if (!a) {
         showDraft({ page: at.page, points: [at.point], kind: "marquee" });
         return true;
@@ -1191,6 +1190,7 @@ export function useAnnotations(
       });
       return true;
     }
+    const a = hit(at.point, at.page);
     if (cur.tool === "erase" && (!a?.editable || a.type !== "Ink"))
       return false;
     showDraft({
@@ -1243,6 +1243,7 @@ export function useAnnotations(
             )
           : [],
       );
+      if (cur.tool === "marquee") setTool("select");
       return;
     }
     if (d.kind === "resize") {
@@ -1415,7 +1416,7 @@ export function useAnnotations(
     edit,
     save,
     gesture: {
-      selectionContextAt,
+      tool,
       openContext,
       closeContext,
       hover: (p: Point | null) => {

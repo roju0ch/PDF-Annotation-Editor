@@ -1,14 +1,14 @@
 # Auswahlbox und gemeinsames Verschieben
 
-Im Werkzeug **Auswählen / Verschieben** auf freier Fläche ziehen. Die Box funktioniert in beide Richtungen und kann auch außerhalb des Blatts beginnen. Berührung genügt: Bei Freihand werden die Striche einschließlich Strichbreite geprüft; leere Zwischenräume und bloß überlappende Ink-Begrenzungsrahmen zählen nicht. Bei Notizen und Textfeldern zählt deren Rechteck. Treffer werden bereits während des Ziehens hervorgehoben.
+Mit **Bereich auswählen** ein Rechteck ziehen. Mit der Maus lässt sich die Box auch im Werkzeug **Auswählen / Verschieben** auf freier Fläche aufziehen. Die Box funktioniert in beide Richtungen und kann auch außerhalb des Blatts beginnen. Berührung genügt: Bei Freihand werden die Striche einschließlich Strichbreite geprüft; leere Zwischenräume und bloß überlappende Ink-Begrenzungsrahmen zählen nicht. Bei Notizen und Textfeldern zählt deren Rechteck. Treffer werden bereits während des Ziehens hervorgehoben.
 
-Nach dem Loslassen bleibt die Gruppe ausgewählt. An einer ihrer Markierungen ziehen, um alle um denselben Betrag zu verschieben. Die Auswahlrahmen zeigen während des Ziehens die Zielposition; beim Loslassen werden die nativen PDF-Objekte verändert und neu gerendert. Unten steht die Anzahl der ausgewählten Markierungen. Das Annotationsmenü öffnet sich nicht automatisch.
+Nach dem Loslassen bleibt die Gruppe ausgewählt und **Auswählen / Verschieben** ist wieder aktiv. An einer ihrer Markierungen ziehen, um alle um denselben Betrag zu verschieben. Die Auswahlrahmen zeigen während des Ziehens die Zielposition; beim Loslassen werden die nativen PDF-Objekte verändert und neu gerendert. Unten steht die Anzahl der ausgewählten Markierungen. Das Annotationsmenü öffnet sich nicht automatisch.
 
 - **Rückgängig/Wiederholen:** Die gesamte Gruppenbewegung ist jeweils eine Operation.
 - **Escape:** Laufende Auswahl/Verschiebung abbrechen; ohne laufende Geste die Auswahl aufheben. Ungesicherte Eigenschaftseingaben bleiben geschützt.
 - **Klick auf freie Fläche:** Auswahl aufheben. Zum Wechsel auf ein einzelnes Objekt dieses anklicken oder die Annotationsliste verwenden.
 - **Mittelmaus / Leertaste + Ziehen:** Ansicht bewegen, Auswahl bleibt erhalten.
-- **Touch:** Ein Finger für Auswahlbox oder Gruppenbewegung; zwei Finger für Pan/Zoom. Der zweite Finger bricht eine laufende Bearbeitung ab, ohne sie in der PDF zu speichern.
+- **Touch:** Ein Finger auf freier Fläche scrollt durch die PDF. Tippen wählt eine Annotation aus und Ziehen auf einer ausgewählten Annotation verschiebt die Gruppe. Zwei Finger verschieben und zoomen die Ansicht. Der zweite Finger bricht eine laufende Bearbeitung ab, ohne sie in der PDF zu speichern.
 
 Die Auswahl gilt für die aktuelle Seite und die bisher unterstützten bearbeitbaren Typen Ink, Text und FreeText. Geschützte und nicht unterstützte Objekte werden von der Box nicht ausgewählt und nicht verschoben. Keine seitenübergreifende Gruppe und keine dauerhafte Gruppierung im PDF-Format: Die Annotationen bleiben einzeln bearbeitbare native Objekte.
 

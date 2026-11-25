@@ -341,16 +341,19 @@ export default function App() {
     let space = false;
     let hold: ReturnType<typeof setTimeout> | undefined;
     let holdStart: Point | null = null;
-    let deferredTouch: Point | null = null;
     const consumed = new Set<number>();
     const clearHold = () => {
       clearTimeout(hold);
       hold = undefined;
       holdStart = null;
-      deferredTouch = null;
     };
-    cancelPendingPointer.current = clearHold;
     const points = new Map<number, Point>();
+    let touchEditing = false;
+    cancelPendingPointer.current = () => {
+      clearHold();
+      touchEditing = false;
+    };
+    let mousePointer: number | null = null;
     let drag: Point | null = null;
     let trackpadScale: number | null = null;
     let middlePasteBlocked = false;
@@ -360,6 +363,7 @@ export default function App() {
     };
     const wheel = (e: WheelEvent) => {
       clearHold();
+      touchEditing = false;
       annotationInput.current.closeContext();
       const { pages, box, scrollLayout } = current.current;
       if (!pages.length) return;
@@ -422,79 +426,92 @@ export default function App() {
       if (!current.current.pages.length) return;
       annotationInput.current.hover(local(e));
       if (e.pointerType === "touch") {
-        points.set(e.pointerId, local(e));
+        if (mousePointer !== null || consumed.size) return;
+        const start = local(e);
+        points.set(e.pointerId, start);
         clearHold();
-        if (points.size === 1) {
-          const start = local(e),
-            screen = { x: e.clientX, y: e.clientY };
-          // Preserve the current selection until a hold, tap or drag is known.
-          // Otherwise touching another object inside the group frame replaces it.
-          if (annotationInput.current.selectionContextAt(start))
-            deferredTouch = start;
-          else annotationInput.current.begin(start);
+        touchEditing = false;
+        if (points.size > 1) {
+          annotationInput.current.cancel();
+        } else if (annotationInput.current.tool === "select") {
+          // Wait for movement, a tap, or a hold before changing the selection.
           holdStart = start;
+          const screen = { x: e.clientX, y: e.clientY };
           hold = setTimeout(() => {
-            if (annotationInput.current.openContext(start, screen)) {
-              consumed.add(e.pointerId);
-              points.clear();
-            }
+            if (!annotationInput.current.openContext(start, screen)) return;
+            consumed.add(e.pointerId);
+            points.clear();
             clearHold();
           }, 600);
-        } else annotationInput.current.cancel();
+        } else touchEditing = annotationInput.current.begin(start);
         el.setPointerCapture(e.pointerId);
         e.preventDefault();
-      } else if (e.button === 1 || (e.button === 0 && space)) {
+        return;
+      }
+      if (points.size || consumed.size || mousePointer !== null) return;
+      if (e.button === 1 || (e.button === 0 && space)) {
         annotationInput.current.cancel();
         drag = local(e);
+        mousePointer = e.pointerId;
         el.setPointerCapture(e.pointerId);
         el.classList.add("panning");
         e.preventDefault();
       } else if (e.button === 0 && annotationInput.current.begin(local(e))) {
+        mousePointer = e.pointerId;
         el.focus();
         el.setPointerCapture(e.pointerId);
         e.preventDefault();
       }
     };
+    const moveTouch = (id: number, p: Point) => {
+      const previous = points.get(id);
+      if (!previous || (p.x === previous.x && p.y === previous.y)) return;
+      points.set(id, p);
+      if (points.size === 2) {
+        const other = [...points].find(([pointer]) => pointer !== id)![1];
+        const before = {
+          x: (previous.x + other.x) / 2,
+          y: (previous.y + other.y) / 2,
+        };
+        const distance = Math.hypot(previous.x - other.x, previous.y - other.y);
+        const factor =
+          distance > 2
+            ? Math.hypot(p.x - other.x, p.y - other.y) / distance
+            : 1;
+        updateView((v) => {
+          const z = zoomAt(v, before, factor);
+          return {
+            ...z,
+            x: z.x + (p.x - previous.x) / 2,
+            y: z.y + (p.y - previous.y) / 2,
+          };
+        });
+        return;
+      }
+      if (points.size !== 1) return;
+      const start = holdStart ?? previous;
+      if (holdStart) {
+        if (Math.hypot(p.x - start.x, p.y - start.y) <= 8) return;
+        clearHold();
+        touchEditing = annotationInput.current.begin(start, "drag");
+      }
+      if (touchEditing) annotationInput.current.move(p);
+      else {
+        const { box, scrollLayout } = current.current;
+        updateView((v) =>
+          scrollView(v, box, scrollLayout, start.x - p.x, start.y - p.y),
+        );
+      }
+    };
     const move = (e: PointerEvent) => {
       const p = local(e);
       annotationInput.current.hover(p);
-      if (holdStart && Math.hypot(p.x - holdStart.x, p.y - holdStart.y) > 8) {
-        const start = deferredTouch;
-        clearHold();
-        if (start && points.size === 1) annotationInput.current.begin(start);
+      if (e.pointerType === "touch") {
+        moveTouch(e.pointerId, p);
+        return;
       }
-      if (consumed.has(e.pointerId)) return;
-      if (points.has(e.pointerId)) {
-        const old = [...points.values()];
-        points.set(e.pointerId, p);
-        const now = [...points.values()];
-        if (now.length === 2) {
-          const mid = (a: Point[]) => ({
-            x: (a[0].x + a[1].x) / 2,
-            y: (a[0].y + a[1].y) / 2,
-          });
-          const dist = (a: Point[]) =>
-            Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y);
-          const before = mid(old),
-            after = mid(now);
-          const factor = dist(old) > 2 ? dist(now) / dist(old) : 1;
-          updateView((v) => {
-            const z = zoomAt(v, before, factor);
-            return {
-              ...z,
-              x: z.x + after.x - before.x,
-              y: z.y + after.y - before.y,
-            };
-          });
-        } else if (now.length === 1 && annotationInput.current.active()) {
-          annotationInput.current.move(p);
-        } else if (now.length === 1 && !deferredTouch)
-          updateView((v) => ({
-            ...v,
-            x: v.x + p.x - old[0].x,
-            y: v.y + p.y - old[0].y,
-          }));
-      } else if (drag) {
+      if (e.pointerId !== mousePointer) return;
+      if (drag) {
         const from = drag;
         drag = p;
         updateView((v) => ({
@@ -507,6 +524,25 @@ export default function App() {
       }
     };
     const up = (e: PointerEvent) => {
+      // Transfer of implicit touch capture from a child also bubbles here.
+      if (e.type === "lostpointercapture" && e.target !== el) return;
+      if (e.pointerType === "touch") {
+        if (consumed.delete(e.pointerId)) {
+          e.preventDefault();
+          return;
+        }
+        if (!points.has(e.pointerId)) return;
+        if (e.type === "pointerup") {
+          if (points.size === 1) moveTouch(e.pointerId, local(e));
+          if (holdStart) annotationInput.current.begin(holdStart, "tap");
+          if (touchEditing) annotationInput.current.finish();
+        } else annotationInput.current.cancel();
+        clearHold();
+        touchEditing = false;
+        points.delete(e.pointerId);
+        return;
+      }
+      if (e.pointerId !== mousePointer) return;
       // Pointer moves can be coalesced; apply the final pan coordinate before
       // releasing capture so the last movement is never lost on Firefox/touchpads.
       if (e.type === "pointerup" && drag) {
@@ -518,18 +554,9 @@ export default function App() {
           y: v.y + p.y - from.y,
         }));
       }
-      if (e.type === "pointerup" && deferredTouch && !consumed.has(e.pointerId))
-        annotationInput.current.begin(deferredTouch);
-      clearHold();
-      if (consumed.delete(e.pointerId)) {
-        e.preventDefault();
-        annotationInput.current.cancel();
-        points.delete(e.pointerId);
-        return;
-      }
       if (e.type === "pointerup") annotationInput.current.finish();
       else annotationInput.current.cancel();
-      points.delete(e.pointerId);
+      mousePointer = null;
       drag = null;
       el.classList.remove("panning");
     };
@@ -555,23 +582,30 @@ export default function App() {
       consumed.clear();
       annotationInput.current.cancel();
       space = false;
+      touchEditing = false;
+      mousePointer = null;
       drag = null;
       trackpadScale = null;
       points.clear();
       el.classList.remove("panning");
     };
     const context = (e: MouseEvent) => {
-      clearHold();
+      // The touch timer arbitrates the hold alongside scroll, drag, and pinch.
+      if (
+        (e as PointerEvent).pointerType === "touch" ||
+        points.size ||
+        consumed.size
+      ) {
+        e.preventDefault();
+        return;
+      }
       if (
         annotationInput.current.openContext(local(e), {
           x: e.clientX,
           y: e.clientY,
         })
-      ) {
+      )
         e.preventDefault();
-        for (const id of points.keys()) consumed.add(id);
-        points.clear();
-      }
     };
     const leave = () => annotationInput.current.hover(null);
     const aux = (e: MouseEvent) => {

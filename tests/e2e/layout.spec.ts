@@ -6,6 +6,8 @@ const browserSuffix =
 for (const size of [
   { width: 320, height: 568 },
   { width: 390, height: 844 },
+  { width: 721, height: 720 },
+  { width: 769, height: 720 },
   { width: 844, height: 390 },
   { width: 1440, height: 900 },
 ]) {
@@ -27,7 +29,7 @@ for (const size of [
       await page
         .locator("header")
         .evaluate((el) => el.getBoundingClientRect().height),
-    ).toBeLessThanOrEqual(size.width <= 720 ? 86 : 48);
+    ).toBeLessThanOrEqual(size.width <= 768 ? 86 : 48);
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth),
     ).toBe(size.width);
@@ -36,7 +38,7 @@ for (const size of [
     }
     await expect(page.getByLabel("Werkzeug", { exact: true })).toHaveCount(0);
     const tools = page.getByRole("toolbar", { name: "Annotationswerkzeuge" });
-    await expect(tools.getByRole("button")).toHaveCount(7);
+    await expect(tools.getByRole("button")).toHaveCount(8);
     const buttons = await tools.getByRole("button").all();
     for (const button of buttons) {
       const bounds = (await button.boundingBox())!;
@@ -49,7 +51,7 @@ for (const size of [
     }
     const toolsBox = (await tools.boundingBox())!;
     const actions = (await page.locator(".document-actions").boundingBox())!;
-    if (size.width <= 720)
+    if (size.width <= 768)
       expect(toolsBox.y).toBeGreaterThanOrEqual(actions.y + actions.height);
     else expect(toolsBox.y).toBe(actions.y);
     const transform = await page.getByTestId("world").getAttribute("style");
