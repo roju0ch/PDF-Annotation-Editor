@@ -9,8 +9,6 @@ import {
   usesNativeSave,
   savePdf,
   type PdfFile,
-  supportsPdfSave,
-  PDF_SAVE_UNAVAILABLE,
 } from "../adapters/platform/savePdf";
 import {
   imageInfo,
@@ -52,6 +50,7 @@ import type {
   PdfRect,
 } from "../core/annotations/model";
 export type Tool = "select" | "marquee" | "Ink" | "Text" | "FreeText" | "erase";
+type SaveOptions = { fileName?: string; replaceOriginal?: boolean };
 export type Draft = {
   page: number;
   points: Point[];
@@ -409,74 +408,78 @@ export function useAnnotations(
       }
     }
   }
-  const save = useCallback(async () => {
-    const c = client.current;
-    if (!c || lock.current || current.current.state.readOnly) return;
-    if (!supportsPdfSave()) {
-      onError(PDF_SAVE_UNAVAILABLE);
-      return;
-    }
-    if (freeTextRef.current) {
-      onError("Bitte den Textkommentar zuerst bestätigen oder abbrechen.");
-      return;
-    }
-    if (current.current.formDirty) {
-      onError("Bitte die Eigenschaften zuerst übernehmen oder verwerfen.");
-      return;
-    }
-    const token = epoch.current;
-    lock.current = true;
-    setBusy(true);
-    setNotice(usesNativeSave() ? "PDF speichern …" : "");
-    onError("");
-    let savedFileName: string | null = null;
-    try {
-      const r = await c.request({ type: "export" });
-      if (token !== epoch.current) return;
-      const result = await savePdf(r.bytes!, file.fileName, file.sourceId);
-      if (token !== epoch.current) return;
-      if (result.status === "cancelled") {
-        setNotice(
-          r.editor!.dirty
-            ? "Speichern abgebrochen. Änderungen bleiben ungesichert."
-            : "Speichern abgebrochen.",
-        );
+  const save = useCallback(
+    async (options?: SaveOptions) => {
+      const c = client.current;
+      if (!c || lock.current || current.current.state.readOnly) return;
+      if (freeTextRef.current) {
+        onError("Bitte den Textkommentar zuerst bestätigen oder abbrechen.");
         return;
       }
-      if (result.status === "download-started") {
-        setNotice(
-          "PDF-Download gestartet. Bitte die heruntergeladene Datei prüfen.",
-        );
+      if (current.current.formDirty) {
+        onError("Bitte die Eigenschaften zuerst übernehmen oder verwerfen.");
         return;
       }
-      savedFileName = result.fileName;
-      onSaved({ fileName: result.fileName, sourceId: result.sourceId });
-      const ack = await c.request({
-        type: "ack-export",
-        revision: r.editor!.revision,
-      });
-      if (token !== epoch.current) return;
-      setState(ack.editor!);
-      setNotice(`PDF gespeichert: ${result.fileName}`);
-    } catch (e) {
-      if (token === epoch.current) {
-        if (savedFileName) {
-          setNotice(`PDF gespeichert: ${savedFileName}`);
-          onError(
-            "Die PDF wurde gespeichert, aber die App konnte den Bearbeitungsstatus nicht aktualisieren. Bitte die gespeicherte Datei öffnen und prüfen.",
+      const token = epoch.current;
+      lock.current = true;
+      setBusy(true);
+      setNotice(usesNativeSave() ? "PDF speichern …" : "");
+      onError("");
+      let savedFileName: string | null = null;
+      try {
+        const r = await c.request({ type: "export" });
+        if (token !== epoch.current) return;
+        const result = await savePdf(
+          r.bytes!,
+          options?.fileName ?? file.fileName,
+          file.sourceId,
+          options?.replaceOriginal,
+        );
+        if (token !== epoch.current) return;
+        if (result.status === "cancelled") {
+          setNotice(
+            r.editor!.dirty
+              ? "Speichern abgebrochen. Änderungen bleiben ungesichert."
+              : "Speichern abgebrochen.",
           );
-        } else {
-          setNotice("");
-          onError(e instanceof Error ? e.message : "Export fehlgeschlagen.");
+          return;
+        }
+        if (result.status === "download-started") {
+          setNotice(
+            "PDF-Download gestartet. Bitte die heruntergeladene Datei prüfen.",
+          );
+          return;
+        }
+        savedFileName = result.fileName;
+        onSaved({ fileName: result.fileName, sourceId: result.sourceId });
+        const ack = await c.request({
+          type: "ack-export",
+          revision: r.editor!.revision,
+        });
+        if (token !== epoch.current) return;
+        setState(ack.editor!);
+        setNotice(`PDF gespeichert: ${result.fileName}`);
+      } catch (e) {
+        if (token === epoch.current) {
+          if (savedFileName) {
+            setNotice(`PDF gespeichert: ${savedFileName}`);
+            onError(
+              "Die PDF wurde gespeichert, aber die App konnte den Bearbeitungsstatus nicht aktualisieren. Bitte die gespeicherte Datei öffnen und prüfen.",
+            );
+          } else {
+            setNotice("");
+            onError(e instanceof Error ? e.message : "Export fehlgeschlagen.");
+          }
+        }
+      } finally {
+        if (token === epoch.current) {
+          lock.current = false;
+          setBusy(false);
         }
       }
-    } finally {
-      if (token === epoch.current) {
-        lock.current = false;
-        setBusy(false);
-      }
-    }
-  }, [client, file, onError, onSaved]);
+    },
+    [client, file, onError, onSaved],
+  );
   const closeContext = useCallback(() => {
     contextRef.current = null;
     setContextMenu(null);

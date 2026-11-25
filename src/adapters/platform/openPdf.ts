@@ -225,8 +225,8 @@ export function subscribePdfOpens(consumer: Consumer) {
   };
 }
 
-/** The desktop picker enqueues an OS-selected file in the calling window. */
-export async function pickDesktopPdf() {
+/** The native picker enqueues an OS-selected file in the calling window. */
+export async function pickNativePdf() {
   try {
     await invoke(PREFIX + "pick_pdf_open");
   } catch {

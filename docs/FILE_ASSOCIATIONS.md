@@ -63,13 +63,13 @@ Die App registriert einen von Tauri generierten `ACTION_VIEW`-Filter für `appli
 
 ## iOS / iPadOS
 
-Der neue iOS-Build setzt iOS/iPadOS 17 oder neuer voraus, damit die vorhandenen kompakten Popover-Menüs unterstützt werden. Die App registriert `com.adobe.pdf` in `CFBundleDocumentTypes`. In der **Dateien-App** beziehungsweise in einer anderen dokumentfähigen App die verfügbaren Dateiaktionen oder **Teilen/Öffnen in** aufrufen und **PDF Viewer** auswählen. Welche Aktion angezeigt wird und ob sich eine bevorzugte App festlegen lässt, hängt von iOS-Version und Quell-App ab. Das ist keine pauschale Zusage einer Windows-ähnlichen systemweiten Standardzuordnung; die App setzt keinen globalen Standard selbst.
+Die App setzt iPadOS 17 oder neuer voraus, damit die vorhandenen kompakten Popover-Menüs unterstützt werden. Die App registriert `com.adobe.pdf` in `CFBundleDocumentTypes`. In der **Dateien-App** beziehungsweise in einer anderen dokumentfähigen App die verfügbaren Dateiaktionen oder **Teilen/Öffnen in** aufrufen und **PDF Viewer** auswählen. Welche Aktion angezeigt wird und ob sich eine bevorzugte App festlegen lässt, hängt von iOS-Version und Quell-App ab. Das ist keine pauschale Zusage einer Windows-ähnlichen systemweiten Standardzuordnung; die App setzt keinen globalen Standard selbst.
 
 Die App fordert mit `LSSupportsOpeningDocumentsInPlace=false` bewusst den offiziellen Importkopie-Modus an: UIKit übergibt eine Kopie in der eigenen Inbox. Es wird kein Zugriff auf eine externe Originaldatei über eine bloß rekonstruierte URL vorausgesetzt. Übergebene Dateien werden koordiniert gelesen; für Dateien außerhalb des App-Containers wird ein gegebenenfalls erforderlicher Security-Scope nur für das Lesen gehalten und anschließend freigegeben. Die PDF wird als private, begrenzte Arbeitskopie an die gemeinsame Importfunktion übergeben. Das Original wird beim Öffnen nicht verändert.
 
 Ein iOS-Simulator-Build ist nicht auf einem iPhone oder iPad installierbar. Reale Geräte benötigen einen dafür signierten Build und eine passende Apple-Distribution, beispielsweise TestFlight. Simulator-/Cloud-Ergebnisse und offene Signierungs- oder Geräteprüfungen werden im PR getrennt ausgewiesen; ein erfolgreicher Simulator-Build behauptet keine fertige Geräteverteilung.
 
-Der Prototyp besitzt außerdem noch keinen nativen iOS-Speicherweg. Die Speicherung ist dort ausdrücklich deaktiviert, einschließlich Tastaturkürzel. Android, Desktop und Browser behalten ihre bestehenden Speicherfunktionen. Der iOS-Build ist damit noch kein produktiver Ersatz für einen vollständigen PDF-Editor auf iPhone/iPad.
+Die Öffnen-Funktion im Editor startet ebenfalls den nativen Dateien-Dialog. Die von der Dateien-App übergebene Arbeitskopie verschafft keine Schreibrechte am ursprünglichen Dokument. Zum Ersetzen muss das Original über den nativen Picker erneut ausgewählt und ausdrücklich bestätigt werden. [Speichern und Geräteinstallation](IPADOS.md).
 
 ## Gemeinsamer Öffnungsablauf
 

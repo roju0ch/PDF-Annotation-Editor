@@ -12,9 +12,13 @@ Auf Windows, macOS und Linux erfassen **Öffnen** und **Öffnen mit** den Herkun
 
 Erst nach der Zielwahl schreibt und prüft die App eine temporäre Datei neben dem Ziel, ersetzt die Zieldatei atomar und prüft sie erneut. Jedes Desktop-Fenster verwaltet seinen eigenen Ordner und seine eigenen Speichertransaktionen. Die Weboberfläche erhält nur den Dateinamen und eine undurchsichtige Kennung. Nach erfolgreichem Speichern dient der gewählte Zielordner als nächster Vorschlag. [Mehrfenster-Bedienung](MULTIPLE_WINDOWS.md).
 
-## iOS-Simulatorprototyp
+## iPadOS
 
-Der neue iOS-Build dient zunächst dem Öffnen externer PDFs und der Simulatorprüfung. Ein nativer iOS-Speicherweg ist noch nicht vorhanden. Der Speicherknopf ist dort ausdrücklich deaktiviert; auch das Tastaturkürzel behauptet keinen Export. Die Android-, Desktop- und Browser-Speicherwege bleiben erhalten. Dieser Prototyp eignet sich noch nicht zur produktiven Bearbeitung mit anschließender Speicherung auf iPhone/iPad. [Dateizuordnung und Signierungsgrenzen](FILE_ASSOCIATIONS.md).
+**PDF speichern … → Speichern unter …** übergibt eine Arbeitskopie an den iPadOS-Dokumentdialog. Der aktuelle Dateiname ist vorausgefüllt und lässt sich vor dem Dialog ändern. Die Dateien-App entscheidet über Zielordner und Namenskonflikte. Wenn die App einen zuvor ausgewählten Ort kennt, übergibt sie ihn als Vorschlag. Cmd+S öffnet den Dateidialog für eine Kopie mit dem vorgeschlagenen Namen.
+
+**Original ersetzen …** erfordert eine erneute explizite Auswahl und eine separate Bestätigung. Die App vergleicht Dateiname und Fingerabdruck mit dem importierten oder zuletzt bestätigten Stand. Sie hält die Security Scope während des koordinierten Zugriffs und verwendet einen vorbereiteten Dateiersatz auf dem Zielvolume. Wenn der Anbieter das verweigert oder sich die Datei geändert hat, kann eine Kopie gespeichert werden.
+
+Der Worker exportiert native PDF-Objekte und die App überträgt höchstens 256 KiB pro Block. Der native Speicherweg liest die Zieldatei zur Kontrolle von Größe und SHA-256. Abbruch, Berechtigungsfehler oder fehlende Rückprüfung lassen Änderungen in der App ungesichert. Eine unbestätigte Kopie kann beim Anbieter bereits sichtbar sein. Temporäre lokale Dateien werden nach Abschluss oder Abbruch bereinigt. [iPadOS-Anleitung](IPADOS.md).
 
 ## Browser
 

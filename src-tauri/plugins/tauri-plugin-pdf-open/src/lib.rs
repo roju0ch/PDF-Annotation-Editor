@@ -238,7 +238,7 @@ async fn process<R: Runtime>(app: &AppHandle<R>, state: &Session) -> Result<(), 
         let result = match claim.source {
             Ok(Source::Local(path)) => io(move || Document::stage(&path, &directory)).await,
             Ok(Source::Mobile(uri)) => {
-                stage_mobile(app, uri, directory, app_cache.join("pdf-incoming")).await
+                stage_mobile(app, uri, &claim.id, directory, app_cache.join("pdf-incoming")).await
             }
             Ok(Source::Rejected(_)) => Err(OpenError::invalid()),
             Err(error) => Err(error),
@@ -263,13 +263,14 @@ async fn process<R: Runtime>(app: &AppHandle<R>, state: &Session) -> Result<(), 
 async fn stage_mobile<R: Runtime>(
     app: &AppHandle<R>,
     uri: String,
+    _id: &str,
     directory: PathBuf,
     incoming: PathBuf,
 ) -> Result<Document, OpenError> {
     #[cfg(target_os = "android")]
     let staged = tauri_plugin_android_bridge::stage_incoming_pdf(app, uri).await;
     #[cfg(target_os = "ios")]
-    let staged = tauri_plugin_ios_bridge::stage_incoming_pdf(app, uri).await;
+    let staged = tauri_plugin_ios_bridge::stage_incoming_pdf(app, uri, _id.to_owned()).await;
     let staged = staged.map_err(|error| OpenError::from_code(&error.code))?;
     io(move || {
         Document::adopt_mobile(
@@ -287,6 +288,7 @@ async fn stage_mobile<R: Runtime>(
 async fn stage_mobile<R: Runtime>(
     _app: &AppHandle<R>,
     _uri: String,
+    _id: &str,
     _directory: PathBuf,
     _incoming: PathBuf,
 ) -> Result<Document, OpenError> {
@@ -363,6 +365,20 @@ async fn finish_pdf_open<R: Runtime>(
     Ok(())
 }
 
+#[cfg(target_os = "ios")]
+#[tauri::command]
+async fn pick_pdf_open<R: Runtime>(app: AppHandle<R>, window: WebviewWindow<R>) -> Result<(), OpenError> {
+    let session = state(&app).session(window.label())?;
+    let token = tauri_plugin_ios_bridge::pick_incoming_pdf(&app)
+        .await
+        .map_err(|error| OpenError::from_code(&error.code))?;
+    if let Some(token) = token {
+        // This private scheme carries a native picker token, never a JS-provided URL.
+        session.push(&app, Source::Mobile(format!("picked:{token}")));
+    }
+    Ok(())
+}
+
 pub fn init<R: Runtime>(queue: PdfOpen) -> TauriPlugin<R> {
     let setup_queue = queue.clone();
     let builder = Builder::new("pdf-open");
@@ -377,7 +393,11 @@ pub fn init<R: Runtime>(queue: PdfOpen) -> TauriPlugin<R> {
         desktop::close_pdf_window,
         desktop::cancel_window_close,
     ]);
-    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    #[cfg(target_os = "ios")]
+    let builder = builder.invoke_handler(tauri::generate_handler![
+        next_pdf_open, read_pdf_open, finish_pdf_open, pick_pdf_open
+    ]);
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux", target_os = "ios")))]
     let builder = builder.invoke_handler(tauri::generate_handler![
         next_pdf_open,
         read_pdf_open,
@@ -406,8 +426,6 @@ pub fn init<R: Runtime>(queue: PdfOpen) -> TauriPlugin<R> {
             )))]
             let _ = (app, event, &queue);
         });
-    #[cfg(target_os = "ios")]
-    let builder = builder.js_init_script("Object.defineProperty(window, '__PDF_IOS_IMPORT_ONLY__', { value: true, writable: false, configurable: false });");
     #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
     let builder = builder.js_init_script("Object.defineProperty(window, '__PDF_MULTI_WINDOW__', { value: true, writable: false, configurable: false });");
     builder.build()

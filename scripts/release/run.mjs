@@ -18,7 +18,7 @@ child.on("close", (code) => {
     // a short, redacted failure tail through the check's error annotations too.
     for (const [key, value] of Object.entries(process.env))
       if (
-        /TOKEN|PASSWORD|SECRET|CERTIFICATE|PRIVATE|API_KEY/.test(key) &&
+        /TOKEN|PASSWORD|SECRET|CERTIFICATE|PRIVATE|API_KEY|MOBILE_PROVISION|DEVELOPMENT_TEAM/.test(key) &&
         value &&
         value.length > 3
       )

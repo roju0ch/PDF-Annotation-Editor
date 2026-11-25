@@ -21,10 +21,10 @@ if (result.error || result.status !== 0 || passed === 0) {
     .replaceAll("%", "%25")
     .replaceAll("\r", "%0D")
     .replaceAll("\n", "%0A");
-  console.error(`::error title=iOS native PDF staging tests::${detail}`);
+  console.error(`::error title=iOS native PDF file tests::${detail}`);
   process.exitCode = 1;
 } else {
   console.log(
-    `::notice title=iOS native PDF staging tests::${passed} real-file XCTest cases passed on macOS Foundation; full iOS SDK compilation follows.`,
+    `::notice title=iOS native PDF file tests::${passed} real-file XCTest cases passed on macOS Foundation; full iOS SDK compilation follows.`,
   );
 }

@@ -1,0 +1,14 @@
+{
+  "$schema": "../gen/schemas/mobile-schema.json",
+  "identifier": "ios-pdf-files",
+  "description": "Open and save PDFs only through the native iOS document picker.",
+  "windows": ["main"],
+  "platforms": ["iOS"],
+  "permissions": [
+    "pdf-open:allow-pick-pdf-open",
+    "ios-bridge:allow-begin-pdf-save",
+    "ios-bridge:allow-append-pdf-save",
+    "ios-bridge:allow-finish-pdf-save",
+    "ios-bridge:allow-abort-pdf-save"
+  ]
+}
