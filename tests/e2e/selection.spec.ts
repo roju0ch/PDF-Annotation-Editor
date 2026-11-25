@@ -198,11 +198,33 @@ test("touch marquee, group movement and second-finger cancellation", async ({
     type: "touchStart" | "touchMove" | "touchEnd",
     points: { x: number; y: number; id: number }[],
   ) => session.send("Input.dispatchTouchEvent", { type, touchPoints: points });
-  await touch("touchStart", [{ ...(await point(page, 90, 130)), id: 1 }]);
-  await touch("touchMove", [{ ...(await point(page, 220, 215)), id: 1 }]);
+  const area = page.getByRole("button", {
+    name: "Bereich auswählen",
+    exact: true,
+  });
+  await area.click();
+  await expect(area).toHaveAttribute("aria-pressed", "true");
+  const corner = { ...(await point(page, 90, 130)), id: 1 };
+  const opposite = { ...(await point(page, 220, 215)), id: 1 };
+  await touch("touchStart", [corner]);
+  await touch("touchMove", [opposite]);
+  await expect(page.getByTestId("selection-marquee")).toBeVisible();
+  await touch("touchStart", [
+    opposite,
+    { ...opposite, x: opposite.x + 30, id: 2 },
+  ]);
+  await expect(page.getByTestId("selection-marquee")).toHaveCount(0);
+  await touch("touchEnd", []);
+  await expect(page.getByTestId("selection-outline")).toHaveCount(0);
+
+  await touch("touchStart", [corner]);
+  await touch("touchMove", [opposite]);
   await page.screenshot({ path: "artifacts/marquee-mobile.png" });
   await touch("touchEnd", []);
   await expect(page.getByTestId("selection-outline")).toHaveCount(3);
+  await expect(
+    page.getByRole("button", { name: "Auswählen / Verschieben", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
   const start = await point(page, 110, 140),
     end = await point(page, 140, 165);
   await touch("touchStart", [{ ...start, id: 1 }]);
