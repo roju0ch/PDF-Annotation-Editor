@@ -49,12 +49,13 @@ import type {
   EditorState,
   PdfRect,
 } from "../core/annotations/model";
-export type Tool = "select" | "marquee" | "Ink" | "Text" | "FreeText" | "erase";
+export type Tool =
+  "pdfText" | "select" | "marquee" | "Ink" | "Text" | "FreeText" | "erase";
 type SaveOptions = { fileName?: string; replaceOriginal?: boolean };
 export type Draft = {
   page: number;
   points: Point[];
-  kind: Tool | "resize";
+  kind: Exclude<Tool, "pdfText"> | "resize";
   corner?: number;
   ids?: number[];
   annotation?: Annotation;
@@ -986,6 +987,7 @@ export function useAnnotations(
     const nativePaste = (e: ClipboardEvent) => {
       if (
         e.defaultPrevented ||
+        current.current.tool === "pdfText" ||
         typing(e.target) ||
         freeTextRef.current ||
         !client.current
@@ -1010,7 +1012,11 @@ export function useAnnotations(
     const keyup = (e: KeyboardEvent) => {
       if (e.key.toLowerCase() === "v" && pendingPaste) {
         pendingPaste = false;
-        if (!typing(e.target) && !freeTextRef.current)
+        if (
+          !typing(e.target) &&
+          !freeTextRef.current &&
+          current.current.tool !== "pdfText"
+        )
           clipboardActions.current.paste();
       }
     };
@@ -1023,6 +1029,13 @@ export function useAnnotations(
           e.preventDefault();
         return;
       }
+      if (
+        current.current.tool === "pdfText" &&
+        (["Delete", "Backspace"].includes(e.key) ||
+          ((e.ctrlKey || e.metaKey) &&
+            ["a", "c", "x", "v"].includes(e.key.toLowerCase())))
+      )
+        return;
       if (
         (e.key === "Delete" ||
           (e.key === "Backspace" && /^Mac/i.test(navigator.platform))) &&
@@ -1082,7 +1095,7 @@ export function useAnnotations(
       window.removeEventListener("paste", nativePaste);
     };
   }, [client, deleteSelection, edit, save, onError]);
-  function locate(p: Point, forcedPage?: number, clamp = true) {
+  function locatePagePoint(p: Point, forcedPage?: number, clamp = true) {
     const { view, pages, tops, continuous, page } = current.current.layout,
       w = toWorld(p, view);
     const index =
@@ -1105,7 +1118,16 @@ export function useAnnotations(
           ? Math.max(0, Math.min(info.height, w.y - tops[index]))
           : w.y - tops[index]) + info.origin[1],
     };
-    return { page: index, point: transform(local, inverse(info.pdfToPage)) };
+    return { page: index, point: local };
+  }
+  function locate(p: Point, forcedPage?: number, clamp = true) {
+    const at = locatePagePoint(p, forcedPage, clamp);
+    if (!at) return null;
+    const info = current.current.layout.pages[at.page];
+    return {
+      page: at.page,
+      point: transform(at.point, inverse(info.pdfToPage)),
+    };
   }
   function hit(point: Point, index: number) {
     return [...current.current.items]
@@ -1130,6 +1152,7 @@ export function useAnnotations(
       freeTextRef.current
     )
       return false;
+    if (cur.tool === "pdfText") return false;
     const canStartOutside =
       cur.tool === "marquee" || (cur.tool === "select" && !touchSelect);
     const at =
@@ -1353,6 +1376,7 @@ export function useAnnotations(
     });
   }
   return {
+    locatePagePoint,
     editContext,
     canEditContext:
       contextMenu?.mode === "selection" &&

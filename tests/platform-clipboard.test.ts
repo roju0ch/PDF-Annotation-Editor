@@ -1,5 +1,8 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { readClipboardImage } from "../src/adapters/platform/clipboard";
+import {
+  readClipboardImage,
+  writeClipboardText,
+} from "../src/adapters/platform/clipboard";
 import { MAX_IMAGE_BYTES } from "../src/core/annotations/image";
 const api = vi.hoisted(() => ({ invoke: vi.fn(), isTauri: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => api);
@@ -78,4 +81,16 @@ it("keeps browser denial and empty clipboard messages actionable", async () => {
   await expect(readClipboardImage()).rejects.toThrow("Kein Zugriff");
   read.mockResolvedValue([{ types: ["text/plain"] }]);
   await expect(readClipboardImage()).rejects.toThrow("Kein PNG-/JPEG-Bild");
+});
+
+it("passes only plain selected text to the native Android write command and propagates refusal", async () => {
+  platform(true);
+  const text = "Grüße & Öl\nZweite Zeile!";
+  await writeClipboardText(text);
+  expect(api.invoke).toHaveBeenCalledExactlyOnceWith(
+    "plugin:android-bridge|write_clipboard_text",
+    { text },
+  );
+  api.invoke.mockRejectedValueOnce(new Error("Kein Zugriff"));
+  await expect(writeClipboardText(text)).rejects.toThrow("Kein Zugriff");
 });

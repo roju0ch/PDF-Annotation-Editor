@@ -39,6 +39,17 @@ self.onmessage = ({ data: r }: MessageEvent<Request>) => {
         pages,
         editor: editor!.state(),
       } satisfies Reply);
+    } else if (r.type === "select-text") {
+      if (!doc?.hasPermission("copy"))
+        throw new Error("Diese PDF erlaubt das Kopieren von Text nicht.");
+      const info = pages[r.page];
+      if (!rasterizer || info?.id !== r.pageId || info.rotation !== r.rotation)
+        self.postMessage({ id: r.id, stale: true } satisfies Reply);
+      else
+        self.postMessage({
+          id: r.id,
+          textSelection: rasterizer.pageText(r.page, info).select(r.query),
+        } satisfies Reply);
     } else if (r.type === "list") {
       if (!editor) throw new Error("Keine PDF geöffnet.");
       self.postMessage({

@@ -1,6 +1,7 @@
 package io.github.roju0ch.pdfannotationeditor.androidbridge
 
 import android.app.Activity
+import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -25,6 +26,11 @@ import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
+
+@InvokeArg
+class ClipboardTextArgs {
+    var text: String = ""
+}
 
 @InvokeArg
 class BeginPdfSaveArgs {
@@ -97,6 +103,18 @@ class AndroidBridgePlugin(private val activity: Activity) : Plugin(activity) {
             }
         } catch (_: RejectedExecutionException) {
             invoke.reject("Das Öffnen der PDF wurde unterbrochen. Bitte die Datei erneut auswählen.", "interrupted")
+        }
+    }
+
+    @Command
+    fun writeClipboardText(invoke: Invoke) {
+        try {
+            val args = invoke.parseArgs(ClipboardTextArgs::class.java)
+            val manager = activity.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            manager.setPrimaryClip(ClipData.newPlainText("PDF", args.text))
+            invoke.resolve()
+        } catch (_: Exception) {
+            invoke.reject("Text konnte nicht in die Zwischenablage geschrieben werden.", "unavailable")
         }
     }
 

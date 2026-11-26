@@ -68,3 +68,31 @@ export async function readClipboardImage(): Promise<Blob> {
     "Kein PNG-/JPEG-Bild in der Zwischenablage. Bitte einen Screenshot kopieren oder ‚Bild einfügen …‘ verwenden.",
   );
 }
+
+// Some installed WebViews expose native Copy through the editing command only.
+export async function writeClipboardText(text: string): Promise<void> {
+  if (isTauri() && /\bAndroid\b/i.test(navigator.userAgent)) {
+    await invoke("plugin:android-bridge|write_clipboard_text", { text });
+    return;
+  }
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const previous = document.activeElement;
+  const field = document.createElement("textarea");
+  field.value = text;
+  field.readOnly = true;
+  field.style.cssText = "position:fixed;top:0;left:0;opacity:0";
+  document.body.append(field);
+  try {
+    field.focus({ preventScroll: true });
+    field.select();
+    if (!document.execCommand("copy"))
+      throw new Error("Kopieren nicht verfügbar.");
+  } finally {
+    field.remove();
+    if (previous instanceof HTMLElement)
+      previous.focus({ preventScroll: true });
+  }
+}

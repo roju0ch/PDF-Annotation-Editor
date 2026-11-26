@@ -3,6 +3,7 @@ import { annotationLabels, type Annotation } from "../core/annotations/model";
 import { MenuHeading, ToolButton } from "./CompactMenu";
 import { useState } from "react";
 export const toolNames: Record<Tool, string> = {
+  pdfText: "Text auswählen",
   select: "Auswählen / Verschieben",
   marquee: "Bereich auswählen",
   Ink: "Freihand",
@@ -24,6 +25,7 @@ export function DirectTools({
     document
       .querySelectorAll<HTMLElement>(".compact-menu:popover-open")
       .forEach((menu) => menu.hidePopover());
+    if (tool === "pdfText") e.setSelected(null);
     e.setTool(tool);
   };
   return (
@@ -105,9 +107,21 @@ export function DirectTools({
         onClick={() => choose("marquee")}
       />
       <ToolButton
+        icon="textSelect"
+        label={toolNames.pdfText}
+        pressed={e.tool === "pdfText"}
+        disabled={!ready || e.busy || e.formDirty}
+        onClick={() => choose("pdfText")}
+      />
+      <ToolButton
         icon="settings"
         label="Werkzeugeigenschaften"
-        disabled={blocked || e.tool === "select" || e.tool === "marquee"}
+        disabled={
+          blocked ||
+          e.tool === "pdfText" ||
+          e.tool === "select" ||
+          e.tool === "marquee"
+        }
         popoverTarget="tools-menu"
         onClick={e.closeContext}
       />

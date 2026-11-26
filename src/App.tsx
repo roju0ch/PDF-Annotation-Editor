@@ -1,3 +1,6 @@
+import { ManualTextCopy, PdfTextOverlay } from "./app/PdfTextSelection";
+import { usePdfText } from "./app/usePdfText";
+import { safeViewport } from "./adapters/platform/safeArea";
 import { useAnnotationRaster } from "./app/useAnnotationRaster";
 import type { SurfaceMap } from "./app/rasterSurfaces";
 import { usePdfRaster } from "./app/usePdfRaster";
@@ -24,6 +27,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useLayoutEffect,
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -206,6 +210,21 @@ export default function App() {
     setError,
     pagesChanged,
   );
+  const textMode = annotation.tool === "pdfText";
+  const pdfText = usePdfText(
+    textMode,
+    client,
+    pages,
+    page,
+    annotation.locatePagePoint,
+  );
+  const textInput = useRef(pdfText);
+  useLayoutEffect(() => {
+    textInput.current = pdfText;
+  });
+  useEffect(() => {
+    cancelPendingPointer.current();
+  }, [annotation.tool, pages]);
   usePdfWindows(
     {
       hasDocument: pages.length > 0,
@@ -221,11 +240,23 @@ export default function App() {
   const escape = useCallback(
     (event: KeyboardEvent) => {
       cancelPendingPointer.current();
+      if (textMode && !annotation.freeTextDraft && !contextMenu) {
+        if (
+          document.querySelector("dialog[open]") ||
+          (event.target instanceof Element &&
+            event.target.closest(
+              "input,textarea,select,[contenteditable]:not([contenteditable=false])",
+            ))
+        )
+          return false;
+        textInput.current.clear();
+        return true;
+      }
       const handled = escapeEditor(event);
       if (handled && contextMenu) stage.current?.focus({ preventScroll: true });
       return handled;
     },
-    [escapeEditor, contextMenu],
+    [escapeEditor, contextMenu, textMode, annotation.freeTextDraft],
   );
   useMenuKeyboard(escape);
   const annotationInput = useRef(annotation.gesture);
@@ -352,10 +383,16 @@ export default function App() {
       holdStart = null;
     };
     const points = new Map<number, Point>();
+    const inText = () => annotationInput.current.tool === "pdfText";
+    const handleAt = (target: EventTarget | null) =>
+      target instanceof Element
+        ? target.closest<HTMLElement>("[data-text-handle]")?.dataset.textHandle
+        : undefined;
     let touchEditing = false;
     cancelPendingPointer.current = () => {
       clearHold();
       touchEditing = false;
+      textInput.current.finish();
     };
     let mousePointer: number | null = null;
     let pencilActive = false;
@@ -372,6 +409,7 @@ export default function App() {
         return;
       }
       clearHold();
+      textInput.current.finish();
       touchEditing = false;
       annotationInput.current.closeContext();
       const { pages, box, scrollLayout } = current.current;
@@ -440,13 +478,26 @@ export default function App() {
       if (pencilActive && e.pointerType === "touch") return;
       annotationInput.current.hover(local(e));
       if (e.pointerType === "touch") {
-        if (mousePointer !== null || consumed.size) return;
+        if (mousePointer !== null || (consumed.size && !inText())) return;
+        // A second finger after a completed word hold can still start a pinch.
+        if (inText() && points.size) consumed.clear();
         const start = local(e);
         points.set(e.pointerId, start);
         clearHold();
         touchEditing = false;
         if (points.size > 1) {
           annotationInput.current.cancel();
+          textInput.current.finish();
+        } else if (inText() && handleAt(e.target)) {
+          touchEditing = textInput.current.begin(start, handleAt(e.target));
+        } else if (inText()) {
+          holdStart = start;
+          hold = setTimeout(() => {
+            if (!inText()) return;
+            textInput.current.word(start, true);
+            consumed.add(e.pointerId);
+            clearHold();
+          }, 600);
         } else if (annotationInput.current.tool === "select") {
           // Wait for movement, a tap, or a hold before changing the selection.
           holdStart = start;
@@ -484,7 +535,12 @@ export default function App() {
         el.setPointerCapture(e.pointerId);
         el.classList.add("panning");
         e.preventDefault();
-      } else if (e.button === 0 && annotationInput.current.begin(local(e))) {
+      } else if (
+        e.button === 0 &&
+        (inText()
+          ? textInput.current.begin(local(e), handleAt(e.target))
+          : annotationInput.current.begin(local(e)))
+      ) {
         mousePointer = e.pointerId;
         pencilActive = ios && e.pointerType === "pen";
         el.focus();
@@ -493,6 +549,7 @@ export default function App() {
       }
     };
     const moveTouch = (id: number, p: Point) => {
+      if (consumed.has(id)) return;
       const previous = points.get(id);
       if (!previous || (p.x === previous.x && p.y === previous.y)) return;
       points.set(id, p);
@@ -522,9 +579,11 @@ export default function App() {
       if (holdStart) {
         if (Math.hypot(p.x - start.x, p.y - start.y) <= 8) return;
         clearHold();
-        touchEditing = annotationInput.current.begin(start, "drag");
+        touchEditing =
+          !inText() && annotationInput.current.begin(start, "drag");
       }
-      if (touchEditing) annotationInput.current.move(p);
+      if (touchEditing && inText()) textInput.current.move(p);
+      else if (touchEditing) annotationInput.current.move(p);
       else {
         const { box, scrollLayout } = current.current;
         updateView((v) =>
@@ -549,7 +608,8 @@ export default function App() {
           x: v.x + p.x - from.x,
           y: v.y + p.y - from.y,
         }));
-      } else if (annotationInput.current.active()) {
+      } else if (inText()) textInput.current.move(p);
+      else if (annotationInput.current.active()) {
         const samples = pencilActive ? e.getCoalescedEvents?.() : undefined;
         if (samples?.length) {
           const left = e.clientX - p.x,
@@ -568,15 +628,18 @@ export default function App() {
       if (e.type === "lostpointercapture" && e.target !== el) return;
       if (e.pointerType === "touch") {
         if (consumed.delete(e.pointerId)) {
+          points.delete(e.pointerId);
           e.preventDefault();
           return;
         }
         if (!points.has(e.pointerId)) return;
         if (e.type === "pointerup") {
           if (points.size === 1) moveTouch(e.pointerId, local(e));
-          if (holdStart) annotationInput.current.begin(holdStart, "tap");
-          if (touchEditing) annotationInput.current.finish();
+          if (holdStart && inText()) textInput.current.begin(holdStart);
+          else if (holdStart) annotationInput.current.begin(holdStart, "tap");
+          if (touchEditing && !inText()) annotationInput.current.finish();
         } else annotationInput.current.cancel();
+        textInput.current.finish();
         clearHold();
         touchEditing = false;
         points.delete(e.pointerId);
@@ -594,7 +657,10 @@ export default function App() {
           y: v.y + p.y - from.y,
         }));
       }
-      if (e.type === "pointerup") {
+      if (inText()) {
+        if (!drag && e.type === "pointerup") textInput.current.move(local(e));
+        textInput.current.finish();
+      } else if (e.type === "pointerup") {
         if (pencilActive) annotationInput.current.move(local(e));
         annotationInput.current.finish();
       } else annotationInput.current.cancel();
@@ -623,6 +689,7 @@ export default function App() {
       middlePasteBlocked = false;
       clearHold();
       consumed.clear();
+      textInput.current.finish();
       annotationInput.current.cancel();
       space = false;
       touchEditing = false;
@@ -642,6 +709,30 @@ export default function App() {
         consumed.size
       ) {
         e.preventDefault();
+        return;
+      }
+      if (inText()) {
+        e.preventDefault();
+        if (
+          e.target instanceof Element &&
+          e.target.closest(".pdf-text-highlight polygon,[data-text-handle]")
+        ) {
+          const menu = document.getElementById("text-copy-menu")!;
+          menu.showPopover();
+          const bounds = menu.getBoundingClientRect(),
+            safe = safeViewport();
+          menu.style.left =
+            Math.max(
+              safe.left,
+              Math.min(e.clientX, safe.right - bounds.width),
+            ) + "px";
+          menu.style.top =
+            Math.max(
+              safe.top,
+              Math.min(e.clientY, safe.bottom - bounds.height),
+            ) + "px";
+          menu.querySelector("button")?.focus();
+        }
         return;
       }
       if (
@@ -1181,7 +1272,20 @@ export default function App() {
       <div className="workspace">
         <div
           ref={stage}
-          className="stage"
+          className={textMode ? "stage pdf-text-tool" : "stage"}
+          onDoubleClick={(e) => {
+            if (
+              textMode &&
+              e.button === 0 &&
+              !e.currentTarget.classList.contains("panning")
+            ) {
+              const b = e.currentTarget.getBoundingClientRect();
+              textInput.current.word({
+                x: e.clientX - b.left,
+                y: e.clientY - b.top,
+              });
+            }
+          }}
           data-testid="viewport"
           tabIndex={0}
           aria-label="PDF-Arbeitsfläche"
@@ -1228,6 +1332,14 @@ export default function App() {
                   style={{ top: tops[i], width: p.width, height: p.height }}
                 >
                   <span className="page-label">{i + 1}</span>
+                  {textMode && pdfText.selection?.page === i && (
+                    <PdfTextOverlay
+                      handles={pdfText.handles}
+                      info={p}
+                      scale={view.scale}
+                      selection={pdfText.selection}
+                    />
+                  )}
                   <AnnotationOverlay
                     editor={annotation}
                     info={p}
@@ -1269,8 +1381,38 @@ export default function App() {
             </div>
           )}
         </div>
+        {textMode && pdfText.selection && (
+          <button
+            className="pdf-copy-action"
+            disabled={pdfText.pending}
+            onClick={() => void pdfText.copy()}
+          >
+            Text kopieren
+          </button>
+        )}
         <AnnotationPanel editor={annotation} page={page} />
       </div>
+      {textMode && (
+        <>
+          <div id="text-copy-menu" className="compact-menu" popover="auto">
+            <button
+              disabled={pdfText.pending || !pdfText.selection}
+              onClick={() => {
+                document.getElementById("text-copy-menu")?.hidePopover();
+                void pdfText.copy();
+              }}
+            >
+              Text kopieren
+            </button>
+          </div>
+          {pdfText.fallback && (
+            <ManualTextCopy
+              text={pdfText.fallback}
+              close={() => pdfText.setFallback("")}
+            />
+          )}
+        </>
+      )}
       {annotation.contextMenu && (
         <AnnotationContextMenu
           editor={annotation}
@@ -1290,7 +1432,8 @@ export default function App() {
             : annotation.unsaved
               ? "Ungesicherte Änderungen"
               : ""}
-          {annotation.notice && !annotation.busy
+          {textMode && pdfText.notice}
+          {!textMode && annotation.notice && !annotation.busy
             ? `${annotation.unsaved ? " · " : ""}${annotation.notice}`
             : ""}
         </span>

@@ -256,6 +256,23 @@ fn pdf_chunk_size(base64: &str) -> Result<usize, PdfSaveError> {
     Ok(decoded)
 }
 
+#[derive(Serialize)]
+struct ClipboardText {
+    text: String,
+}
+
+#[tauri::command]
+async fn write_clipboard_text<R: Runtime>(
+    app: AppHandle<R>,
+    text: String,
+) -> Result<(), ClipboardError> {
+    app.state::<AndroidBridge<R>>()
+        .0
+        .run_mobile_plugin_async("writeClipboardText", ClipboardText { text })
+        .await
+        .map_err(Into::into)
+}
+
 #[tauri::command]
 async fn read_clipboard_image<R: Runtime>(
     app: AppHandle<R>,
@@ -388,6 +405,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
     Builder::new("android-bridge")
         .invoke_handler(tauri::generate_handler![
             read_clipboard_image,
+            write_clipboard_text,
             begin_pdf_save,
             append_pdf_save,
             finish_pdf_save,

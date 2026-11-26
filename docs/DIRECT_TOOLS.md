@@ -11,6 +11,7 @@ Die Werkzeugauswahl erfolgt ohne Dropdown direkt in der Hauptleiste, in dieser R
 | Bild | PNG-/JPEG-Datei auswählen und als Bildannotation einfügen |
 | Radierer | Ink-Teilradierer (Klick) |
 | Gestricheltes Rechteck | Bereich auswählen |
+| T mit Textcursor | Vorhandenen PDF-Text auswählen und als Text kopieren |
 | Regler | Eigenschaften des aktiven Zeichenwerkzeugs |
 
 Das aktive Werkzeug erhält eine grüne Fläche und eine zusätzliche untere Markierung; `aria-pressed` vermittelt den Zustand auch an Hilfstechniken. Das Bildsymbol ist eine Einfügeaktion, kein dauerhaft aktives Zeichenwerkzeug. Auswahl benötigt keine Zeichenparameter; der Regler ist dort deaktiviert. Kommentar-/Objekteigenschaften bleiben im Annotationsmenü hinter dem Listensymbol.
@@ -20,7 +21,7 @@ Die Eigenschaften zeigen nur passende Felder: Farbe und Strichbreite für Freiha
 ## Platz und Bedienung
 
 - Ab 769 CSS-Pixeln Breite: eine Zeile mit Dokumentsteuerung, Werkzeugen und Dokumentaktionen.
-- Bis 768 Pixel Breite: oben Öffnen, Seite/Zoom, Annotationsliste, Undo/Redo und Download. Darunter stehen die Werkzeugsymbole.
+- Bis 768 Pixel Breite: oben Öffnen, Seite/Zoom, Annotationsliste, Undo/Redo und Download. Darunter stehen die Werkzeugsymbole. Bei höchstens 355 Pixeln steht die Textauswahl neben den Dokumentsteuerungen.
 - Symbole mindestens 36 × 36 CSS-Pixel, Hauptleiste mobil 85 Pixel hoch, Statuszeile bei schmalen Geräten 22 Pixel. Bei 390 × 844 bleiben rund 87 % der App-Fläche als PDF-Arbeitsfläche; bei 320 × 568 über 80 %. Browser-/Betriebssystemleisten sind darin nicht enthalten.
 - Maus: kurzer Hinweis beim Darüberfahren. Tastatur: Hinweis bei Fokus, Pfeiltasten/Home/End bewegen den Fokus innerhalb der Werkzeuggruppe, Enter/Leertaste aktivieren. Escape schließt den Hinweis ohne die PDF-Auswahl zu verändern. Alle Schaltflächen besitzen deutsche zugängliche Namen.
 - Hinweise werden am Fensterrand begrenzt. Touch-Tippen schaltet direkt das Werkzeug um; ein Hover-Hinweis ist dafür nicht erforderlich.
