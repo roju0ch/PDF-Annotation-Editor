@@ -115,6 +115,7 @@ export function useAnnotations(
   invalidate: (structural?: boolean) => void,
   onError: (s: string) => void,
   onPagesChange: (pages: PageInfo[], focusPage?: number) => void,
+  onFocusPage: (page: number) => void,
 ) {
   const [state, setState] = useState(empty),
     [tool, setTool] = useState<Tool>("select"),
@@ -207,6 +208,10 @@ export function useAnnotations(
   const lock = useRef(false),
     epoch = useRef(0),
     draftRef = useRef<Draft | null>(null),
+    listedAnnotations = useRef<{ page: number; items: Annotation[] } | null>(
+      null,
+    ),
+    pendingMarquee = useRef<{ page: number; rect: PdfRect } | null>(null),
     current = useRef({
       layout,
       items,
@@ -251,6 +256,10 @@ export function useAnnotations(
     draftRef.current = d;
     setDraft(d);
   }, []);
+  const cancelGesture = useCallback(() => {
+    pendingMarquee.current = null;
+    showDraft(null);
+  }, [showDraft]);
   const reset = useCallback((next: EditorState = empty) => {
     epoch.current++;
     contextRef.current = null;
@@ -262,6 +271,8 @@ export function useAnnotations(
     editError.current = null;
     setState(next);
     setItems([]);
+    listedAnnotations.current = null;
+    pendingMarquee.current = null;
     setSelection([]);
     setDraft(null);
     setPendingInk([]);
@@ -288,19 +299,32 @@ export function useAnnotations(
   useEffect(() => {
     const c = client.current;
     if (!c || !layout.pages.length) return;
+    const page = layout.page;
+    if (pendingMarquee.current?.page !== page) pendingMarquee.current = null;
+    listedAnnotations.current = null;
     let cancelled = false;
-    c.request({ type: "list", page: layout.page })
+    c.request({ type: "list", page })
       .then((r) => {
-        if (!cancelled) {
-          setItems(r.annotations!);
+        if (cancelled) return;
+        const items = r.annotations!;
+        listedAnnotations.current = { page, items };
+        setItems(items);
+        const pending = pendingMarquee.current;
+        if (pending?.page === page) {
+          pendingMarquee.current = null;
+          setSelection(intersectingAnnotations(items, page, pending.rect));
+        } else {
           setSelection((ids) =>
-            ids.filter((id) => r.annotations!.some((a) => a.id === id)),
+            ids.filter((id) => items.some((a) => a.id === id)),
           );
-          setState(r.editor!);
         }
+        setState(r.editor!);
       })
       .catch((e) => {
-        if (!cancelled) onError(String(e.message));
+        if (cancelled) return;
+        if (pendingMarquee.current?.page === page)
+          pendingMarquee.current = null;
+        onError(String(e.message));
       });
     return () => {
       cancelled = true;
@@ -330,8 +354,9 @@ export function useAnnotations(
         if (r.pages) {
           setPendingInk([]);
           setItems([]);
+          listedAnnotations.current = null;
           setSelection([]);
-          showDraft(null);
+          cancelGesture();
           contextRef.current = null;
           setContextMenu(null);
           onPagesChange(r.pages, r.focusPage);
@@ -365,7 +390,7 @@ export function useAnnotations(
         }
       }
     },
-    [client, invalidate, onError, onPagesChange, showDraft],
+    [client, invalidate, onError, onPagesChange, cancelGesture],
   );
   async function insertPdf(file: File, at: number) {
     if (
@@ -549,12 +574,12 @@ export function useAnnotations(
           ))
       )
         return false;
-      showDraft(null);
+      cancelGesture();
       if (current.current.tool === "select") setSelection([]);
       setTool("select");
       return true;
     },
-    [cancelFreeText, closeContext, showDraft],
+    [cancelFreeText, closeContext, cancelGesture],
   );
   const setFreeTextContents = useCallback(
     (contents: string) => {
@@ -1130,16 +1155,22 @@ export function useAnnotations(
       freeTextRef.current
     )
       return false;
+    pendingMarquee.current = null;
     const canStartOutside =
       cur.tool === "marquee" || (cur.tool === "select" && !touchSelect);
     const at =
       locate(p) ?? (canStartOutside ? locate(p, cur.layout.page, false) : null);
-    // Editing applies to the active page; navigation and other visible pages remain unaffected.
-    if (!at || at.page !== cur.layout.page) return false;
+    if (!at) return false;
     if (cur.tool === "marquee") {
+      if (at.page !== cur.layout.page) {
+        setSelection([]);
+        onFocusPage(at.page);
+      }
       showDraft({ page: at.page, points: [at.point], kind: "marquee" });
       return true;
     }
+    // Other editing gestures apply to the active page.
+    if (at.page !== cur.layout.page) return false;
     if (cur.tool === "select") {
       const image =
         cur.selection.length === 1
@@ -1237,15 +1268,19 @@ export function useAnnotations(
         cur.layout.view.scale >
       3;
     if (d.kind === "marquee") {
-      setSelection(
-        dragged
-          ? intersectingAnnotations(
-              cur.items,
-              d.page,
-              selectionRect(start, end),
-            )
-          : [],
-      );
+      if (!dragged) {
+        if (cur.tool !== "marquee") setSelection([]);
+        return;
+      }
+      const rect = selectionRect(start, end);
+      const listed = listedAnnotations.current;
+      if (listed?.page === d.page) {
+        setSelection(intersectingAnnotations(listed.items, d.page, rect));
+      } else {
+        // Pointerup can precede the new page's annotation list.
+        pendingMarquee.current = { page: d.page, rect };
+        setSelection([]);
+      }
       if (cur.tool === "marquee") setTool("select");
       return;
     }
@@ -1428,7 +1463,7 @@ export function useAnnotations(
       begin,
       move,
       finish,
-      cancel: () => showDraft(null),
+      cancel: cancelGesture,
       active: () => draftRef.current !== null,
     },
   };

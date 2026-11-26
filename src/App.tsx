@@ -205,6 +205,7 @@ export default function App() {
     invalidate,
     setError,
     pagesChanged,
+    setPage,
   );
   usePdfWindows(
     {

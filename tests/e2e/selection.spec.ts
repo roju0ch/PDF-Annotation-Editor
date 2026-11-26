@@ -207,6 +207,10 @@ test("touch marquee, group movement and second-finger cancellation", async ({
   const corner = { ...(await point(page, 90, 130)), id: 1 };
   const opposite = { ...(await point(page, 220, 215)), id: 1 };
   await touch("touchStart", [corner]);
+  await touch("touchEnd", []);
+  await expect(area).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("selection-outline")).toHaveCount(0);
+  await touch("touchStart", [corner]);
   await touch("touchMove", [opposite]);
   await expect(page.getByTestId("selection-marquee")).toBeVisible();
   await touch("touchStart", [
@@ -251,6 +255,79 @@ test("touch marquee, group movement and second-finger cancellation", async ({
   ).toEqual(moved);
   await expect(page.getByTestId("selection-outline")).toHaveCount(3);
   await page.screenshot({ path: "artifacts/group-selection-mobile.png" });
+});
+
+test("touch area selection starts on a visible following page and waits for its annotations", async ({
+  page,
+  context,
+  browserName,
+}) => {
+  test.skip(browserName !== "chromium", "Touch events use Chromium CDP");
+  await page.addInitScript(() => {
+    const held: (() => void)[] = [];
+    let defer = true;
+    Worker.prototype.postMessage = new Proxy(Worker.prototype.postMessage, {
+      apply(post, worker, args) {
+        const [message] = args;
+        if (defer && message.type === "list" && message.page === 1) {
+          held.push(() => Reflect.apply(post, worker, args));
+          return;
+        }
+        Reflect.apply(post, worker, args);
+      },
+    });
+    Object.defineProperty(window, "releasePageAnnotations", {
+      value: () => {
+        defer = false;
+        held.splice(0).forEach((send) => send());
+      },
+    });
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await open(page);
+  const stage = (await page.getByTestId("viewport").boundingBox())!;
+  await page.mouse.move(stage.x + 120, stage.y + 250);
+  const beforeScroll = await point(page, 90, 130, 1);
+  await page.mouse.wheel(0, 180);
+  await expect
+    .poll(async () => (await point(page, 90, 130, 1)).y)
+    .toBeCloseTo(beforeScroll.y - 180, 0);
+  const pageNumber = page.getByLabel("Seite", { exact: true });
+  await expect(pageNumber).toHaveValue("1");
+
+  const session = await context.newCDPSession(page);
+  const touch = (
+    type: "touchStart" | "touchMove" | "touchEnd",
+    touchPoints: { x: number; y: number; id: number }[],
+  ) => session.send("Input.dispatchTouchEvent", { type, touchPoints });
+  const area = page.getByRole("button", {
+    name: "Bereich auswählen",
+    exact: true,
+  });
+  const button = (await area.boundingBox())!;
+  await touch("touchStart", [
+    { x: button.x + button.width / 2, y: button.y + button.height / 2, id: 1 },
+  ]);
+  await touch("touchEnd", []);
+  await expect(area).toHaveAttribute("aria-pressed", "true");
+  const corner = { ...(await point(page, 90, 130, 1)), id: 1 };
+  const opposite = { ...(await point(page, 220, 215, 1)), id: 1 };
+  expect(opposite.y).toBeLessThan(stage.y + stage.height);
+  await touch("touchStart", [corner]);
+  await touch("touchMove", [opposite]);
+  const second = page.getByTestId("page-1");
+  await expect(second.getByTestId("selection-marquee")).toBeVisible();
+  await touch("touchEnd", []);
+  await expect(pageNumber).toHaveValue("2");
+  await expect(area).toHaveAttribute("aria-pressed", "false");
+  expect(await point(page, 90, 130, 1)).toEqual({ x: corner.x, y: corner.y });
+  await expect(page.getByTestId("selection-outline")).toHaveCount(0);
+  await page.evaluate(() => Reflect.get(window, "releasePageAnnotations")());
+  await expect(second.getByTestId("selection-outline")).toHaveCount(3);
+  await expect(page.getByText("3 ausgewählt", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Rückgängig", exact: true }),
+  ).toBeDisabled();
 });
 
 for (const platform of ["Linux x86_64", "Win32", "MacIntel"]) {
