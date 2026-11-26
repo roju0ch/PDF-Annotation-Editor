@@ -48,6 +48,7 @@ export function useMenuKeyboard(onEscape: (event: KeyboardEvent) => boolean) {
 }
 const paths = {
   pages: "M8 3h12v15H8V3ZM4 7v14h12",
+  textSelect: "M4 5h12v3M4 8V5m6 0v14m-4 0h8m3-7 2 1 2-1m-2 1v7m-2 1 2-1 2 1",
   select: "m4 3 6 18 3-8 8-3L4 3Z",
   marquee: "M3 8V4h4m3 0h4m3 0h4v4m0 3v2m0 3v4h-4m-3 0h-4m-3 0H3v-4m0-3v-2",
   note: "M4 3h16v12l-6 6H4V3Zm10 18v-7h6M8 7h8M8 11h5",

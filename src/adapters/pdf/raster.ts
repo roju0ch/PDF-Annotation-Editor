@@ -1,5 +1,6 @@
 import * as mupdf from "mupdf";
 import { TILE_SIZE } from "../../core/render/tiles";
+import { PageText } from "./text";
 import type { PageInfo } from "./types";
 
 export type TileRequest = {
@@ -27,6 +28,7 @@ export class TileRasterizer {
   private lists = new Map<number, mupdf.DisplayList>();
   private contentLists = new Map<number, mupdf.DisplayList>();
   private bounds = new Map<number, mupdf.Rect[]>();
+  private text?: { id: number; page: PageText };
   constructor(private doc: mupdf.PDFDocument) {}
 
   /** Native annotation changes must never evict the page-content display list. */
@@ -37,6 +39,8 @@ export class TileRasterizer {
 
   clear() {
     this.invalidateAnnotations();
+    this.text?.page.destroy();
+    this.text = undefined;
     this.drop(this.contentLists);
     mupdf.shrinkStore(50);
   }
@@ -121,20 +125,27 @@ export class TileRasterizer {
     }
   }
 
-  render(
-    info: PageInfo | undefined,
-    tile: TileRequest,
-    options: RasterOptions = {},
-  ): Raster {
-    this.validate(info, tile, options.overview);
-    const { page, scale, x, y, width, height } = tile;
-    const lists = options.split ? this.contentLists : this.lists;
+  pageText(page: number, info: PageInfo) {
+    if (this.text?.id !== info.id) {
+      this.text?.page.destroy();
+      this.text = undefined;
+      this.text = {
+        id: info.id,
+        page: new PageText(this.displayList(page, true)),
+      };
+    }
+    return this.text.page;
+  }
+
+  // Borrowed from this renderer: callers must not destroy the list.
+  private displayList(page: number, contentsOnly: boolean) {
+    const lists = contentsOnly ? this.contentLists : this.lists;
     let list = lists.get(page);
     if (list) lists.delete(page);
     else {
       const loaded = this.doc.loadPage(page);
       try {
-        list = loaded.toDisplayList(!options.split);
+        list = loaded.toDisplayList(!contentsOnly);
       } finally {
         loaded.destroy();
       }
@@ -145,6 +156,17 @@ export class TileRasterizer {
       lists.get(first)!.destroy();
       lists.delete(first);
     }
+    return list;
+  }
+
+  render(
+    info: PageInfo | undefined,
+    tile: TileRequest,
+    options: RasterOptions = {},
+  ): Raster {
+    this.validate(info, tile, options.overview);
+    const { page, scale, x, y, width, height } = tile;
+    const list = this.displayList(page, !!options.split);
     const pix = new mupdf.Pixmap(
       mupdf.ColorSpace.DeviceRGB,
       [x, y, x + width, y + height],

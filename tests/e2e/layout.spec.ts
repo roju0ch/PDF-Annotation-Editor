@@ -38,7 +38,7 @@ for (const size of [
     }
     await expect(page.getByLabel("Werkzeug", { exact: true })).toHaveCount(0);
     const tools = page.getByRole("toolbar", { name: "Annotationswerkzeuge" });
-    await expect(tools.getByRole("button")).toHaveCount(8);
+    await expect(tools.getByRole("button")).toHaveCount(9);
     const buttons = await tools.getByRole("button").all();
     for (const button of buttons) {
       const bounds = (await button.boundingBox())!;

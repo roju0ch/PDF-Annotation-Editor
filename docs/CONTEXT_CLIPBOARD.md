@@ -63,3 +63,7 @@ Codex Cloud:
 | ![Kopieren und Ausschneiden](images/context-touch-selection.png) | ![Einfügen und alle Kommentare](images/context-touch-blank.png) |
 
 Nur synthetische Test-PDFs. Touch-Emulation ersetzt keine Prüfung auf einem physischen Android-/iOS-Gerät. Keine neue Acrobat- oder native Desktop-Bedienprüfung. Die öffentliche [Browser-Vorschau](https://roju0ch.github.io/PDF-Annotation-Editor/) wird erst nach Review/Merge und erfolgreichem Pages-Workflow aktualisiert.
+
+## Text der PDF-Seite
+
+**Text auswählen** hat einen eigenen Kopierpfad. Der Worker gewinnt den markierten String und die Auswahlflächen gemeinsam aus der Textschicht der Seite. Strg/Cmd+C und **Text kopieren** schreiben diesen vorbereiteten String als Klartext. Die interne Objektkopie für Annotationen bleibt erhalten. Strg/Cmd+A markiert im Textwerkzeug den Seitentext. Eingabefelder behalten ihre normalen Tastenkürzel. Die Bedienung mit Maus und Auswahlgriffen ist in der [Bedienungsanleitung](../README.md#vorhandenen-pdf-text-kopieren) beschrieben.

@@ -1,3 +1,4 @@
+import type { Point as TextPoint, Quad } from "mupdf";
 import type {
   Annotation,
   AnnotationCommand,
@@ -14,7 +15,23 @@ export type PageInfo = {
   origin: [number, number];
   pdfToPage: Matrix;
 };
+export type TextQuery =
+  | { mode: "all" | "probe" }
+  | { mode: "word"; at: TextPoint }
+  | { mode: "range"; start: TextPoint; end: TextPoint };
+export type TextSelection = {
+  readable: boolean;
+  text: string;
+  quads: Quad[];
+};
 export type Payload =
+  | {
+      type: "select-text";
+      page: number;
+      pageId: number;
+      rotation: number;
+      query: TextQuery;
+    }
   | { type: "open"; data: ArrayBuffer }
   | { type: "render"; page: number; scale: number; split?: boolean }
   | ({ type: "render-tile"; split?: boolean } & TileRequest)
@@ -31,6 +48,7 @@ export type Payload =
   | { type: "ack-export"; revision: number };
 export type Request = { id: number } & Payload;
 export type Reply = {
+  textSelection?: TextSelection;
   annotations?: Annotation[];
   editor?: EditorState;
   selected?: number | number[] | null;
