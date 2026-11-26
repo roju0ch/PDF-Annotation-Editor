@@ -8,7 +8,7 @@ export function edge(q: Quad, end: boolean): Point {
   return [(q[i] + q[i + 4]) / 2, (q[i + 1] + q[i + 5]) / 2];
 }
 
-function within(q: Quad, [x, y]: Point) {
+export function containsPoint(q: Quad, [x, y]: Point) {
   const vertices = [0, 2, 6, 4];
   const sides = vertices.map((a, i) => {
     const b = vertices[(i + 1) % 4];
@@ -76,7 +76,7 @@ export class PageText {
     let start = this.first,
       end = this.last;
     if (query.mode === "word") {
-      const word = this.words.find((quad) => within(quad, query.at));
+      const word = this.words.find((quad) => containsPoint(quad, query.at));
       if (!word) return empty;
       start = edge(word, false);
       end = edge(word, true);

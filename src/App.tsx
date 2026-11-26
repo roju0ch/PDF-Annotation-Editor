@@ -403,7 +403,17 @@ export default function App() {
       const b = el.getBoundingClientRect();
       return { x: e.clientX - b.left, y: e.clientY - b.top };
     };
+    const copyMenu = () => document.getElementById("text-copy-menu");
+    const dismissCopyMenu = () => {
+      const menu = copyMenu();
+      if (menu?.matches(":popover-open")) menu.hidePopover();
+    };
+    const outsideCopyMenu = (e: PointerEvent) => {
+      if (e.button === 0 && !copyMenu()?.contains(e.target as Node))
+        dismissCopyMenu();
+    };
     const wheel = (e: WheelEvent) => {
+      dismissCopyMenu();
       if (pencilActive) {
         e.preventDefault();
         return;
@@ -686,6 +696,7 @@ export default function App() {
       if (e.code === "Space") space = false;
     };
     const reset = () => {
+      dismissCopyMenu();
       middlePasteBlocked = false;
       clearHold();
       consumed.clear();
@@ -723,11 +734,11 @@ export default function App() {
       }
       if (inText()) {
         e.preventDefault();
+        const menu = copyMenu();
         if (
-          e.target instanceof Element &&
-          e.target.closest(".pdf-text-highlight polygon,[data-text-handle]")
+          menu &&
+          (handleAt(e.target) || textInput.current.contains(local(e)))
         ) {
-          const menu = document.getElementById("text-copy-menu")!;
           menu.showPopover();
           const bounds = menu.getBoundingClientRect(),
             safe = safeViewport();
@@ -741,8 +752,8 @@ export default function App() {
               safe.top,
               Math.min(e.clientY, safe.bottom - bounds.height),
             ) + "px";
-          menu.querySelector("button")?.focus();
-        }
+          menu.querySelector("button")?.focus({ preventScroll: true });
+        } else dismissCopyMenu();
         return;
       }
       if (
@@ -786,6 +797,8 @@ export default function App() {
     window.addEventListener("paste", preventMiddlePaste, true);
     window.addEventListener("keydown", keydown);
     window.addEventListener("keyup", keyup);
+    document.addEventListener("pointerdown", outsideCopyMenu);
+    window.addEventListener("resize", dismissCopyMenu);
     window.addEventListener("blur", reset);
     if (ios) document.addEventListener("visibilitychange", visibility);
     return () => {
@@ -809,6 +822,8 @@ export default function App() {
       window.removeEventListener("paste", preventMiddlePaste, true);
       window.removeEventListener("keydown", keydown);
       window.removeEventListener("keyup", keyup);
+      document.removeEventListener("pointerdown", outsideCopyMenu);
+      window.removeEventListener("resize", dismissCopyMenu);
       window.removeEventListener("blur", reset);
       document.removeEventListener("visibilitychange", visibility);
     };
@@ -1393,7 +1408,14 @@ export default function App() {
       </div>
       {textMode && (
         <>
-          <div id="text-copy-menu" className="compact-menu" popover="auto">
+          <div
+            id="text-copy-menu"
+            className="compact-menu"
+            popover="manual"
+            onKeyDown={(e) => {
+              if (e.key === "Tab") e.currentTarget.hidePopover();
+            }}
+          >
             <button
               disabled={pdfText.pending || !pdfText.selection}
               onClick={() => {

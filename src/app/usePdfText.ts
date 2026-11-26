@@ -8,7 +8,7 @@ import {
 import type { Point as TextPoint } from "mupdf";
 import type { PdfClient } from "../adapters/pdf/client";
 import type { PageInfo, TextSelection, TextQuery } from "../adapters/pdf/types";
-import { edge } from "../adapters/pdf/text";
+import { containsPoint, edge } from "../adapters/pdf/text";
 import { writeClipboardText } from "../adapters/platform/clipboard";
 import type { Point } from "../core/viewport";
 import { openControlSelector } from "./CompactMenu";
@@ -207,6 +207,12 @@ export function usePdfText(
     begin,
     move,
     word,
+    contains: (p: Point) => {
+      const at = locate(p);
+      if (!at || !selection || selection.page !== at.page) return false;
+      const point: TextPoint = [at.point.x, at.point.y];
+      return selection.quads.some((q) => containsPoint(q, point));
+    },
     finish: () => {
       drag.current = null;
     },
