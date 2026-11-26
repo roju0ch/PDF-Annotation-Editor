@@ -278,6 +278,42 @@ footer .edit-status {
   flex-direction: column;
   gap: 10px;
 }
+#ios-save-menu label {
+  display: grid;
+  gap: 5px;
+}
+#ios-save-menu input {
+  min-width: 0;
+  font-size: 16px;
+}
+.ios-app .compact-menu button {
+  min-height: 44px;
+}
+@media (min-width: 440px) and (max-width: 768px), (min-width: 900px) {
+  .ios-app header button,
+  .ios-app header .open {
+    height: 44px;
+  }
+  .ios-app header .icon-button {
+    width: 44px;
+  }
+}
+@media (min-width: 440px) and (max-width: 768px) {
+  .ios-app .compact-menu {
+    top: calc(105px + var(--app-safe-area-top));
+    max-height: calc(
+      100dvh - 132px - var(--app-safe-area-top) - var(--app-safe-area-bottom)
+    );
+  }
+}
+@media (min-width: 900px) {
+  .ios-app .compact-menu {
+    top: calc(60px + var(--app-safe-area-top));
+    max-height: calc(
+      100dvh - 92px - var(--app-safe-area-top) - var(--app-safe-area-bottom)
+    );
+  }
+}
 .compact-menu button,
 .compact-menu select {
   min-height: 36px;

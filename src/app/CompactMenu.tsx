@@ -91,6 +91,7 @@ export function MenuHeading({
     <div className="menu-heading">
       <h2>{children}</h2>
       <button
+        type="button"
         onClick={() => dismissMenu(target)}
         aria-label="Menü schließen"
         title="Schließen"

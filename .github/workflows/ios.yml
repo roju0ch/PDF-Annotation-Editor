@@ -1,29 +1,62 @@
-name: iOS simulator PDF handler
+name: iPadOS builds and native PDF tests
 on:
+  push:
+    branches-ignore: [main]
+    paths:
+      - .github/workflows/ios.yml
+      - scripts/release/*ipados.py
+      - scripts/release/test-ios-staging.mjs
+      - src-tauri/Info.ios.plist
+      - src-tauri/plugins/tauri-plugin-ios-bridge/**
+      - src-tauri/plugins/tauri-plugin-pdf-open/**
+      - src-tauri/capabilities/ios-pdf-files.json
+      - src/adapters/platform/ios.ts
   workflow_dispatch:
+    inputs:
+      sign_device:
+        description: "Export an Ad Hoc IPA in a private repository with ios-device-signing configured"
+        type: boolean
+        default: false
   workflow_call:
 permissions:
   contents: read
 jobs:
-  simulator:
+  build:
+    name: iOS ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-sim
+            rust: aarch64-apple-ios-sim
+          - target: aarch64
+            rust: aarch64-apple-ios
     # The macOS 15 ARM pool has cancelled queued jobs for lack of capacity.
     runs-on: macos-26
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "24"
           cache: npm
-      - name: Install iOS simulator toolchain
+      - name: Install iOS toolchain
         run: |
           rustup toolchain install stable --profile minimal
           rustup default stable
-          rustup target add aarch64-apple-ios-sim
+          rustup target add ${{ matrix.rust }}
           command -v xcodegen >/dev/null || brew install xcodegen
           xcodebuild -version
       - run: npm ci
-      - name: Test secure iOS PDF staging with real files
+      - name: Test Rust PDF-save request limits
+        if: matrix.target == 'aarch64-sim'
+        run: |
+          rustc --edition 2021 --test src-tauri/plugins/tauri-plugin-ios-bridge/src/save_request.rs -o "$RUNNER_TEMP/ios-save-request-tests"
+          "$RUNNER_TEMP/ios-save-request-tests"
+      - name: Test secure iOS import, export and replacement with real files
+        id: swift-files
+        if: matrix.target == 'aarch64-sim'
+        continue-on-error: true
         run: node scripts/release/test-ios-staging.mjs
       - name: Generate iOS launcher icons
         run: |
@@ -32,9 +65,15 @@ jobs:
           cp -R "$RUNNER_TEMP/ios-icons/ios/." src-tauri/icons/ios/
       - name: Generate pinned Tauri iOS project
         run: node scripts/release/run.mjs npm run tauri -- ios init --ci --skip-targets-install
-      - name: Build unsigned iOS simulator app
-        run: node scripts/release/run.mjs npm run tauri -- ios build --ci --target aarch64-sim --no-sign
+      - name: Build unsigned iOS app
+        run: node scripts/release/run.mjs npm run tauri -- ios build --ci --target ${{ matrix.target }} --no-sign
+      - name: Verify ARM64 device package
+        if: matrix.target == 'aarch64'
+        run: |
+          python3 scripts/release/verify-ipados.py unsigned src-tauri/gen/apple
+          git diff --exit-code -- src-tauri/Cargo.lock
       - name: Verify simulator PDF document registration and preserve lockfile
+        if: matrix.target == 'aarch64-sim'
         run: |
           python3 - <<'PY'
           import hashlib, json, pathlib, subprocess
@@ -45,7 +84,7 @@ jobs:
               apps = list(pathlib.Path('src-tauri/gen/apple').glob('**/build/arm64-sim/*.app'))
           if len(apps) != 1:
               raise SystemExit(f'Expected one exported simulator app, found {len(apps)}')
-          subprocess.run(['python3', 'scripts/release/verify-associations.py', 'ios', str(apps[0])], check=True)
+          subprocess.run(['python3', 'scripts/release/verify-ipados.py', 'simulator', str(apps[0])], check=True)
           version = json.loads(pathlib.Path('package.json').read_text())['version']
           archive = pathlib.Path(f'PDF-Annotation-Editor_{version}_ios-simulator.zip')
           subprocess.run(['ditto', '-c', '-k', '--sequesterRsrc', '--keepParent', str(apps[0]), str(archive)], check=True)
@@ -53,9 +92,72 @@ jobs:
           PY
           git diff --exit-code -- src-tauri/Cargo.lock
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: matrix.target == 'aarch64-sim'
         with:
           name: ios-simulator-app-and-test-evidence
           path: PDF-Annotation-Editor_*_ios-simulator.zip
           if-no-files-found: error
           compression-level: 0
           retention-days: 14
+      - name: Install and launch app on an iPad simulator
+        if: matrix.target == 'aarch64-sim'
+        run: node scripts/release/run.mjs python3 scripts/release/smoke-ipados.py src-tauri/gen/apple
+      - name: Require passing Swift tests
+        if: always() && steps.swift-files.outcome == 'failure'
+        run: exit 1
+  signed-device:
+    if: github.event_name == 'workflow_dispatch' && inputs.sign_device == true
+    runs-on: macos-26
+    timeout-minutes: 45
+    environment: ios-device-signing
+    steps:
+      - name: Require a private artifact destination
+        if: github.event.repository.private != true
+        run: |
+          echo "::error::Signed IPAs include device provisioning information. Run this workflow in a private repository."
+          exit 1
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24"
+          cache: npm
+      - name: Install ARM64 iOS toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add aarch64-apple-ios
+          command -v xcodegen >/dev/null || brew install xcodegen
+          xcodebuild -version
+      - run: npm ci
+      - name: Generate iOS launcher icons
+        run: |
+          node scripts/release/run.mjs npm run tauri -- icon src-tauri/icon.svg --output "$RUNNER_TEMP/ios-icons"
+          mkdir -p src-tauri/icons/ios
+          cp -R "$RUNNER_TEMP/ios-icons/ios/." src-tauri/icons/ios/
+      - name: Generate pinned Tauri iOS project
+        run: node scripts/release/run.mjs npm run tauri -- ios init --ci --skip-targets-install
+      - name: Export signed Ad Hoc IPA
+        env:
+          APPLE_DEVELOPMENT_TEAM: ${{ secrets.IOS_APPLE_TEAM_ID }}
+          IOS_CERTIFICATE: ${{ secrets.IOS_CERTIFICATE }}
+          IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+          IOS_MOBILE_PROVISION: ${{ secrets.IOS_MOBILE_PROVISION }}
+        run: |
+          for secret in APPLE_DEVELOPMENT_TEAM IOS_CERTIFICATE IOS_CERTIFICATE_PASSWORD IOS_MOBILE_PROVISION; do
+            if [[ -z "${!secret}" ]]; then
+              echo "::error::Missing iOS signing configuration: $secret"
+              exit 1
+            fi
+          done
+          node scripts/release/run.mjs npm run tauri -- ios build --ci --target aarch64 --export-method release-testing
+      - name: Verify signed iPadOS build
+        run: |
+          python3 scripts/release/verify-ipados.py signed src-tauri/gen/apple
+          git diff --exit-code -- src-tauri/Cargo.lock
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ipados-arm64-ad-hoc
+          path: src-tauri/gen/apple/**/build/arm64/*.ipa
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7

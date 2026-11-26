@@ -12,6 +12,7 @@ export type NativeOpenRequest = {
 };
 type SaveTransaction = {
   sourceId?: string;
+  replaceOriginal?: boolean;
   fileName: string;
   expected: number;
   received: number;
@@ -26,6 +27,7 @@ export type NativeSaveState = {
   acknowledgements: number;
   browserDownloads: number;
   openQueue: NativeOpenRequest[];
+  picked?: NativeOpenRequest;
   openCalls: { command: string; id?: string; offset?: number }[];
   finishedOpens: string[];
   workerOpens: number;
@@ -76,7 +78,12 @@ export async function nativeSaveBridge(
       ? { width: 390, height: 844 }
       : { width: 1440, height: 900 },
   );
-  const namespace = platform === "android" ? "android-bridge" : "desktop-save";
+  const namespace =
+    platform === "ios"
+      ? "ios-bridge"
+      : platform === "android"
+        ? "android-bridge"
+        : "desktop-save";
   const userAgent = agents[platform];
   await page.addInitScript(
     ({
@@ -92,6 +99,8 @@ export async function nativeSaveBridge(
         value: userAgent,
       });
       Object.defineProperty(globalThis, "isTauri", { value: true });
+      if (namespace === "ios-bridge")
+        Object.defineProperty(window, "__PDF_IOS_APP__", { value: true });
       if (nativeWindow)
         Object.defineProperty(globalThis, "__PDF_MULTI_WINDOW__", {
           value: true,
@@ -296,6 +305,15 @@ export async function nativeSaveBridge(
                 offset:
                   typeof args.offset === "number" ? args.offset : undefined,
               });
+              if (
+                command === "plugin:pdf-open|pick_pdf_open" &&
+                namespace === "ios-bridge"
+              ) {
+                const picked = state.picked;
+                state.picked = undefined;
+                if (picked) state.enqueueOpen(picked);
+                return;
+              }
               const request = state.openQueue[0];
               if (command === "plugin:pdf-open|next_pdf_open") {
                 if (!request) return null;
@@ -355,6 +373,8 @@ export async function nativeSaveBridge(
             if (command === `plugin:${namespace}|finish_pdf_save`) {
               const transfer = state.transactions.at(-1)!;
               transfer.sourceId = args.sourceId as string | undefined;
+              if (namespace === "ios-bridge")
+                transfer.replaceOriginal = args.replaceOriginal === true;
               if (transfer.received !== transfer.expected)
                 throw Error("Incomplete native upload");
               state.pendingFinish = true;
@@ -367,7 +387,11 @@ export async function nativeSaveBridge(
                   else
                     resolve({
                       status: "saved",
-                      fileName: nativeWindow?.savedFileName ?? savedName,
+                      fileName:
+                        nativeWindow?.savedFileName ??
+                        (namespace === "ios-bridge"
+                          ? transfer.fileName
+                          : savedName),
                     });
                 };
                 if (state.mode !== "hold") state.release(state.mode);

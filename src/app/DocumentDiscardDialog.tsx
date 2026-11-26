@@ -13,7 +13,7 @@ type PendingDecision = {
   resolve: (discard: boolean) => void;
   focus: HTMLElement | null;
 };
-export type DocumentDiscardAction = "open" | "close";
+export type DocumentDiscardAction = "open" | "close" | "close-document";
 
 /** A shared app modal also works in WebViews without JavaScript confirm UI. */
 export function useDocumentDiscardDialog(
@@ -154,16 +154,18 @@ function DocumentDiscardDialog({
       <p id={description}>
         {action === "close"
           ? "Ungesicherte Änderungen verwerfen und dieses Fenster schließen?"
-          : "Ungesicherte Änderungen verwerfen und eine andere PDF öffnen?"}
+          : action === "close-document"
+            ? "Ungesicherte Änderungen verwerfen und dieses Dokument schließen?"
+            : "Ungesicherte Änderungen verwerfen und eine andere PDF öffnen?"}
       </p>
       <div className="document-discard-actions">
         <button ref={cancel} type="button" onClick={() => onDecision(false)}>
           Abbrechen
         </button>
         <button type="button" onClick={() => onDecision(true)}>
-          {action === "close"
-            ? "Verwerfen und schließen"
-            : "Verwerfen und öffnen"}
+          {action === "open"
+            ? "Verwerfen und öffnen"
+            : "Verwerfen und schließen"}
         </button>
       </div>
     </dialog>

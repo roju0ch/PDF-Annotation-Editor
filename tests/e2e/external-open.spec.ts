@@ -134,60 +134,28 @@ for (const platform of ["windows", "android"] as const) {
   });
 }
 
-test("iOS import-only UI opens an external PDF and honestly disables unavailable saving and shortcuts", async ({
+test("iPad native picker and Files handoff open through the same worker", async ({
   page,
 }) => {
   const incoming = request(1, "Dateien-App – Übergabe.pdf");
-  await page.addInitScript(() => {
-    Object.defineProperty(window, "__PDF_IOS_IMPORT_ONLY__", {
-      value: true,
-      configurable: false,
-      writable: false,
-    });
-  });
+  const picked = request(2, "Baustelle – Plan EG.pdf", second);
   await nativeSaveBridge(page, "saved", "ios", [incoming]);
   await page.goto("");
   await rendered(page, incoming.fileName, 3);
   await expect(page.locator(".annotation-list")).toContainText(
     "Independent fixture note",
   );
-  const unavailable = "PDF-Speicherung unter iOS noch nicht verfügbar";
-  const save = page.getByRole("button", { name: unavailable, exact: true });
-  await expect(save).toBeDisabled();
-  await expect(save).toHaveAttribute("title", unavailable);
-  expect(
-    await page.evaluate(() => {
-      const marker = Object.getOwnPropertyDescriptor(
-        window,
-        "__PDF_IOS_IMPORT_ONLY__",
-      );
-      return {
-        value: marker?.value,
-        writable: marker?.writable,
-        configurable: marker?.configurable,
-      };
-    }),
-  ).toEqual({ value: true, writable: false, configurable: false });
-  await page.getByTestId("viewport").focus();
-  for (const shortcut of ["Control+s", "Meta+s"]) {
-    await page.keyboard.press(shortcut);
-    await expect(page.getByRole("alert")).toContainText(unavailable);
-    await page.getByRole("button", { name: "Meldung schließen" }).click();
-    await expect(page.getByRole("alert")).toHaveCount(0);
-  }
+  await expect(
+    page.getByRole("button", { name: "PDF speichern …", exact: true }),
+  ).toBeEnabled();
+  await page.evaluate((item) => {
+    (window as unknown as TestWindow).nativeSaveTest.picked = item;
+  }, picked);
+  await page.getByLabel("PDF öffnen", { exact: true }).click();
+  await rendered(page, picked.fileName, 1);
   await expect
     .poll(async () => (await openState(page)).finished)
-    .toEqual([incoming.id]);
-  const value = await saveState(page);
-  expect(value).toMatchObject({
-    workerExports: 0,
-    acknowledgements: 0,
-    browserDownloads: 0,
-    transactions: [],
-    calls: [],
-  });
-  expect((await openState(page)).workerOpens).toBe(1);
-  await rendered(page, incoming.fileName, 3);
+    .toEqual([incoming.id, picked.id]);
 });
 
 test("a running desktop app reads bounded PDF chunks and coalesces repeated open notifications", async ({

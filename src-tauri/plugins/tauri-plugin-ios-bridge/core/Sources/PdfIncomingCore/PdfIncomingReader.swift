@@ -67,8 +67,14 @@ public final class PdfIncomingReader {
     }
 
     public func stage(uri: String, cacheDirectory: URL) throws -> StagedIncomingPdf {
-        guard maximum >= 5, uri.utf8.count <= 16 * 1024,
-              let source = URL(string: uri), source.isFileURL,
+        guard uri.utf8.count <= 16 * 1024, let source = URL(string: uri) else {
+            throw PdfIncomingError.invalid
+        }
+        return try stage(source: source, cacheDirectory: cacheDirectory)
+    }
+
+    public func stage(source: URL, cacheDirectory: URL) throws -> StagedIncomingPdf {
+        guard maximum >= 5, source.isFileURL,
               source.path.hasPrefix("/"), source.query == nil, source.fragment == nil,
               !source.path.unicodeScalars.contains(where: { $0.value == 0 }),
               source.host == nil || source.host == "" || source.host == "localhost",

@@ -29,16 +29,16 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { PdfClient } from "./adapters/pdf/client";
+import { type PdfFile, usesNativeSave } from "./adapters/platform/savePdf";
 import {
-  type PdfFile,
-  usesNativeSave,
-  supportsPdfSave,
-  PDF_SAVE_UNAVAILABLE,
-} from "./adapters/platform/savePdf";
+  isIosApp,
+  readFingerInkPreference,
+  writeFingerInkPreference,
+} from "./adapters/platform/ios";
 import {
   PDF_OPEN_MESSAGES as messages,
   type PdfOpenOutcome,
-  pickDesktopPdf,
+  pickNativePdf,
 } from "./adapters/platform/openPdf";
 import { usePdfOpen } from "./app/usePdfOpen";
 import { usePdfWindows } from "./app/usePdfWindows";
@@ -105,12 +105,16 @@ function scrollView(
 }
 export default function App() {
   const multipleWindows = supportsMultiplePdfWindows();
-  const canSave = supportsPdfSave();
-  const exportLabel = !canSave
-    ? PDF_SAVE_UNAVAILABLE
+  const ios = isIosApp();
+  const exportLabel = ios
+    ? "PDF speichern …"
     : usesNativeSave()
       ? "PDF speichern unter …"
       : "PDF herunterladen";
+  const [fingerInk, setFingerInk] = useState(
+    () => ios && readFingerInkPreference(),
+  );
+  const fingerInkEnabled = useRef(fingerInk);
   const stage = useRef<HTMLDivElement>(null),
     fileInput = useRef<HTMLInputElement>(null),
     client = useRef<PdfClient | null>(null),
@@ -354,6 +358,7 @@ export default function App() {
       touchEditing = false;
     };
     let mousePointer: number | null = null;
+    let pencilActive = false;
     let drag: Point | null = null;
     let trackpadScale: number | null = null;
     let middlePasteBlocked = false;
@@ -362,6 +367,10 @@ export default function App() {
       return { x: e.clientX - b.left, y: e.clientY - b.top };
     };
     const wheel = (e: WheelEvent) => {
+      if (pencilActive) {
+        e.preventDefault();
+        return;
+      }
       clearHold();
       touchEditing = false;
       annotationInput.current.closeContext();
@@ -388,6 +397,10 @@ export default function App() {
     };
     // Safari and WKWebView can send cumulative gesture scales for trackpad pinch.
     const trackpadPinch = (event: Event) => {
+      if (pencilActive) {
+        event.preventDefault();
+        return;
+      }
       if (event.type === "gesturestart") {
         if (!current.current.pages.length || points.size || drag) return;
         event.preventDefault();
@@ -424,6 +437,7 @@ export default function App() {
       // A click outside a menu dismisses it; it must not also draw on the PDF.
       if (document.querySelector(openMenuSelector)) return;
       if (!current.current.pages.length) return;
+      if (pencilActive && e.pointerType === "touch") return;
       annotationInput.current.hover(local(e));
       if (e.pointerType === "touch") {
         if (mousePointer !== null || consumed.size) return;
@@ -443,12 +457,26 @@ export default function App() {
             points.clear();
             clearHold();
           }, 600);
-        } else touchEditing = annotationInput.current.begin(start);
+        } else if (
+          !ios ||
+          annotationInput.current.tool !== "Ink" ||
+          fingerInkEnabled.current
+        ) {
+          touchEditing = annotationInput.current.begin(start);
+        }
         el.setPointerCapture(e.pointerId);
         e.preventDefault();
         return;
       }
-      if (points.size || consumed.size || mousePointer !== null) return;
+      if (mousePointer !== null) return;
+      if (ios && e.pointerType === "pen" && e.button === 0 && points.size) {
+        // A hand can reach the screen before the tip. Discard its tentative edit.
+        clearHold();
+        points.clear();
+        touchEditing = false;
+        annotationInput.current.cancel();
+      }
+      if (points.size || consumed.size) return;
       if (e.button === 1 || (e.button === 0 && space)) {
         annotationInput.current.cancel();
         drag = local(e);
@@ -458,6 +486,7 @@ export default function App() {
         e.preventDefault();
       } else if (e.button === 0 && annotationInput.current.begin(local(e))) {
         mousePointer = e.pointerId;
+        pencilActive = ios && e.pointerType === "pen";
         el.focus();
         el.setPointerCapture(e.pointerId);
         e.preventDefault();
@@ -504,6 +533,7 @@ export default function App() {
       }
     };
     const move = (e: PointerEvent) => {
+      if (pencilActive && e.pointerType === "touch") return;
       const p = local(e);
       annotationInput.current.hover(p);
       if (e.pointerType === "touch") {
@@ -520,6 +550,16 @@ export default function App() {
           y: v.y + p.y - from.y,
         }));
       } else if (annotationInput.current.active()) {
+        const samples = pencilActive ? e.getCoalescedEvents?.() : undefined;
+        if (samples?.length) {
+          const left = e.clientX - p.x,
+            top = e.clientY - p.y;
+          for (const sample of samples)
+            annotationInput.current.move({
+              x: sample.clientX - left,
+              y: sample.clientY - top,
+            });
+        }
         annotationInput.current.move(p);
       }
     };
@@ -554,9 +594,12 @@ export default function App() {
           y: v.y + p.y - from.y,
         }));
       }
-      if (e.type === "pointerup") annotationInput.current.finish();
-      else annotationInput.current.cancel();
+      if (e.type === "pointerup") {
+        if (pencilActive) annotationInput.current.move(local(e));
+        annotationInput.current.finish();
+      } else annotationInput.current.cancel();
       mousePointer = null;
+      pencilActive = false;
       drag = null;
       el.classList.remove("panning");
     };
@@ -584,6 +627,7 @@ export default function App() {
       space = false;
       touchEditing = false;
       mousePointer = null;
+      pencilActive = false;
       drag = null;
       trackpadScale = null;
       points.clear();
@@ -592,6 +636,7 @@ export default function App() {
     const context = (e: MouseEvent) => {
       // The touch timer arbitrates the hold alongside scroll, drag, and pinch.
       if (
+        pencilActive ||
         (e as PointerEvent).pointerType === "touch" ||
         points.size ||
         consumed.size
@@ -608,6 +653,9 @@ export default function App() {
         e.preventDefault();
     };
     const leave = () => annotationInput.current.hover(null);
+    const visibility = () => {
+      if (document.visibilityState === "hidden") reset();
+    };
     const aux = (e: MouseEvent) => {
       if (e.button === 1) e.preventDefault();
     };
@@ -637,6 +685,7 @@ export default function App() {
     window.addEventListener("keydown", keydown);
     window.addEventListener("keyup", keyup);
     window.addEventListener("blur", reset);
+    if (ios) document.addEventListener("visibilitychange", visibility);
     return () => {
       cancelPendingPointer.current = () => {};
       clearHold();
@@ -658,8 +707,9 @@ export default function App() {
       window.removeEventListener("keydown", keydown);
       window.removeEventListener("keyup", keyup);
       window.removeEventListener("blur", reset);
+      document.removeEventListener("visibilitychange", visibility);
     };
-  }, [updateView]);
+  }, [ios, updateView]);
   const visible = pages
     .map((p, i) => ({ p, i, top: tops[i] }))
     .filter(({ p, i, top }) =>
@@ -719,6 +769,24 @@ export default function App() {
     setPage(closest);
   }, [view, box, continuous, pages, tops, annotation.formDirty]);
   usePdfOpen(!annotation.busy && !loading, open, setError);
+  async function closeDocument() {
+    if (!annotation.beginDocumentChange()) return;
+    try {
+      if (annotation.unsaved && !(await discard.request("close-document")))
+        return;
+      cancelPendingPointer.current();
+      client.current?.dispose();
+      client.current = null;
+      generation.current++;
+      annotation.reset();
+      setPages([]);
+      setFileInfo({ fileName: "" });
+      setError("");
+      setRendering(false);
+    } finally {
+      annotation.endDocumentChange();
+    }
+  }
   async function open(file: File, sourceId?: string): Promise<PdfOpenOutcome> {
     if (opening.current || !annotation.beginDocumentChange()) {
       setError("Bitte warten, bis die PDF-Verarbeitung abgeschlossen ist.");
@@ -787,7 +855,7 @@ export default function App() {
   }
   const ready = pages.length > 0;
   return (
-    <main>
+    <main className={ios ? "ios-app" : undefined}>
       <header>
         <div className="document-controls">
           <label className="open" title="PDF öffnen">
@@ -799,9 +867,9 @@ export default function App() {
               type="file"
               accept="application/pdf,.pdf"
               onClick={(event) => {
-                if (!multipleWindows) return;
+                if (!multipleWindows && !ios) return;
                 event.preventDefault();
-                void pickDesktopPdf().catch((error: Error) =>
+                void pickNativePdf().catch((error: Error) =>
                   setError(error.message),
                 );
               }}
@@ -876,19 +944,60 @@ export default function App() {
             className="icon-button export"
             aria-label={exportLabel}
             title={exportLabel}
+            popoverTarget={ios ? "ios-save-menu" : undefined}
             disabled={
-              !canSave ||
               !ready ||
               annotation.busy ||
               annotation.formDirty ||
               !!annotation.state.readOnly
             }
-            onClick={() => void annotation.save()}
+            onClick={ios ? undefined : () => void annotation.save()}
           >
             <Icon name="download" />
           </button>
         </div>
       </header>
+      {ios && (
+        <form
+          id="ios-save-menu"
+          popover="auto"
+          className="compact-menu"
+          aria-label="PDF speichern"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const fileName = String(
+              new FormData(event.currentTarget).get("fileName") ?? "",
+            );
+            if (!fileName.trim()) return;
+            event.currentTarget.hidePopover();
+            void annotation.save({ fileName });
+          }}
+        >
+          <MenuHeading target="ios-save-menu">PDF speichern</MenuHeading>
+          <label>
+            Dateiname für die Kopie
+            <input
+              key={fileInfo.fileName}
+              name="fileName"
+              defaultValue={fileInfo.fileName}
+              maxLength={255}
+              required
+            />
+          </label>
+          <button type="submit">Speichern unter …</button>
+          {fileInfo.sourceId && (
+            <button
+              type="button"
+              onClick={() => {
+                document.getElementById("ios-save-menu")?.hidePopover();
+                void annotation.save({ replaceOriginal: true });
+              }}
+            >
+              Original ersetzen …
+            </button>
+          )}
+        </form>
+      )}
       <section
         id="view-menu"
         popover="auto"
@@ -896,6 +1005,32 @@ export default function App() {
         aria-label="Ansicht und Navigation"
       >
         <MenuHeading target="view-menu">Ansicht und Navigation</MenuHeading>
+        {ios && (
+          <label className="menu-row">
+            <input
+              type="checkbox"
+              checked={fingerInk}
+              onChange={(event) => {
+                const enabled = event.target.checked;
+                fingerInkEnabled.current = enabled;
+                setFingerInk(enabled);
+                writeFingerInkPreference(enabled);
+              }}
+            />
+            Mit Finger zeichnen
+          </label>
+        )}
+        {ios && ready && (
+          <button
+            disabled={annotation.busy}
+            onClick={() => {
+              document.getElementById("view-menu")?.hidePopover();
+              void closeDocument();
+            }}
+          >
+            Dokument schließen
+          </button>
+        )}
         {multipleWindows && (
           <div className="menu-row">
             <button

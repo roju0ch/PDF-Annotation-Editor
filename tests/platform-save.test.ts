@@ -3,8 +3,6 @@ import {
   isAndroidApp,
   savePdf,
   usesNativeSave,
-  supportsPdfSave,
-  PDF_SAVE_UNAVAILABLE,
 } from "../src/adapters/platform/savePdf";
 
 const api = vi.hoisted(() => ({ invoke: vi.fn(), isTauri: vi.fn() }));
@@ -65,17 +63,34 @@ afterEach(() => {
   vi.resetAllMocks();
 });
 
-it("does not offer saving in the iOS import prototype or fall back to a WebView download", async () => {
-  const browser = platform(true, "iPhone");
-  vi.stubGlobal("window", { __PDF_IOS_IMPORT_ONLY__: true });
-  expect(supportsPdfSave()).toBe(false);
-  await expect(savePdf(pdf(), "Plan.pdf")).rejects.toThrow(
-    PDF_SAVE_UNAVAILABLE,
+it("uses the iOS bridge for copies and explicit replacement, even with iPad desktop user agent", async () => {
+  const browser = platform(true, "Macintosh");
+  vi.stubGlobal("window", { __PDF_IOS_APP__: true });
+  nativeReply(undefined, "plugin:ios-bridge|");
+  await expect(
+    savePdf(pdf(CHUNK + 17), "Plan Ä.pdf", token),
+  ).resolves.toMatchObject({
+    status: "saved",
+    sourceId: token,
+  });
+  expect(api.invoke).toHaveBeenLastCalledWith(
+    "plugin:ios-bridge|finish_pdf_save",
+    {
+      token,
+      sourceId: token,
+      replaceOriginal: false,
+    },
   );
-  expect(api.invoke).not.toHaveBeenCalled();
+  await savePdf(pdf(), "Plan Ä.pdf", token, true);
+  expect(api.invoke).toHaveBeenLastCalledWith(
+    "plugin:ios-bridge|finish_pdf_save",
+    {
+      token,
+      sourceId: token,
+      replaceOriginal: true,
+    },
+  );
   expect(browser.create).not.toHaveBeenCalled();
-  api.isTauri.mockReturnValue(false);
-  expect(supportsPdfSave()).toBe(true);
 });
 
 it("recognizes only native Android and transfers exact bytes as bounded ordered chunks", async () => {

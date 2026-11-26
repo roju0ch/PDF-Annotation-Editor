@@ -1,4 +1,5 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import { isIosApp } from "./ios";
 
 export type PdfFile = { fileName: string; sourceId?: string };
 
@@ -9,21 +10,6 @@ export type SaveResult =
 
 const MAX_PDF_BYTES = 150 * 1024 * 1024;
 const CHUNK_BYTES = 256 * 1024;
-export const PDF_SAVE_UNAVAILABLE =
-  "PDF-Speicherung unter iOS noch nicht verfügbar";
-declare global {
-  interface Window {
-    __PDF_IOS_IMPORT_ONLY__?: boolean;
-  }
-}
-/** The iOS import prototype does not yet provide a native save implementation. */
-export function supportsPdfSave() {
-  return !(
-    isTauri() &&
-    typeof window !== "undefined" &&
-    window.__PDF_IOS_IMPORT_ONLY__ === true
-  );
-}
 /** Installed apps always use their native save bridge, never a WebView download. */
 export function usesNativeSave() {
   return isTauri();
@@ -93,8 +79,8 @@ export async function savePdf(
   bytes: Uint8Array<ArrayBuffer>,
   fileName: string,
   sourceId?: string,
+  replaceOriginal = false,
 ): Promise<SaveResult> {
-  if (!supportsPdfSave()) throw new Error(PDF_SAVE_UNAVAILABLE);
   if (
     !(bytes instanceof Uint8Array) ||
     bytes.byteLength < 5 ||
@@ -120,7 +106,12 @@ export async function savePdf(
     return { status: "download-started" };
   }
 
-  const namespace = isAndroidApp() ? "android-bridge" : "desktop-save";
+  const ios = isIosApp();
+  const namespace = ios
+    ? "ios-bridge"
+    : isAndroidApp()
+      ? "android-bridge"
+      : "desktop-save";
   const command = (action: string) => `plugin:${namespace}|${action}_pdf_save`;
   let token: string | undefined;
   try {
@@ -155,7 +146,11 @@ export async function savePdf(
     // A person may leave the system picker open indefinitely. A timer here
     // could falsely fail a legitimate selection or acknowledge an unfinished file.
     const finished = object(
-      await invoke(command("finish"), { token, sourceId }),
+      await invoke(command("finish"), {
+        token,
+        sourceId,
+        ...(ios ? { replaceOriginal } : {}),
+      }),
     );
     if (finished?.status === "cancelled") return { status: "cancelled" };
     if (
