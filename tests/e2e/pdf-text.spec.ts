@@ -8,6 +8,14 @@ const rotated = "artifacts/pdf-text-rotated.pdf";
 const tool = (page: Page) =>
   page.getByRole("button", { name: "Text auswählen", exact: true });
 const marks = (page: Page) => page.locator(".pdf-text-highlight polygon");
+test.beforeEach(async ({ context, browserName }) => {
+  // Headless Chromium cannot answer a permission prompt. Exercise the real
+  // clipboard with consent. The refusal case below explicitly denies writing.
+  if (browserName === "chromium")
+    await context.grantPermissions(["clipboard-read", "clipboard-write"], {
+      origin: "http://127.0.0.1:4173",
+    });
+});
 test.beforeAll(async () => {
   await writeFile(fixture, pdfTextFixture());
   await writeFile(rotated, pdfTextFixture(90));
