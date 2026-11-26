@@ -14,7 +14,10 @@ function within(q: Quad, [x, y]: Point) {
     const b = vertices[(i + 1) % 4];
     return (q[b] - q[a]) * (y - q[a + 1]) - (q[b + 1] - q[a + 1]) * (x - q[a]);
   });
-  return sides.every((v) => v >= 0) || sides.every((v) => v <= 0);
+  return (
+    sides.some((v) => v !== 0) &&
+    (sides.every((v) => v >= 0) || sides.every((v) => v <= 0))
+  );
 }
 
 export class PageText {

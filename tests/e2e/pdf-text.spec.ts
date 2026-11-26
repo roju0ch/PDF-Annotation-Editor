@@ -59,6 +59,9 @@ test("word, context menu, system paste, select all and normal field editing leav
   await page.keyboard.press("Control+a");
   await expect(marks(page)).toHaveCount(2);
   await page.keyboard.press("Control+c");
+  await expect(page.locator("footer .edit-status")).toContainText(
+    "Text kopiert",
+  );
   await pasteIntoField(page, lines.join("\n"));
   await expect(
     page.getByRole("button", { name: "Rückgängig", exact: true }),
@@ -78,6 +81,20 @@ test("word, context menu, system paste, select all and normal field editing leav
   for (const key of ["Control+c", "Control+x", "Delete", "Backspace"])
     await page.keyboard.press(key);
   await expect(page.getByTestId("selection-outline")).toHaveCount(0);
+  await pasteIntoField(page, lines.join("\n"));
+  await page.evaluate(() => {
+    const field = document.createElement("div");
+    field.contentEditable = "true";
+    field.id = "comment-input";
+    field.textContent = "Eigener Text";
+    document.body.append(field);
+    field.focus({ preventScroll: true });
+  });
+  await page.keyboard.press("Control+a");
+  await page.keyboard.press("Control+x");
+  await expect(page.locator("#comment-input")).toHaveText("");
+  await page.keyboard.press("Control+v");
+  await expect(page.locator("#comment-input")).toHaveText("Eigener Text");
   await expect(page.locator(".annotation-list button")).toHaveCount(1);
   await expect(
     page.getByRole("button", { name: "Rückgängig", exact: true }),
@@ -107,6 +124,9 @@ test("backward multiline drag and highlight alignment at enlarged zoom on a rota
   expect(Math.abs(rect.y - top.y)).toBeLessThan(1);
   expect(Math.abs(rect.y + rect.height - bottom.y)).toBeLessThan(1);
   await page.keyboard.press("Control+c");
+  await expect(page.locator("footer .edit-status")).toContainText(
+    "Text kopiert",
+  );
   await pasteIntoField(page, lines[0] + "\nZweite");
   await page.mouse.click(start.x - 45, start.y + 60);
   await expect(marks(page)).toHaveCount(0);
@@ -239,6 +259,7 @@ test("touch hold, both handles, cancel, one-finger scroll and pinch", async ({
     .getByRole("button", { name: "Text kopieren", exact: true })
     .click();
   await expect(page.locator("footer .edit-status")).toHaveText("Text kopiert");
+  await pasteIntoField(page, lines[0].slice(1) + "\n" + lines[1].slice(0, 9));
   await page.screenshot({ path: "artifacts/pdf-text-touch.png" });
   await page.getByTestId("viewport").focus();
   await page.keyboard.press("Escape");
@@ -261,4 +282,74 @@ test("touch hold, both handles, cancel, one-finger scroll and pinch", async ({
   expect(
     (await page.getByTestId("page-0").boundingBox())!.width,
   ).toBeGreaterThan(width * 1.5);
+});
+
+test("page edits and history discard old selection and resolve the current PDF page object", async ({
+  page,
+}) => {
+  await open(page);
+  const button = (name: string) =>
+    page.getByRole("button", { name, exact: true });
+  const select = async (index: number) => {
+    await page.getByTestId("viewport").focus();
+    await page.keyboard.press("Control+a");
+    await expect(
+      page.getByTestId(`page-${index}`).locator(".pdf-text-highlight polygon"),
+    ).toHaveCount(2);
+    await page.keyboard.press("Control+c");
+    await expect(page.locator("footer .edit-status")).toContainText(
+      "Text kopiert",
+    );
+    await pasteIntoField(page, lines.join("\n"));
+  };
+  const action = async (name: string) => {
+    await button("Seitenübersicht").click();
+    await button(name).click();
+    await expect(marks(page)).toHaveCount(0);
+    await button("Menü schließen").click();
+  };
+  await select(0);
+  await action("Seite 90° nach rechts drehen");
+  await select(0);
+  await action("Seite nach hinten verschieben");
+  await select(1);
+  await button("Rückgängig").click();
+  await expect(marks(page)).toHaveCount(0);
+  await select(0);
+  await button("Wiederholen").click();
+  await expect(marks(page)).toHaveCount(0);
+  await select(1);
+
+  await button("Seitenübersicht").click();
+  const chooser = page.waitForEvent("filechooser");
+  await button("PDF hinzufügen …").click();
+  await (
+    await chooser
+  ).setFiles({
+    name: "Anhang.pdf",
+    mimeType: "application/pdf",
+    buffer: pdfTextFixture(0, ["Anhang"]),
+  });
+  await expect(page.locator("#pages-menu h2")).toHaveText("Seiten · 4");
+  await expect(marks(page)).toHaveCount(0);
+  await button("Menü schließen").click();
+  await page.getByTestId("viewport").focus();
+  await page.keyboard.press("Control+a");
+  await expect(
+    page.getByTestId("page-2").locator(".pdf-text-highlight polygon"),
+  ).toHaveCount(1);
+  await page.keyboard.press("Control+c");
+  await expect(page.locator("footer .edit-status")).toContainText(
+    "Text kopiert",
+  );
+  await pasteIntoField(page, "Anhang");
+  await button("Seitenübersicht").click();
+  await button("Ausgewählte Seiten löschen").click();
+  await button("1 Seite löschen").click();
+  await expect(page.locator("#pages-menu h2")).toHaveText("Seiten · 3");
+  await expect(marks(page)).toHaveCount(0);
+  await button("Menü schließen").click();
+  await expect(page.locator("footer .edit-status")).toContainText(
+    "kein auslesbarer Text",
+  );
 });

@@ -22,7 +22,7 @@ export function pdfTextFixture(rotation: 0 | 90 | 180 | 270 = 0, text = lines) {
       [0, 0, 450, height + 50],
       rotation,
       { Font: { F1: font } },
-      content,
+      content + "\nBT /F1 8 Tf 425 100 Td (CROP) Tj ET",
     );
     first.put("CropBox", [20, 30, 420, height + 30]);
     doc.insertPage(-1, first);

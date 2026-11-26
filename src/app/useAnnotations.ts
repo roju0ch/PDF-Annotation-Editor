@@ -26,6 +26,7 @@ import {
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type RefObject,
@@ -221,7 +222,7 @@ export function useAnnotations(
       state,
       formDirty,
     });
-  useEffect(() => {
+  useLayoutEffect(() => {
     current.current = {
       layout,
       items,

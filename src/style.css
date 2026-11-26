@@ -989,3 +989,11 @@ dialog[aria-label="Text manuell kopieren"] textarea {
     left: calc(80px + var(--app-safe-area-left));
   }
 }
+
+@media (min-width: 769px) and (max-width: 820px) {
+  .direct-tools {
+    padding: 0 3px;
+    margin-left: 0;
+    gap: 3px;
+  }
+}

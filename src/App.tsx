@@ -260,7 +260,7 @@ export default function App() {
   );
   useMenuKeyboard(escape);
   const annotationInput = useRef(annotation.gesture);
-  useEffect(() => {
+  useLayoutEffect(() => {
     annotationInput.current = annotation.gesture;
   });
   const current = useRef({ box, pages, scrollLayout });
@@ -700,6 +700,16 @@ export default function App() {
       points.clear();
       el.classList.remove("panning");
     };
+    const doubleClick = (e: MouseEvent) => {
+      if (
+        inText() &&
+        !space &&
+        !points.size &&
+        e.button === 0 &&
+        !document.querySelector(openControlSelector)
+      )
+        textInput.current.word(local(e));
+    };
     const context = (e: MouseEvent) => {
       // The touch timer arbitrates the hold alongside scroll, drag, and pinch.
       if (
@@ -770,6 +780,7 @@ export default function App() {
     el.addEventListener("mousedown", aux);
     el.addEventListener("mouseup", aux);
     el.addEventListener("auxclick", aux);
+    el.addEventListener("dblclick", doubleClick);
     el.addEventListener("contextmenu", context);
     el.addEventListener("pointerleave", leave);
     window.addEventListener("paste", preventMiddlePaste, true);
@@ -780,6 +791,7 @@ export default function App() {
     return () => {
       cancelPendingPointer.current = () => {};
       clearHold();
+      el.removeEventListener("dblclick", doubleClick);
       el.removeEventListener("contextmenu", context);
       el.removeEventListener("pointerleave", leave);
       el.removeEventListener("wheel", wheel);
@@ -1273,19 +1285,6 @@ export default function App() {
         <div
           ref={stage}
           className={textMode ? "stage pdf-text-tool" : "stage"}
-          onDoubleClick={(e) => {
-            if (
-              textMode &&
-              e.button === 0 &&
-              !e.currentTarget.classList.contains("panning")
-            ) {
-              const b = e.currentTarget.getBoundingClientRect();
-              textInput.current.word({
-                x: e.clientX - b.left,
-                y: e.clientY - b.top,
-              });
-            }
-          }}
           data-testid="viewport"
           tabIndex={0}
           aria-label="PDF-Arbeitsfläche"
@@ -1432,7 +1431,9 @@ export default function App() {
             : annotation.unsaved
               ? "Ungesicherte Änderungen"
               : ""}
-          {textMode && pdfText.notice}
+          {textMode && (pdfText.pending || pdfText.notice) && !annotation.busy
+            ? `${annotation.unsaved ? " · " : ""}${pdfText.pending ? "Textauswahl wird vorbereitet …" : pdfText.notice}`
+            : ""}
           {!textMode && annotation.notice && !annotation.busy
             ? `${annotation.unsaved ? " · " : ""}${annotation.notice}`
             : ""}
