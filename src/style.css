@@ -934,9 +934,6 @@ header .tool-button[aria-pressed="true"] {
   pointer-events: none;
   fill: #237be94d;
 }
-.pdf-text-highlight polygon {
-  pointer-events: fill;
-}
 [data-text-handle] {
   position: absolute;
   z-index: 3;

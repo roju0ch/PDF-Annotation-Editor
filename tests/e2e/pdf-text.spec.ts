@@ -8,6 +8,14 @@ const rotated = "artifacts/pdf-text-rotated.pdf";
 const tool = (page: Page) =>
   page.getByRole("button", { name: "Text auswählen", exact: true });
 const marks = (page: Page) => page.locator(".pdf-text-highlight polygon");
+test.beforeEach(async ({ context, browserName }) => {
+  // Headless Chromium cannot answer a permission prompt. Exercise the real
+  // clipboard with consent. The refusal case below explicitly denies writing.
+  if (browserName === "chromium")
+    await context.grantPermissions(["clipboard-read", "clipboard-write"], {
+      origin: "http://127.0.0.1:4173",
+    });
+});
 test.beforeAll(async () => {
   await writeFile(fixture, pdfTextFixture());
   await writeFile(rotated, pdfTextFixture(90));
@@ -46,8 +54,12 @@ test("word, context menu, system paste, select all and normal field editing leav
   const p = await point(page, 65, 72);
   await page.mouse.dblclick(p.x, p.y);
   await expect(marks(page)).toHaveCount(1);
-  await page.mouse.click(p.x, p.y, { button: "right" });
   const menu = page.locator("#text-copy-menu");
+  const blank = await point(page, 280, 160);
+  await page.mouse.click(blank.x, blank.y, { button: "right" });
+  await expect(menu).toBeHidden();
+  await expect(marks(page)).toHaveCount(1);
+  await page.mouse.click(p.x, p.y, { button: "right" });
   await expect(menu).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(menu).toBeHidden();
