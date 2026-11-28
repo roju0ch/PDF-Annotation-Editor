@@ -11,6 +11,8 @@ import {
   type SurfaceMap,
 } from "./rasterSurfaces";
 
+const RENDER_DELAY = 100;
+
 /** One outstanding raster request; superseded views never build a worker queue. */
 export function usePdfRaster({
   client,
@@ -22,6 +24,7 @@ export function usePdfRaster({
   pages,
   tiles,
   visible,
+  eagerOverview,
   revision,
   onRendering,
   onError,
@@ -35,6 +38,7 @@ export function usePdfRaster({
   pages: PageInfo[];
   tiles: Tile[];
   visible: number[];
+  eagerOverview: boolean;
   revision: number;
   onRendering: (value: boolean) => void;
   onError: (message: string) => void;
@@ -162,10 +166,22 @@ export function usePdfRaster({
         overlayBox: result.overlayBox,
       };
     };
+    // During inertia, pages can enter and leave between stable tile plans.
+    // Start their bounded previews promptly and still debounce detail tiles.
+    let enableDetails: (() => void) | undefined;
+    const detailDelay = eagerOverview
+      ? new Promise<void>((resolve) => {
+          enableDetails = resolve;
+        })
+      : null;
+    const detailTimer = eagerOverview
+      ? setTimeout(() => enableDetails?.(), RENDER_DELAY)
+      : undefined;
+    const delay = eagerOverview ? 0 : RENDER_DELAY;
     const timer = setTimeout(() => {
       void (async () => {
         if (!c || stale()) return;
-        onRendering(true);
+        if (!eagerOverview) onRendering(true);
         try {
           // A small whole-page overview is the fallback, never the zoom detail.
           for (const page of plan.visible) {
@@ -180,6 +196,7 @@ export function usePdfRaster({
             );
             const key = `overview:${revision}:${page}:${scale}`;
             if (previews.current.get(canvas) === key) continue;
+            if (eagerOverview) onRendering(true);
             delete canvas.dataset.rendered;
             const result = await raster(key, {
               type: "render",
@@ -233,6 +250,11 @@ export function usePdfRaster({
             canvas.dataset.rendered = "true";
             previews.current.set(canvas, key);
             onSurfaceChange();
+          }
+          if (detailDelay) {
+            await detailDelay;
+            if (stale()) return;
+            onRendering(true);
           }
           for (const tile of plan.tiles) {
             if (stale()) return;
@@ -334,15 +356,18 @@ export function usePdfRaster({
           }
         }
       })();
-    }, 100);
+    }, delay);
     return () => {
       cancelled = true;
       clearTimeout(timer);
+      clearTimeout(detailTimer);
+      enableDetails?.();
     };
   }, [
     spec,
     pages,
     revision,
+    eagerOverview,
     client,
     canvases,
     layers,

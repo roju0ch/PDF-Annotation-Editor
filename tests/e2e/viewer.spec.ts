@@ -209,13 +209,17 @@ test("one finger scrolls from both the current page and a visible following page
       touchPoints: [{ ...start, y: start.y - 100 }],
     });
     await expect(page.getByTestId("selection-marquee")).toHaveCount(0);
+    await expect
+      .poll(async () => (await geometry(page)).y)
+      .toBeCloseTo(before.y - 100, 1);
+    // A held finger must stay at this exact position after release.
+    await page.waitForTimeout(100);
     await session.send("Input.dispatchTouchEvent", {
       type: "touchEnd",
       touchPoints: [],
     });
-    await expect
-      .poll(async () => (await geometry(page)).y)
-      .toBeCloseTo(before.y - 100, 1);
+    await page.waitForTimeout(100);
+    expect((await geometry(page)).y).toBeCloseTo(before.y - 100, 1);
     await expect(page.getByTestId("selection-outline")).toHaveCount(0);
     await expect(
       page.getByRole("menu", { name: "Annotationsaktionen" }),
