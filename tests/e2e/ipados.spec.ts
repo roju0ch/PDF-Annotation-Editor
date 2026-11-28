@@ -110,6 +110,8 @@ test("iPad pencil draws at rotated zoom coordinates, rejects palm edits and supp
         document.body.dataset.pen = String(e.pointerId);
     });
   });
+  const world = page.getByTestId("world");
+  const position = await world.getAttribute("style");
   await pen("mousePressed", before);
   await touch("touchStart");
   await touch("touchMove", 12);
@@ -117,6 +119,7 @@ test("iPad pencil draws at rotated zoom coordinates, rejects palm edits and supp
   await touch("touchEnd");
   await pen("mouseReleased", after);
   await expect.poll(async () => (await state(page)).workerDirty).toBe(true);
+  await expect(world).toHaveAttribute("style", position!);
 
   const undo = page.getByRole("button", { name: "Rückgängig", exact: true });
   await undo.click();

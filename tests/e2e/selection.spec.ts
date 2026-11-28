@@ -227,12 +227,15 @@ test("touch marquee, group movement and second-finger cancellation", async ({
   ).toHaveAttribute("aria-pressed", "true");
   const start = await point(page, 110, 140),
     end = await point(page, 140, 165);
+  const world = page.getByTestId("world");
+  const position = await world.getAttribute("style");
   await touch("touchStart", [{ ...start, id: 1 }]);
   await touch("touchMove", [{ ...end, id: 1 }]);
   await touch("touchEnd", []);
   await expect(
     page.getByRole("button", { name: "Rückgängig", exact: true }),
   ).toBeEnabled();
+  await expect(world).toHaveAttribute("style", position!);
   const moved = await exportPositions(page, 0, "artifacts/selection-touch.pdf");
   const a = await point(page, 140, 165);
   await touch("touchStart", [{ ...a, id: 1 }]);

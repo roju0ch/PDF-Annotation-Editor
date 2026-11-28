@@ -52,6 +52,11 @@ import {
 } from "./adapters/platform/pdfWindows";
 import type { PageInfo } from "./adapters/pdf/types";
 import {
+  MAX_MOMENTUM_FRAME_GAP,
+  momentumStep,
+  TouchVelocity,
+} from "./core/touchMomentum";
+import {
   fit,
   scrollAxis,
   scrollLimits,
@@ -128,6 +133,7 @@ export default function App() {
     openingClient = useRef<PdfClient | null>(null);
   const discard = useDocumentDiscardDialog(stage);
   const cancelPendingPointer = useRef<() => void>(() => {});
+  const cancelTouchMomentum = useRef<() => void>(() => {});
   const canvases = useRef(new Map<number, HTMLCanvasElement>());
   const detailLayers = useRef(new Map<number, HTMLDivElement>());
   const overviewLayers = useRef(new Map<number, HTMLDivElement>());
@@ -146,6 +152,7 @@ export default function App() {
     [view, setView] = useState<View>(initial);
   const [box, setBox] = useState<Point>({ x: 800, y: 600 });
   const [rendering, setRendering] = useState(false);
+  const [touchCoasting, setTouchCoasting] = useState(false);
   const offsets = useMemo(() => {
     let y = 0;
     return pages.map((p) => {
@@ -222,9 +229,12 @@ export default function App() {
   useLayoutEffect(() => {
     textInput.current = pdfText;
   });
-  useEffect(() => {
+  useLayoutEffect(() => {
     cancelPendingPointer.current();
-  }, [annotation.tool, pages]);
+  }, [annotation.tool, pages, continuous]);
+  useLayoutEffect(() => {
+    cancelTouchMomentum.current();
+  }, [box, fingerInk]);
   usePdfWindows(
     {
       hasDocument: pages.length > 0,
@@ -263,16 +273,17 @@ export default function App() {
   useLayoutEffect(() => {
     annotationInput.current = annotation.gesture;
   });
-  const current = useRef({ box, pages, scrollLayout });
-  useEffect(() => {
-    current.current = { box, pages, scrollLayout };
-  }, [box, pages, scrollLayout]);
+  const current = useRef({ box, pages, scrollLayout, view });
+  useLayoutEffect(() => {
+    current.current = { box, pages, scrollLayout, view };
+  }, [box, pages, scrollLayout, view]);
   const updateView = useCallback((fn: (v: View) => View) => {
     setView(fn);
   }, []);
   const fitPage = useCallback(
     (i: number, width = false, mode = continuous) => {
       if (!pages[i]) return;
+      cancelTouchMomentum.current();
       const next = fit(pages[i].width, pages[i].height, box, width);
       next.y -= (mode ? offsets[i] : 0) * next.scale;
       updateView(() => next);
@@ -352,6 +363,7 @@ export default function App() {
       default:
         return;
     }
+    cancelTouchMomentum.current();
     e.preventDefault();
   };
   useEffect(() => {
@@ -389,8 +401,61 @@ export default function App() {
         ? target.closest<HTMLElement>("[data-text-handle]")?.dataset.textHandle
         : undefined;
     let touchEditing = false;
+    let touchVelocity: TouchVelocity | null = null;
+    let momentumFrame: number | null = null;
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const stopMomentum = () => {
+      if (momentumFrame === null) return;
+      cancelAnimationFrame(momentumFrame);
+      momentumFrame = null;
+      setTouchCoasting(false);
+    };
+    const cancelMomentum = () => {
+      stopMomentum();
+      touchVelocity = null;
+    };
+    cancelTouchMomentum.current = cancelMomentum;
+    const startMomentum = (velocity: Point) => {
+      if (reducedMotion.matches) return;
+      stopMomentum();
+      let lastFrame = performance.now();
+      const frame = (time: number) => {
+        momentumFrame = null;
+        const elapsed = time - lastFrame;
+        if (elapsed > MAX_MOMENTUM_FRAME_GAP || reducedMotion.matches) {
+          setTouchCoasting(false);
+          return;
+        }
+        if (elapsed > 0) {
+          lastFrame = time;
+          const { view, box, scrollLayout } = current.current;
+          const step = momentumStep(velocity, elapsed);
+          const next = scrollView(view, box, scrollLayout, step.dx, step.dy);
+          if (next.x !== view.x || next.y !== view.y) {
+            updateView((v) =>
+              v === view
+                ? next
+                : scrollView(v, box, scrollLayout, step.dx, step.dy),
+            );
+          }
+          // A bound can stop one axis while the other continues to coast.
+          velocity = {
+            x: Math.abs(view.x - next.x - step.dx) < 1e-6 ? step.velocity.x : 0,
+            y: Math.abs(view.y - next.y - step.dy) < 1e-6 ? step.velocity.y : 0,
+          };
+        }
+        if (velocity.x || velocity.y)
+          momentumFrame = requestAnimationFrame(frame);
+        else setTouchCoasting(false);
+      };
+      momentumFrame = requestAnimationFrame(frame);
+      setTouchCoasting(true);
+    };
     cancelPendingPointer.current = () => {
+      cancelMomentum();
       clearHold();
+      points.clear();
+      consumed.clear();
       touchEditing = false;
       textInput.current.finish();
     };
@@ -413,6 +478,7 @@ export default function App() {
         dismissCopyMenu();
     };
     const wheel = (e: WheelEvent) => {
+      cancelMomentum();
       dismissCopyMenu();
       if (pencilActive) {
         e.preventDefault();
@@ -451,6 +517,7 @@ export default function App() {
       }
       if (event.type === "gesturestart") {
         if (!current.current.pages.length || points.size || drag) return;
+        cancelMomentum();
         event.preventDefault();
         clearHold();
         annotationInput.current.closeContext();
@@ -496,6 +563,7 @@ export default function App() {
         clearHold();
         touchEditing = false;
         if (points.size > 1) {
+          touchVelocity = null;
           annotationInput.current.cancel();
           textInput.current.finish();
         } else if (inText() && handleAt(e.target)) {
@@ -525,6 +593,10 @@ export default function App() {
         ) {
           touchEditing = annotationInput.current.begin(start);
         }
+        if (points.size === 1 && !touchEditing) {
+          touchVelocity = new TouchVelocity();
+          touchVelocity.record(e.clientX, e.clientY, e.timeStamp);
+        }
         el.setPointerCapture(e.pointerId);
         e.preventDefault();
         return;
@@ -532,6 +604,7 @@ export default function App() {
       if (mousePointer !== null) return;
       if (ios && e.pointerType === "pen" && e.button === 0 && points.size) {
         // A hand can reach the screen before the tip. Discard its tentative edit.
+        cancelMomentum();
         clearHold();
         points.clear();
         touchEditing = false;
@@ -558,7 +631,8 @@ export default function App() {
         e.preventDefault();
       }
     };
-    const moveTouch = (id: number, p: Point) => {
+    const moveTouch = (e: PointerEvent, p: Point) => {
+      const id = e.pointerId;
       if (consumed.has(id)) return;
       const previous = points.get(id);
       if (!previous || (p.x === previous.x && p.y === previous.y)) return;
@@ -592,9 +666,21 @@ export default function App() {
         touchEditing =
           !inText() && annotationInput.current.begin(start, "drag");
       }
-      if (touchEditing && inText()) textInput.current.move(p);
-      else if (touchEditing) annotationInput.current.move(p);
-      else {
+      if (touchEditing) {
+        touchVelocity = null;
+        if (inText()) textInput.current.move(p);
+        else annotationInput.current.move(p);
+      } else {
+        if (touchVelocity) {
+          for (const sample of e.getCoalescedEvents?.() ?? []) {
+            touchVelocity.record(
+              sample.clientX,
+              sample.clientY,
+              sample.timeStamp,
+            );
+          }
+          touchVelocity.record(e.clientX, e.clientY, e.timeStamp);
+        }
         const { box, scrollLayout } = current.current;
         updateView((v) =>
           scrollView(v, box, scrollLayout, start.x - p.x, start.y - p.y),
@@ -606,7 +692,7 @@ export default function App() {
       const p = local(e);
       annotationInput.current.hover(p);
       if (e.pointerType === "touch") {
-        moveTouch(e.pointerId, p);
+        moveTouch(e, p);
         return;
       }
       if (e.pointerId !== mousePointer) return;
@@ -638,13 +724,16 @@ export default function App() {
       if (e.type === "lostpointercapture" && e.target !== el) return;
       if (e.pointerType === "touch") {
         if (consumed.delete(e.pointerId)) {
+          touchVelocity = null;
           points.delete(e.pointerId);
           e.preventDefault();
           return;
         }
         if (!points.has(e.pointerId)) return;
+        let velocity: Point | null = null;
         if (e.type === "pointerup") {
-          if (points.size === 1) moveTouch(e.pointerId, local(e));
+          if (points.size === 1) moveTouch(e, local(e));
+          velocity = touchVelocity?.release(e.timeStamp) ?? null;
           if (holdStart && inText()) textInput.current.begin(holdStart);
           else if (holdStart) annotationInput.current.begin(holdStart, "tap");
           if (touchEditing && !inText()) annotationInput.current.finish();
@@ -653,6 +742,8 @@ export default function App() {
         clearHold();
         touchEditing = false;
         points.delete(e.pointerId);
+        touchVelocity = null;
+        if (velocity) startMomentum(velocity);
         return;
       }
       if (e.pointerId !== mousePointer) return;
@@ -696,6 +787,7 @@ export default function App() {
       if (e.code === "Space") space = false;
     };
     const reset = () => {
+      cancelMomentum();
       dismissCopyMenu();
       middlePasteBlocked = false;
       clearHold();
@@ -766,7 +858,10 @@ export default function App() {
     };
     const leave = () => annotationInput.current.hover(null);
     const visibility = () => {
-      if (document.visibilityState === "hidden") reset();
+      if (document.visibilityState === "hidden") {
+        if (ios) reset();
+        else cancelMomentum();
+      }
     };
     const aux = (e: MouseEvent) => {
       if (e.button === 1) e.preventDefault();
@@ -797,12 +892,15 @@ export default function App() {
     window.addEventListener("paste", preventMiddlePaste, true);
     window.addEventListener("keydown", keydown);
     window.addEventListener("keyup", keyup);
+    document.addEventListener("pointerdown", stopMomentum, true);
     document.addEventListener("pointerdown", outsideCopyMenu);
     window.addEventListener("resize", dismissCopyMenu);
     window.addEventListener("blur", reset);
-    if (ios) document.addEventListener("visibilitychange", visibility);
+    document.addEventListener("visibilitychange", visibility);
     return () => {
+      cancelTouchMomentum.current = () => {};
       cancelPendingPointer.current = () => {};
+      if (momentumFrame !== null) cancelAnimationFrame(momentumFrame);
       clearHold();
       el.removeEventListener("dblclick", doubleClick);
       el.removeEventListener("contextmenu", context);
@@ -822,6 +920,7 @@ export default function App() {
       window.removeEventListener("paste", preventMiddlePaste, true);
       window.removeEventListener("keydown", keydown);
       window.removeEventListener("keyup", keyup);
+      document.removeEventListener("pointerdown", stopMomentum, true);
       document.removeEventListener("pointerdown", outsideCopyMenu);
       window.removeEventListener("resize", dismissCopyMenu);
       window.removeEventListener("blur", reset);
@@ -860,6 +959,7 @@ export default function App() {
     pages,
     tiles,
     visible: visible.map(({ i }) => i),
+    eagerOverview: touchCoasting,
     revision: contentRevision,
     onRendering: setRendering,
     onError: setError,
@@ -889,6 +989,7 @@ export default function App() {
   usePdfOpen(!annotation.busy && !loading, open, setError);
   async function closeDocument() {
     if (!annotation.beginDocumentChange()) return;
+    cancelTouchMomentum.current();
     try {
       if (annotation.unsaved && !(await discard.request("close-document")))
         return;
@@ -911,6 +1012,7 @@ export default function App() {
       return "deferred";
     }
     opening.current = true;
+    cancelTouchMomentum.current();
     const token = ++openSequence.current;
     let candidate: PdfClient | null = null;
     try {
@@ -1206,11 +1308,12 @@ export default function App() {
         <div className="menu-row">
           <button
             disabled={!ready}
-            onClick={() =>
+            onClick={() => {
+              cancelTouchMomentum.current();
               updateView((v) =>
                 zoomAt(v, { x: box.x / 2, y: box.y / 2 }, 1 / 1.2),
-              )
-            }
+              );
+            }}
             aria-label="Verkleinern"
           >
             −
@@ -1218,9 +1321,10 @@ export default function App() {
           <output aria-label="Zoom">{Math.round(view.scale * 100)} %</output>
           <button
             disabled={!ready}
-            onClick={() =>
-              updateView((v) => zoomAt(v, { x: box.x / 2, y: box.y / 2 }, 1.2))
-            }
+            onClick={() => {
+              cancelTouchMomentum.current();
+              updateView((v) => zoomAt(v, { x: box.x / 2, y: box.y / 2 }, 1.2));
+            }}
             aria-label="Vergrößern"
           >
             +

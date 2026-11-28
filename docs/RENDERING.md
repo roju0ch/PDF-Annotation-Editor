@@ -4,6 +4,8 @@ Die bisherige Darstellung rasterte die gesamte Seite auf höchstens vier Megapix
 
 Die Darstellung kombiniert jetzt eine kleine Ganzseitenvorschau mit unabhängig gerenderten Detailkacheln. Mausrad, Pinch und Pan verändern die vorhandene Darstellung sofort. Nach 100 ms ohne Änderung des benötigten Kachelplans werden die sichtbaren Ausschnitte im PDF-Worker in der passenden Zoom-/Bildschirmauflösung nachgerendert. Vorhandene Details bleiben währenddessen sichtbar; neue Kacheln erscheinen von der Bildschirmmitte aus. Die PDF-Inhalte und die nativen Annotationen werden dabei getrennt dargestellt; Änderungen werden weiterhin als echte PDF-Objekte gespeichert.
 
+Beim Touch-Nachlauf starten die kleinen Übersichten für neu sichtbare Seiten sofort. Die Detailkacheln warten weiterhin auf einen stabilen Kachelplan.
+
 
 ## Zeichnen und Kommentieren ohne Hintergrund-Neuaufbau
 

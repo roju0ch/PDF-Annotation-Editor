@@ -30,7 +30,7 @@ jobs:
       - run: npx playwright install --with-deps chromium firefox
       - run: npm run test:e2e
       - name: Firefox viewer and editor checks
-        run: npm run test:e2e -- tests/e2e/viewer.spec.ts tests/e2e/layout.spec.ts tests/e2e/selection.spec.ts tests/e2e/clipboard.spec.ts tests/e2e/images.spec.ts tests/e2e/pages.spec.ts tests/e2e/offline.spec.ts tests/e2e/rendering.spec.ts tests/e2e/annotation-rendering.spec.ts tests/e2e/tool-text-comments.spec.ts tests/e2e/context-edit.spec.ts tests/e2e/android-save.spec.ts tests/e2e/desktop-save.spec.ts tests/e2e/external-open.spec.ts tests/e2e/desktop-windows.spec.ts tests/e2e/ipados.spec.ts tests/e2e/pdf-text.spec.ts
+        run: npm run test:e2e -- tests/e2e/viewer.spec.ts tests/e2e/touch-momentum.spec.ts tests/e2e/layout.spec.ts tests/e2e/selection.spec.ts tests/e2e/clipboard.spec.ts tests/e2e/images.spec.ts tests/e2e/pages.spec.ts tests/e2e/offline.spec.ts tests/e2e/rendering.spec.ts tests/e2e/annotation-rendering.spec.ts tests/e2e/tool-text-comments.spec.ts tests/e2e/context-edit.spec.ts tests/e2e/android-save.spec.ts tests/e2e/desktop-save.spec.ts tests/e2e/external-open.spec.ts tests/e2e/desktop-windows.spec.ts tests/e2e/ipados.spec.ts tests/e2e/pdf-text.spec.ts
         env:
           PLAYWRIGHT_BROWSER: firefox
           PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report-firefox
